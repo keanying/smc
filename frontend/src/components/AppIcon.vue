@@ -8,7 +8,8 @@
 //   lock 锁定  unlock 解锁  pending 审核中/等待  online 上线/启用  offline 下线/停用/退出
 //   revoke 撤回/取消/重置  clear 清理缓存  query 查询/试搜/体检  task 任务
 //   transfer 转交/挂接  unlink 失效/断开(sso)  compare 对比  dev 开发/档案  info 说明
-// ⚠️ online/copy/export/view/clear 是黑色的，放深色背景上看不见——只用在浅色内容区。
+//   play 开始/立即执行  pause 暂停  browser 打开浏览器（已登录的账号）
+// ⚠️ online/copy/export/view/clear/play/pause 是黑色的，放深色背景上看不见——只用在浅色内容区。
 const files = import.meta.glob('../assets/icons/actions/*.png', { eager: true, import: 'default' })
 export const ICONS: Record<string, string> = Object.fromEntries(
   Object.entries(files).map(([path, url]) => [path.split('/').pop()!.replace('.png', ''), url as string]),
@@ -17,6 +18,7 @@ export type IconName =
   | 'edit' | 'delete' | 'view' | 'copy' | 'export' | 'publish' | 'lock' | 'unlock'
   | 'pending' | 'online' | 'offline' | 'revoke' | 'clear' | 'query' | 'task'
   | 'transfer' | 'unlink' | 'compare' | 'dev' | 'info'
+  | 'play' | 'pause' | 'browser'
 </script>
 
 <script setup lang="ts">

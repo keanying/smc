@@ -5,7 +5,7 @@
     @update:model-value="close"
   >
     <template #header>
-      <span class="el-dialog__title">登录 {{ channelLabel(channel) }}</span>
+      <span class="el-dialog__title">{{ browsing ? '浏览器' : '登录' }} {{ channelLabel(channel) }}</span>
       <InfoTip :width="380">
         画面是服务端浏览器的实时推流，鼠标点击和滚轮会同步回放到服务端；扫码登录直接用手机扫画面里的二维码即可。<br>
         <b>登录成功后点「我已登录，保存」</b>——系统也会自动识别，但以你看到的画面为准；保存之后采集任务会静默复用，不再弹这个窗口。
@@ -49,8 +49,8 @@
     </div>
 
     <template #footer>
-      <el-button type="primary" :loading="saving" @click="saveNow">
-        我已登录，保存
+      <el-button :type="browsing ? 'default' : 'primary'" :loading="saving" @click="saveNow">
+        {{ browsing ? '保存当前 Cookie' : '我已登录，保存' }}
       </el-button>
       <el-button @click="close">{{ status.logged_in ? '完成' : '关闭窗口' }}</el-button>
     </template>
@@ -65,7 +65,12 @@ import { accountApi } from '../api'
 import { LoginBrowserSocket, type BrowserMessage } from '../api/ws'
 import { channelLabel } from '../constants'
 
-const props = defineProps<{ visible: boolean; channel: string; accountName: string }>()
+const props = withDefaults(defineProps<{
+  visible: boolean; channel: string; accountName: string
+  /** browse：已登录的号直接打开浏览器（不跳登录页）；login：登录 */
+  mode?: 'login' | 'browse'
+}>(), { mode: 'login' })
+const browsing = computed(() => props.mode === 'browse')
 const emit = defineEmits<{ (e: 'close', loggedIn: boolean): void }>()
 
 const frame = ref('')
@@ -168,14 +173,14 @@ async function start() {
   frame.value = ''
   status.value = { state: 'connecting', message: '正在创建登录会话…' }
   try {
-    const session = await accountApi.createLoginSession(props.channel, props.accountName)
+    const session = await accountApi.createLoginSession(props.channel, props.accountName, props.mode)
     sessionId = session.session_id
     socket = new LoginBrowserSocket(sessionId, handleMessage, () => {
       status.value = { ...status.value, state: 'closed' }
     })
     socket.open()
   } catch {
-    status.value = { state: 'error', message: '创建登录会话失败' }
+    status.value = { state: 'error', message: browsing.value ? '打开浏览器失败' : '创建登录会话失败' }
   }
 }
 

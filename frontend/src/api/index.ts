@@ -564,9 +564,11 @@ export const accountApi = {
     ),
   logout: (channel: string, accountName: string) =>
     api.post<null>(`/api/accounts/${channel}/${encodeURIComponent(accountName)}/logout`),
-  createLoginSession: (channel: string, accountName: string) =>
+  /** mode=browse：已登录的号直接打开浏览器，不跳登录页 */
+  createLoginSession: (channel: string, accountName: string, mode: 'login' | 'browse' = 'login') =>
     api.post<{ session_id: string; ws_path: string }>(
       `/api/accounts/${channel}/${encodeURIComponent(accountName)}/login-session`,
+      undefined, { mode },
     ),
   closeLoginSession: (sessionId: string) =>
     api.del<{ logged_in: boolean }>(`/api/accounts/login-session/${sessionId}`),
