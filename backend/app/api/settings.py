@@ -36,6 +36,10 @@ async def save_settings(payload: SettingIn, state: AppState = Depends(get_state)
     # 代理配置变了要让已建的池失效，下次采集按新配置重建
     if payload.section == "proxy":
         state.proxy_manager.reset()
+    # 标注引擎启动时就把模型名/Key 定死在客户端里了，不重启改了等于没改
+    if payload.section == "labeling":
+        from ..labeling import get_manager
+        await get_manager(state.config).reset()
     return ok(state.config.redacted().get(payload.section), "设置已保存并立即生效")
 
 

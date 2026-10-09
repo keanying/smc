@@ -29,6 +29,10 @@ tzdata==2024.2
 PyYAML==6.0.2
 python-dotenv==1.0.1
 
+# AI 标注引擎（vendor/opinion_labeling_engine）调方舟接口用它。
+# 引擎自己的 requirements.txt 里有，但 Docker 只装这一份，漏了引擎直接 import 失败
+requests>=2.28
+
 # --- 加解密（小红书等平台参数依赖） ---
 pycryptodome>=3.23.0
 cryptography==44.0.0
