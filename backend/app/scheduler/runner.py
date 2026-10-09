@@ -360,13 +360,13 @@ class TaskRunner:
                 except (TaskCancelled, AccountsCoolingDown):
                     raise
                 except SlotWaitTimeout as exc:
-                    # 排队等超时。这是**失败**不是"跳过"——用户要能一眼看出
-                    # "这条任务什么都没采，是因为浏览器一直被占着"，
-                    # 而不是在成功的任务里找一行灰色的跳过日志。
-                    channel_log.error(
-                        f"{channel} 没能拿到浏览器：{exc}。"
-                        f"通常是有登录窗口开着没关，或者同平台的任务排得太满"
-                    )
+                    # 浏览器一直被占着（别的任务在用这个号 / 登录窗口没关）：
+                    # 以前记一条错误就算这轮结束，什么都没采。现在跟账号冷却一样
+                    # 进等待队列，按入队先后接着跑，不丢这一轮。
+                    raise AccountsCoolingDown(
+                        datetime.now() + timedelta(seconds=COOLING_RETRY_SECONDS),
+                        f"{CHANNEL_LABELS.get(channel, channel)} 的浏览器一直被占用（{exc}）",
+                    ) from exc
                 except LoginRequired as exc:
                     # ⚠️ 需要人来处理：发通知，然后**等**（而不是直接跳过）。
                     # 用户的要求："如果是因为需要登录，验证的 采集暂停"。

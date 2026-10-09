@@ -243,6 +243,7 @@ CREATE TABLE IF NOT EXISTS `src_opinion_crawl_task` (
   `cron_expression`     VARCHAR(120)     NULL DEFAULT NULL COMMENT 'cron 模式：5 或 6 段表达式',
   `timezone`            VARCHAR(64)  NOT NULL DEFAULT 'Asia/Shanghai',
   `next_run_time`       DATETIME         NULL DEFAULT NULL,
+  `queued_at`           DATETIME         NULL DEFAULT NULL COMMENT '进入等待队列的时间（先来先跑），跑完清空',
   `last_run_time`       DATETIME         NULL DEFAULT NULL,
   `runs_count`          INT          NOT NULL DEFAULT 0,
   `start_time`          DATETIME         NULL DEFAULT NULL,

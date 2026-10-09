@@ -249,3 +249,60 @@ async def test_run_marks_task_waiting_instead_of_skipping():
     assert "finished" not in kinds, "不能落成完成/失败——那样调度器不会再捞它"
     waiting = next(c for c in runner.tasks.calls if c[0] == "waiting")
     assert waiting[2] == resume and "冷却" in waiting[3]
+
+
+# ---------------------------------------------------------------------------
+# 先来先跑：恢复后按入队顺序执行；再排一次也不丢位置
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_waiting_tasks_resume_in_queue_order(repos):
+    first = await _cron_task(repos.tasks, "先排队的")
+    second = await _cron_task(repos.tasks, "后排队的")
+    resume = datetime.now().replace(microsecond=0) - timedelta(seconds=5)
+    # second 先被标 waiting 的话就会排前面——所以这里刻意按 first、second 的顺序入队，
+    # 再把 first 的恢复时间设得更晚：顺序必须看入队时间，不是恢复时间
+    await repos.tasks.mark_waiting(first, resume, "排队等账号")
+    await repos.db.execute(
+        "UPDATE `src_opinion_crawl_task` SET queued_at = queued_at - INTERVAL 10 MINUTE "
+        "WHERE task_id = %s", [first])
+    await repos.tasks.mark_waiting(second, resume - timedelta(minutes=1), "排队等账号")
+    due = [t["task_id"] for t in await repos.tasks.due_tasks()]
+    assert due.index(first) < due.index(second)
+
+
+@pytest.mark.asyncio
+async def test_rewaiting_keeps_original_queue_position(repos):
+    task_id = await _cron_task(repos.tasks)
+    await repos.tasks.mark_waiting(task_id, datetime.now(), "排队等账号")
+    await repos.db.execute(
+        "UPDATE `src_opinion_crawl_task` SET queued_at = '2026-01-01 08:00:00' WHERE task_id = %s",
+        [task_id])
+    await repos.tasks.mark_waiting(task_id, datetime.now() + timedelta(minutes=5), "又撞上冷却")
+    assert (await repos.tasks.get(task_id))["queued_at"] == datetime(2026, 1, 1, 8, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_finishing_clears_queue_position(repos):
+    task_id = await _cron_task(repos.tasks)
+    await repos.tasks.mark_waiting(task_id, datetime.now(), "排队等账号")
+    await repos.tasks.mark_finished(task_id, TaskStatus.COMPLETED.value)
+    assert (await repos.tasks.get(task_id))["queued_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_browser_busy_queues_instead_of_failing():
+    """浏览器一直被占用（别的任务在用这个号）：以前记一条错就结束了，这一轮白丢。"""
+    from app.browser.slots import SlotWaitTimeout
+
+    runner = TaskRunner.__new__(TaskRunner)
+    runner.tasks = _TaskRepo()
+
+    async def _busy(*a, **kw):
+        raise SlotWaitTimeout("等了 30 分钟")
+
+    runner._run_channel = _busy
+    await runner.run({"task_id": "T2", "task_name": "武夷山", "scenic_id": "",
+                      "channels": ["douyin"]})
+    kinds = [c[0] for c in runner.tasks.calls]
+    assert "waiting" in kinds and "finished" not in kinds

@@ -197,7 +197,8 @@ class TaskRepository:
             "SELECT * FROM `src_opinion_crawl_task` WHERE (schedule_enabled = 1 OR status = 'waiting') "
             "AND next_run_time IS NOT NULL "
             "AND next_run_time <= %s AND status NOT IN ('running', 'queued') "
-            "ORDER BY next_run_time ASC LIMIT %s",
+            # 排队等账号的按入队先后，其余按计划时间——先来先跑
+            "ORDER BY COALESCE(queued_at, next_run_time) ASC, id ASC LIMIT %s",
             [moment, int(limit)],
         )
         return [_decode(r) for r in rows]
@@ -234,7 +235,7 @@ class TaskRepository:
         # 完成 = 100；其余状态保持当前进度不变（COALESCE 自己）。
         completed = status == TaskStatus.COMPLETED.value
         await self.db.execute(
-            "UPDATE `src_opinion_crawl_task` SET status = %s, end_time = %s, "
+            "UPDATE `src_opinion_crawl_task` SET status = %s, end_time = %s, queued_at = NULL, "
             "progress = " + ("%s" if completed else "progress") + ", error = %s, "
             "stat_new_works = stat_new_works + %s, stat_updated_works = stat_updated_works + %s, "
             "stat_new_comments = stat_new_comments + %s, stat_updated_comments = stat_updated_comments + %s "
@@ -261,7 +262,7 @@ class TaskRepository:
         stats = stats or {}
         await self.db.execute(
             "UPDATE `src_opinion_crawl_task` SET status = %s, end_time = %s, "
-            "next_run_time = %s, error = %s, "
+            "next_run_time = %s, error = %s, queued_at = COALESCE(queued_at, NOW()), "
             "stat_new_works = stat_new_works + %s, stat_updated_works = stat_updated_works + %s, "
             "stat_new_comments = stat_new_comments + %s, stat_updated_comments = stat_updated_comments + %s "
             "WHERE task_id = %s",
