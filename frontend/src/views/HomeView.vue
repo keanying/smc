@@ -1,87 +1,84 @@
 <template>
   <div v-loading="loading">
     <div class="page-header">
-      <div>
-        <h2 class="page-title">概览</h2>
-        <p class="page-subtitle">六个平台的采集情况一览</p>
-      </div>
+      <h2 class="page-title">概览</h2>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
     </div>
 
-    <div class="stat-grid" style="margin-bottom: 20px">
-      <div class="stat-card">
-        <div class="stat-icon" style="background: #eef2ff; color: #4f6ef7">
-          <el-icon><LocationFilled /></el-icon>
-        </div>
-        <div class="stat-value">{{ stats.scenics }}</div>
-        <div class="stat-label">景区</div>
+    <!-- 核心指标：一条细边框横栏，靠数字层级说话，不用彩色图标块 -->
+    <div class="kpi-strip">
+      <div class="kpi">
+        <div class="kpi-label">景区</div>
+        <div class="kpi-value">{{ stats.scenics }}</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background: #ecfdf5; color: #10b981">
-          <el-icon><Document /></el-icon>
+      <div class="kpi">
+        <div class="kpi-label">
+          作品
+          <InfoTip content="含携程/同程的景区点评集合：这两个平台没有作品概念，评论挂在按景区生成的集合上。" />
         </div>
-        <div class="stat-value">{{ formatCount(stats.works) }}</div>
-        <div class="stat-label">作品 / 点评集合</div>
+        <div class="kpi-value">{{ formatCount(stats.works) }}</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background: #fff7ed; color: #f59e0b">
-          <el-icon><ChatDotRound /></el-icon>
-        </div>
-        <div class="stat-value">{{ formatCount(stats.comments) }}</div>
-        <div class="stat-label">评论</div>
+      <div class="kpi">
+        <div class="kpi-label">评论</div>
+        <div class="kpi-value">{{ formatCount(stats.comments) }}</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background: #fdf2f8; color: #ec4899">
-          <el-icon><VideoPlay /></el-icon>
+      <div class="kpi">
+        <div class="kpi-label">运行中 / 全部任务</div>
+        <div class="kpi-value">
+          {{ stats.runningTasks }}<span class="kpi-sub"> / {{ stats.tasks }}</span>
         </div>
-        <div class="stat-value">
-          {{ stats.runningTasks }}<span class="muted" style="font-size: 16px"> / {{ stats.tasks }}</span>
-        </div>
-        <div class="stat-label">运行中 / 全部任务</div>
       </div>
     </div>
 
     <!-- 平台接入状态：平铺展示 -->
-    <el-card shadow="never" header="平台接入状态" style="margin-bottom: 20px">
+    <el-card shadow="never" style="margin-bottom: 20px">
+      <template #header>
+        <span class="card-title">
+          平台接入状态
+          <InfoTip content="需登录的平台要有已启用、状态正常的账号才算「已配账号」；免登录平台直接可采。" />
+        </span>
+      </template>
       <div class="platform-grid">
         <div v-for="c in channelStatus" :key="c.value" class="platform-card">
-          <div class="platform-icon" :style="{ background: CHANNEL_COLORS[c.value] + '20', color: CHANNEL_COLORS[c.value] }">
+          <div class="platform-icon">
             <img
               v-if="PLATFORM_LOGOS[c.value]" class="platform-logo"
               :src="PLATFORM_LOGOS[c.value]" :alt="c.label"
             />
-            <span v-else class="platform-letter">{{ c.label.slice(0, 1) }}</span>
+            <span v-else class="platform-letter" :style="{ color: CHANNEL_COLORS[c.value] }">
+              {{ c.label.slice(0, 1) }}
+            </span>
           </div>
           <div class="platform-info">
             <div class="platform-name">{{ c.label }}</div>
-            <div class="platform-note">{{ c.note }}</div>
+            <div v-if="c.note" class="platform-note">{{ c.note }}</div>
           </div>
-          <div class="platform-status">
-            <el-tag v-if="c.needLogin" size="small" :type="c.hasAccount ? 'success' : 'warning'" effect="plain">
-              {{ c.hasAccount ? '已配账号' : '缺账号' }}
-            </el-tag>
-            <el-tag v-else size="small" type="info" effect="plain">免登录</el-tag>
-          </div>
+          <el-tag
+            v-if="c.needLogin" size="small" :type="c.hasAccount ? 'success' : 'warning'"
+            effect="plain" class="platform-status"
+          >
+            {{ c.hasAccount ? '已配账号' : '缺账号' }}
+          </el-tag>
+          <el-tag v-else size="small" type="info" effect="plain" class="platform-status">免登录</el-tag>
         </div>
       </div>
     </el-card>
 
     <el-row :gutter="20">
       <el-col :span="14">
-        <el-card shadow="never" header="各景区采集量">
-          <el-empty v-if="!overview.length" description="还没有采集到数据">
-            <el-button type="primary" @click="$router.push('/scenics')">先去添加景区</el-button>
+        <el-card shadow="never" header="各景区采集量" class="fill-card">
+          <el-empty v-if="!overview.length" description="还没有采集到数据" :image-size="72">
+            <el-button type="primary" @click="$router.push('/scenics')">添加景区</el-button>
           </el-empty>
           <el-table v-else :data="overview" size="small">
             <el-table-column prop="scenic_name" label="景区" min-width="130" />
-            <el-table-column label="平台分布" min-width="300">
+            <el-table-column label="平台分布（评论数）" min-width="300">
               <template #default="{ row }">
-                <el-tag
-                  v-for="c in row.channels" :key="c.channel" size="small"
-                  :color="CHANNEL_COLORS[c.channel]" style="color: #fff; border: none; margin: 2px 4px 2px 0"
-                >
-                  {{ channelLabel(c.channel) }} {{ c.comment_cnt }}
-                </el-tag>
+                <span v-for="c in row.channels" :key="c.channel" class="dist-item">
+                  <i class="dist-dot" :style="{ background: CHANNEL_COLORS[c.channel] }" />
+                  {{ channelLabel(c.channel) }}
+                  <b>{{ formatCount(c.comment_cnt) }}</b>
+                </span>
               </template>
             </el-table-column>
             <el-table-column label="作品" width="80" align="right">
@@ -95,8 +92,8 @@
       </el-col>
 
       <el-col :span="10">
-        <el-card shadow="never" header="最近任务">
-          <el-empty v-if="!recentTasks.length" description="还没有任务" :image-size="70">
+        <el-card shadow="never" header="最近任务" class="fill-card">
+          <el-empty v-if="!recentTasks.length" description="还没有任务" :image-size="72">
             <el-button type="primary" @click="$router.push('/tasks/new')">新建任务</el-button>
           </el-empty>
           <div v-else>
@@ -106,7 +103,7 @@
             >
               <div style="flex: 1; min-width: 0">
                 <div class="task-name">{{ task.task_name }}</div>
-                <div class="muted" style="font-size: 12px">
+                <div class="task-meta">
                   {{ formatTime(task.create_time) }}
                   · 作品 {{ task.stat_new_works }} · 评论 {{ task.stat_new_comments }}
                 </div>
@@ -124,9 +121,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import {
-  ChatDotRound, Document, LocationFilled, Refresh, VideoPlay,
-} from '@element-plus/icons-vue'
+import { Refresh } from '@element-plus/icons-vue'
 import {
   accountApi, dataApi, scenicApi, taskApi,
   type Account, type ChannelOption, type OverviewRow, type Task,
@@ -212,73 +207,79 @@ onMounted(load)
 </script>
 
 <style scoped>
-.task-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 0;
-  border-bottom: 1px solid #f0f0f0;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
+/* ---------- 核心指标横栏 ---------- */
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--smc-card-bg);
+  border: 1px solid var(--smc-border);
+  border-radius: var(--smc-radius);
+  margin-bottom: 20px;
 }
-.task-row:last-child { border-bottom: none; }
-.task-row:hover { background: #fafbfc; }
-.task-name {
+.kpi {
+  padding: 18px 24px 20px;
+  min-width: 0;
+}
+.kpi + .kpi { border-left: 1px solid var(--smc-border); }
+.kpi-label {
   font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.channel-row {
+  color: var(--smc-text-secondary);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid #f5f5f5;
-  transition: background-color 0.2s ease;
+  height: 18px;
 }
-.channel-row:last-child { border-bottom: none; }
-.channel-row:hover { background: #fafbfc; }
+.kpi-value {
+  margin-top: 10px;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.5px;
+  color: var(--smc-text);
+  font-variant-numeric: tabular-nums;
+}
+.kpi-sub {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--smc-text-tertiary);
+  letter-spacing: 0;
+}
 
-/* 平台接入状态平铺 */
+.card-title { display: inline-flex; align-items: center; }
+.fill-card { height: 100%; }
+
+/* ---------- 平台接入状态 ---------- */
 .platform-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
 }
 .platform-card {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px;
-  background: #f8fafc;
-  border: 1px solid #e8ecf3;
-  border-radius: 12px;
-  transition: all 0.2s ease;
-}
-.platform-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(16, 24, 40, 0.08);
-  border-color: #4f6ef7;
+  padding: 12px 14px;
+  border: 1px solid var(--smc-border);
+  border-radius: var(--smc-radius-sm);
+  background: var(--smc-card-bg);
 }
 .platform-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--smc-bg);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
   flex-shrink: 0;
 }
 .platform-logo {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   object-fit: contain;
   display: block;
 }
 .platform-letter {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1;
 }
@@ -288,15 +289,67 @@ onMounted(load)
 }
 .platform-name {
   font-size: 14px;
-  font-weight: 600;
-  color: #1f2733;
-  margin-bottom: 4px;
+  font-weight: 500;
+  color: var(--smc-text);
 }
 .platform-note {
   font-size: 12px;
-  color: #7a8699;
+  color: var(--smc-text-secondary);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.platform-status {
-  flex-shrink: 0;
+.platform-status { flex-shrink: 0; }
+
+/* ---------- 各景区平台分布 ---------- */
+.dist-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 14px;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  white-space: nowrap;
+}
+.dist-item b { font-weight: 600; color: var(--smc-text); }
+.dist-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* ---------- 最近任务 ---------- */
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 8px;
+  margin: 0 -8px;
+  border-radius: var(--smc-radius-sm);
+  border-bottom: 1px solid var(--smc-border);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.task-row:last-child { border-bottom: none; }
+.task-row:hover { background: var(--smc-bg); }
+.task-name {
+  font-size: 14px;
+  color: var(--smc-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-meta {
+  font-size: 12px;
+  color: var(--smc-text-secondary);
+  margin-top: 2px;
+}
+
+@media (max-width: 900px) {
+  .kpi-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi:nth-child(3) { border-left: none; }
+  .kpi:nth-child(n + 3) { border-top: 1px solid var(--smc-border); }
 }
 </style>

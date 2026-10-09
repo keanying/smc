@@ -1,10 +1,10 @@
 <template>
   <div>
     <div class="page-header">
-      <div>
-        <h2 class="page-title">任务管理</h2>
-        <p class="page-subtitle">支持立即执行、定时一次、固定间隔、cron 四种调度</p>
-      </div>
+      <h2 class="page-title">
+        任务管理
+        <InfoTip content="调度方式：立即执行、定时一次、固定间隔、cron 表达式。" />
+      </h2>
       <el-button type="primary" :icon="Plus" @click="$router.push('/tasks/new')">新建任务</el-button>
     </div>
 
@@ -29,7 +29,7 @@
       <el-switch v-model="autoRefresh" active-text="自动刷新" style="margin-left: auto" />
     </div>
 
-    <el-table :data="tasks" v-loading="loading" border stripe>
+    <el-table :data="tasks" v-loading="loading" border>
       <el-table-column prop="task_name" label="任务名称" min-width="180">
         <template #default="{ row }">
           <el-link type="primary" @click="$router.push(`/tasks/${row.task_id}`)">
@@ -42,7 +42,7 @@
           <span>{{ scenicName(row.scenic_id) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="平台" min-width="180">
+      <el-table-column label="平台" min-width="110">
         <template #default="{ row }">
           <el-tag
             v-for="c in row.channels" :key="c" size="small"
@@ -65,9 +65,23 @@
       </el-table-column>
       <el-table-column label="状态" width="110" align="center">
         <template #default="{ row }">
-          <el-tag :type="TASK_STATUS_TYPES[row.status]" size="small">
-            {{ TASK_STATUS_LABELS[row.status] || row.status }}
-          </el-tag>
+          <!-- waiting：账号都在冷却/轮换锁定中，悬停看原因（task.error）和预计恢复时间（next_run_time） -->
+          <el-tooltip
+            :disabled="row.status !== 'waiting'" placement="top" :show-after="120"
+            popper-class="info-tip-popper"
+          >
+            <template #content>
+              <div style="max-width: 280px; font-size: 12px; line-height: 1.7">
+                <div v-if="row.error">{{ row.error }}</div>
+                <div v-if="row.next_run_time">预计 {{ formatTime(row.next_run_time) }} 恢复</div>
+                <div v-if="!row.error && !row.next_run_time">账号恢复后自动执行</div>
+              </div>
+            </template>
+            <el-tag :type="TASK_STATUS_TYPES[row.status]" size="small" class="status-tag">
+              <AppIcon v-if="row.status === 'waiting'" name="pending" :size="12" class="status-icon" />
+              {{ TASK_STATUS_LABELS[row.status] || row.status }}
+            </el-tag>
+          </el-tooltip>
           <el-progress
             v-if="row.status === 'running'" :percentage="row.progress || 0"
             :stroke-width="4" :show-text="false" style="margin-top: 6px"
@@ -84,7 +98,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="采集上限 / 搜索条件" width="280">
+      <el-table-column label="采集上限 / 搜索条件" min-width="250">
         <template #default="{ row }">
           <div v-for="limit in row.collect_limits || []" :key="limit.channel"
                class="muted" style="font-size: 12px">
@@ -108,25 +122,25 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="290" align="center">
+      <el-table-column label="操作" width="196" align="center" fixed="right">
         <template #default="{ row }">
-          <el-button
-            v-if="row.status !== 'running'" link type="primary"
-            :icon="VideoPlay" @click="run(row)"
-          >执行</el-button>
-          <el-button v-else link type="warning" :icon="VideoPause" @click="cancel(row)">取消</el-button>
-
-          <el-button link type="primary" :icon="Edit" @click="edit(row)">编辑</el-button>
-
-          <el-button
-            v-if="row.schedule_type !== 'once'" link
-            :type="row.schedule_enabled ? 'info' : 'success'"
-            @click="toggleSchedule(row)"
-          >{{ row.schedule_enabled ? '暂停定时' : '启用定时' }}</el-button>
-
-          <el-popconfirm title="删除任务及其日志？已采集的数据保留。" @confirm="remove(row)">
-            <template #reference><el-button link type="danger">删除</el-button></template>
-          </el-popconfirm>
+          <div class="row-actions">
+            <IconAction icon="view" tip="详情" @click="$router.push(`/tasks/${row.task_id}`)" />
+            <IconAction v-if="row.status !== 'running'" icon="publish" tip="立即执行" @click="run(row)" />
+            <IconAction v-else icon="revoke" tip="取消执行" @click="cancel(row)" />
+            <IconAction icon="edit" tip="编辑" @click="edit(row)" />
+            <IconAction
+              v-if="row.schedule_type !== 'once'"
+              :icon="row.schedule_enabled ? 'offline' : 'online'"
+              :tip="row.schedule_enabled ? '暂停定时' : '启用定时'"
+              @click="toggleSchedule(row)"
+            />
+            <el-popconfirm title="删除任务及其日志？已采集的数据保留。" width="240" @confirm="remove(row)">
+              <template #reference>
+                <span><IconAction icon="delete" tip="删除" /></span>
+              </template>
+            </el-popconfirm>
+          </div>
         </template>
       </el-table-column>
       <template #empty><el-empty description="还没有任务" /></template>
@@ -150,7 +164,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Edit, Plus, Refresh, Search, VideoPause, VideoPlay } from '@element-plus/icons-vue'
+import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { scenicApi, taskApi, type ChannelOption, type ScenicOption, type Task } from '../api'
 import { COLLECT_ENGINES, normalizeEngine } from '../constants'
 import TaskEditDialog from '../components/TaskEditDialog.vue'
@@ -273,3 +287,14 @@ onMounted(async () => {
 })
 onUnmounted(() => window.clearTimeout(timer))
 </script>
+
+
+<style scoped>
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.row-actions > span { display: inline-flex; }
+.status-tag .status-icon { margin-right: 3px; vertical-align: -2px; }
+</style>

@@ -192,7 +192,10 @@ class TaskRepository:
         """取到点该跑的周期任务。"""
         moment = now or datetime.now()
         rows = await self.db.fetch_all(
-            "SELECT * FROM `src_opinion_crawl_task` WHERE schedule_enabled = 1 AND next_run_time IS NOT NULL "
+            # waiting（账号冷却排队）不看 schedule_enabled：一次性任务排队时
+            # 也得到点接着跑，而一次性任务的 schedule_enabled 跑完就是 0
+            "SELECT * FROM `src_opinion_crawl_task` WHERE (schedule_enabled = 1 OR status = 'waiting') "
+            "AND next_run_time IS NOT NULL "
             "AND next_run_time <= %s AND status NOT IN ('running', 'queued') "
             "ORDER BY next_run_time ASC LIMIT %s",
             [moment, int(limit)],
@@ -246,6 +249,30 @@ class TaskRepository:
             ],
         )
 
+    async def mark_waiting(
+        self, task_id: str, resume_at: datetime, reason: str,
+        stats: Optional[Dict[str, int]] = None,
+    ) -> None:
+        """账号都在冷却：任务排队，到 resume_at 由调度器的轮询自动接着跑。
+
+        状态和恢复时间都落库，所以**服务重启也不丢**——重启后照样按
+        next_run_time 捞出来跑（reset_stuck_running 只动 running/queued）。
+        """
+        stats = stats or {}
+        await self.db.execute(
+            "UPDATE `src_opinion_crawl_task` SET status = %s, end_time = %s, "
+            "next_run_time = %s, error = %s, "
+            "stat_new_works = stat_new_works + %s, stat_updated_works = stat_updated_works + %s, "
+            "stat_new_comments = stat_new_comments + %s, stat_updated_comments = stat_updated_comments + %s "
+            "WHERE task_id = %s",
+            [
+                TaskStatus.WAITING.value, datetime.now(), resume_at, (reason or "")[:2000] or None,
+                int(stats.get("new_works", 0)), int(stats.get("updated_works", 0)),
+                int(stats.get("new_comments", 0)), int(stats.get("updated_comments", 0)),
+                task_id,
+            ],
+        )
+
     async def update_progress(self, task_id: str, progress: int) -> None:
         await self.db.execute(
             "UPDATE `src_opinion_crawl_task` SET progress = %s WHERE task_id = %s",
@@ -263,6 +290,11 @@ class TaskRepository:
         latest = await self.get(task["task_id"])
         if latest is not None:
             task = latest
+
+        # 账号冷却排队中：next_run_time 已经定成"最早恢复时间"，
+        # 这里再按 cron/间隔算一遍就把它覆盖掉了——任务会错过恢复时刻
+        if task.get("status") == TaskStatus.WAITING.value:
+            return task.get("next_run_time")
 
         schedule_type = task["schedule_type"]
         if schedule_type in (ScheduleType.ONCE.value, ScheduleType.AT.value):

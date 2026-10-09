@@ -1,32 +1,40 @@
 <template>
   <div class="data-view">
     <div class="page-header">
-      <div>
-        <h2 class="page-title">数据中心</h2>
-        <p class="page-subtitle">按景区 + 平台查看作品与评论</p>
-      </div>
-      <div>
-        <el-button :icon="Download" @click="exportCsv('works')">导出作品</el-button>
-        <el-button type="primary" :icon="Download" @click="exportCsv('comments')">导出评论</el-button>
+      <h2 class="page-title">
+        数据中心
+        <InfoTip content="按景区 + 平台查看作品与评论。导出沿用当前的景区、平台和发布时间筛选（不含关键字）。" />
+      </h2>
+      <div class="header-actions">
+        <!-- export 图标是黑色的，只能放浅色按钮上，所以两个导出都用默认按钮 -->
+        <el-button @click="exportCsv('works')">
+          <AppIcon name="export" :size="14" class="btn-icon" />导出作品
+        </el-button>
+        <el-button @click="exportCsv('comments')">
+          <AppIcon name="export" :size="14" class="btn-icon" />导出评论
+        </el-button>
       </div>
     </div>
 
     <!-- ============ 总览：列表往下滚时自动收窄，把高度让给作品区 ============ -->
     <div class="stat-row" :class="{ 'is-compact': compactHeader }">
       <div class="stat-box">
-        <div class="stat-num">{{ formatCount(totals.works) }}</div>
         <div class="stat-cap">作品</div>
+        <div class="stat-num">{{ formatCount(totals.works) }}</div>
       </div>
       <div class="stat-box">
-        <div class="stat-num">{{ formatCount(totals.comments) }}</div>
         <div class="stat-cap">评论</div>
+        <div class="stat-num">{{ formatCount(totals.comments) }}</div>
       </div>
       <div class="stat-box">
-        <div class="stat-num">{{ overview.length }}</div>
         <div class="stat-cap">有数据的景区</div>
+        <div class="stat-num">{{ overview.length }}</div>
       </div>
       <div class="stat-box stat-box-wide">
-        <div class="stat-cap" style="margin-bottom: 8px">各平台分布（点一段即筛选）</div>
+        <div class="stat-cap dist-cap">
+          平台分布
+          <InfoTip content="作品 + 评论合计占比。点色段或图例按平台筛选，再点一次取消。" />
+        </div>
 
         <div v-if="channelTotals.length" class="dist-bar">
           <div
@@ -37,7 +45,7 @@
             @click="filterBy(query.scenic_id, query.channel === c.channel ? '' : c.channel)"
           />
         </div>
-        <div v-else class="muted" style="font-size: 12px">还没有采集到数据</div>
+        <div v-else class="dist-empty">还没有采集到数据</div>
 
         <div class="dist-legend">
           <span
@@ -77,6 +85,7 @@
         <el-checkbox v-model="query.include_synthetic" @change="loadWorks(true)">
           含携程/同程点评集合
         </el-checkbox>
+        <InfoTip content="携程/同程没有作品概念，评论挂在按景区生成的「点评集合」上。" />
         <div class="filter-spacer" />
         <el-button v-if="hasFilter" link @click="resetFilters">清空条件</el-button>
         <el-button type="primary" :icon="Search" @click="loadWorks(true)">查询</el-button>
@@ -86,10 +95,10 @@
     <!-- ============ 作品列表 ============ -->
     <div class="work-list-head">
       <span class="muted">
-        共 <b>{{ worksTotal }}</b> 条作品 · 第 {{ query.page }} / {{ totalPages }} 页
+        共 <b class="head-num">{{ worksTotal }}</b> 条作品 · 第 {{ query.page }} / {{ totalPages }} 页
       </span>
       <div class="muted head-tools">
-        <span>展开评论后的窗口高度</span>
+        <span>评论窗口高度</span>
         <el-radio-group v-model="commentWindowHeight" size="small">
           <el-radio-button :value="280">矮</el-radio-button>
           <el-radio-button :value="380">中</el-radio-button>
@@ -105,7 +114,7 @@
       表现就是"明明设了固定高度，还是整页在滚"。
     -->
     <div ref="workListEl" v-loading="loadingWorks" class="work-list" @scroll="onListScroll">
-      <el-empty v-if="!works.length && !loadingWorks" description="没有符合条件的数据" />
+      <el-empty v-if="!works.length && !loadingWorks" description="没有符合条件的数据" :image-size="88" />
 
       <article v-for="row in works" :key="`${row.channel}-${row.work_id}-${row.scenic_id}`" class="work-card">
         <div class="work-side">
@@ -118,12 +127,16 @@
         <div class="work-main">
           <div class="work-title">
             <span>{{ row.title || row.description || '（无标题）' }}</span>
-            <el-link v-if="row.work_url" type="primary" :href="row.work_url" target="_blank"
-                     :icon="Link" class="work-link" />
+            <el-tooltip v-if="row.work_url" content="打开原帖" placement="top" :show-after="200">
+              <a class="work-link" :href="row.work_url" target="_blank" rel="noopener">
+                <AppIcon name="view" :size="15" />
+              </a>
+            </el-tooltip>
           </div>
 
           <div v-if="isSynthetic(row)" class="muted work-note">
-            景区点评集合 · 携程/同程没有作品概念，这是评论的挂载点
+            景区点评集合
+            <InfoTip content="携程/同程没有作品概念，这是评论的挂载点。" />
           </div>
           <div v-else-if="row.description && row.description !== row.title" class="work-desc">
             {{ row.description }}
@@ -139,10 +152,10 @@
           </div>
 
           <div class="work-stats">
-            <span title="点赞">👍 {{ formatCount(row.likes) }}</span>
-            <span title="评论">💬 {{ formatCount(row.comment_cnt) }}</span>
-            <span title="收藏">⭐ {{ formatCount(row.collection_cnt) }}</span>
-            <span title="转发">↗ {{ formatCount(row.shares) }}</span>
+            <span>赞 <b>{{ formatCount(row.likes) }}</b></span>
+            <span>评论 <b>{{ formatCount(row.comment_cnt) }}</b></span>
+            <span>收藏 <b>{{ formatCount(row.collection_cnt) }}</b></span>
+            <span>转发 <b>{{ formatCount(row.shares) }}</b></span>
             <el-button
               link type="primary" size="small" class="work-toggle"
               @click="toggleComments(row)"
@@ -177,7 +190,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ArrowDown, ArrowUp, Download, Link, Search } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp, Search } from '@element-plus/icons-vue'
 import {
   dataApi, scenicApi,
   type ChannelOption, type OverviewRow, type ScenicOption, type Work,
@@ -378,13 +391,26 @@ onMounted(async () => {
 
 /* 往下滚时收窄：数字和分布条还在，只是不占那么多高度 */
 .stat-row.is-compact {
-  grid-template-columns: repeat(3, 108px) 1fr;
+  grid-template-columns: repeat(3, 124px) 1fr;
   gap: 8px;
   margin-bottom: 10px;
 }
 
 .stat-row.is-compact .stat-box {
   padding: 6px 12px;
+}
+
+/* 收窄时数字和名称并排成一行：「123 作品」 */
+.stat-row.is-compact .stat-box:not(.stat-box-wide) {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.stat-row.is-compact .stat-cap {
+  margin-bottom: 0;
 }
 
 .stat-row.is-compact .stat-num {
@@ -397,23 +423,48 @@ onMounted(async () => {
 }
 
 .stat-box {
-  background: #fff;
-  border: 1px solid #ebeef5;
-  border-radius: 8px;
-  padding: 14px 16px;
+  background: var(--smc-card-bg);
+  border: 1px solid var(--smc-border);
+  border-radius: var(--smc-radius);
+  padding: 14px 18px;
 }
 
 .stat-num {
   font-size: 24px;
   font-weight: 600;
   line-height: 1.2;
-  color: #303133;
+  color: var(--smc-text);
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-cap {
   font-size: 12px;
-  color: #909399;
-  margin-top: 2px;
+  color: var(--smc-text-secondary);
+  margin-bottom: 6px;
+}
+
+.dist-cap {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.dist-empty {
+  font-size: 12px;
+  color: var(--smc-text-tertiary);
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.header-actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+.btn-icon {
+  margin-right: 6px;
 }
 
 .stat-box-wide {
@@ -422,28 +473,23 @@ onMounted(async () => {
   justify-content: center;
 }
 
-.channel-bar {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 /* 彩色堆叠分布条：一眼看出各平台占比，点一段就筛 */
 .dist-bar {
   display: flex;
-  height: 12px;
-  border-radius: 6px;
+  gap: 2px;
+  height: 6px;
+  border-radius: 3px;
   overflow: hidden;
-  background: #f0f2f5;
+  background: var(--smc-bg);
 }
 
 .dist-seg {
   cursor: pointer;
-  transition: opacity 0.15s, filter 0.15s;
+  transition: opacity 0.15s;
 }
 
 .dist-seg:hover {
-  filter: brightness(1.12);
+  opacity: 0.8;
 }
 
 .dist-seg.dimmed {
@@ -454,7 +500,7 @@ onMounted(async () => {
   display: flex;
   gap: 14px;
   flex-wrap: wrap;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .legend-item {
@@ -462,8 +508,13 @@ onMounted(async () => {
   align-items: center;
   gap: 5px;
   font-size: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   cursor: pointer;
+}
+
+.legend-item b {
+  font-weight: 600;
+  color: var(--smc-text);
 }
 
 .legend-item:hover,
@@ -488,7 +539,7 @@ onMounted(async () => {
 }
 
 .filter-card :deep(.el-card__body) {
-  padding: 14px 16px;
+  padding: 12px 16px !important;
 }
 
 .filter-row {
@@ -513,6 +564,11 @@ onMounted(async () => {
   gap: 8px;
 }
 
+.head-num {
+  color: var(--smc-text);
+  font-weight: 600;
+}
+
 .head-tools {
   display: flex;
   align-items: center;
@@ -530,25 +586,22 @@ onMounted(async () => {
   min-height: 160px;
   overflow-y: auto;
   overflow-x: hidden;
-  border: 1px solid #ebeef5;
-  border-radius: 8px;
-  background: #fafafa;
-  padding: 10px 10px 1px;
+  border: 1px solid var(--smc-border);
+  border-radius: var(--smc-radius);
+  background: var(--smc-card-bg);
+  padding: 0 4px;
 }
 
+/* 列表里的作品用细分隔线排开，不再一张张浮起来的卡片 */
 .work-card {
   display: flex;
-  gap: 14px;
-  background: #fff;
-  border: 1px solid #ebeef5;
-  border-radius: 8px;
-  padding: 14px 16px;
-  margin-bottom: 10px;
-  transition: box-shadow 0.15s;
+  gap: 16px;
+  padding: 16px 14px;
+  border-bottom: 1px solid var(--smc-border);
 }
 
-.work-card:hover {
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+.work-card:last-of-type {
+  border-bottom: none;
 }
 
 .work-side {
@@ -563,10 +616,12 @@ onMounted(async () => {
 .channel-tag {
   color: #fff;
   border: none;
+  border-radius: 4px;
 }
 
 .work-scenic {
   font-size: 12px;
+  color: var(--smc-text-secondary);
   line-height: 1.4;
   word-break: break-all;
 }
@@ -580,16 +635,33 @@ onMounted(async () => {
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
-  line-height: 1.5;
-  color: #303133;
+  line-height: 1.55;
+  color: var(--smc-text);
   word-break: break-word;
 }
 
 .work-link {
   flex: 0 0 auto;
-  margin-top: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  opacity: 0.55;
+  transition: opacity 0.15s, background-color 0.15s;
+}
+
+.work-link:hover {
+  opacity: 1;
+  background: var(--smc-bg);
+}
+
+.work-note {
+  display: flex;
+  align-items: center;
 }
 
 .work-note,
@@ -601,7 +673,7 @@ onMounted(async () => {
 }
 
 .work-desc {
-  color: #606266;
+  color: var(--el-text-color-regular);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
@@ -614,12 +686,12 @@ onMounted(async () => {
   gap: 14px;
   flex-wrap: wrap;
   font-size: 12px;
-  color: #909399;
+  color: var(--smc-text-secondary);
   margin-top: 6px;
 }
 
 .meta-author {
-  color: #606266;
+  color: var(--el-text-color-regular);
   font-weight: 500;
 }
 
@@ -632,10 +704,14 @@ onMounted(async () => {
   gap: 16px;
   align-items: center;
   font-size: 12px;
-  color: #909399;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed #f0f0f0;
+  color: var(--smc-text-secondary);
+  margin-top: 10px;
+}
+
+.work-stats b {
+  font-weight: 500;
+  color: var(--el-text-color-regular);
+  font-variant-numeric: tabular-nums;
 }
 
 .work-toggle {
@@ -658,6 +734,7 @@ onMounted(async () => {
 
 .pager-label {
   font-size: 12px;
+  color: var(--smc-text-tertiary);
 }
 
 @media (max-width: 1100px) {

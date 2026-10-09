@@ -1,32 +1,29 @@
 <template>
-  <div v-loading="loading">
+  <div v-loading="loading" class="settings-page">
     <div class="page-header">
-      <div>
-        <h2 class="page-title">系统设置</h2>
-        <p class="page-subtitle">
-          这里改的设置存在数据库里，优先级高于 config.yaml，保存后立即生效
-        </p>
-      </div>
+      <h2 class="page-title">
+        系统设置
+        <InfoTip :width="360">
+          设置存数据库，优先级高于 config.yaml，保存后立即生效。<br>
+          配置文件：<span class="mono">{{ configFile || '未找到，使用内置默认值' }}</span><br>
+          数据库、Redis、服务端口只能改文件，避免在页面上把服务改到连不上。
+        </InfoTip>
+      </h2>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
     </div>
-
-    <el-alert type="info" :closable="false" style="margin-bottom: 16px">
-      配置文件：<span class="mono">{{ configFile || '（未找到，使用内置默认值）' }}</span>。
-      数据库、Redis、服务端口这些只能改文件——避免在页面上把服务改到连不上。
-    </el-alert>
 
     <el-tabs v-model="tab">
       <!-- 代理 -->
       <el-tab-pane label="代理设置" name="proxy">
         <el-row :gutter="16">
-          <el-col :span="14">
+          <el-col :xs="24" :lg="14" class="col">
             <el-card shadow="never" header="快代理私密代理">
-              <el-form :model="proxy" label-width="150px">
-                <el-form-item label="启用代理">
+              <el-form :model="proxy" label-width="150px" class="settings-form">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">启用代理<InfoTip content="关闭后所有平台走本机直连" /></span>
+                  </template>
                   <el-switch v-model="proxy.enabled" />
-                  <span class="muted" style="margin-left: 10px; font-size: 12px">
-                    关闭后所有平台走本机直连
-                  </span>
                 </el-form-item>
                 <el-form-item label="鉴权方式">
                   <el-radio-group v-model="proxy.auth_mode">
@@ -47,34 +44,39 @@
                   <el-input v-model="proxy.password" type="password" show-password />
                 </el-form-item>
 
-                <el-divider content-position="left">轮换策略</el-divider>
+                <div class="section-title form-section">轮换策略</div>
 
-                <el-form-item label="IP 池隔离">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">IP 池隔离<InfoTip>
+                      每平台独立：一个平台被封不牵连其他平台<br>全平台共用：省快代理提取次数
+                    </InfoTip></span>
+                  </template>
                   <el-radio-group v-model="proxy.pool_scope">
                     <el-radio value="channel">每平台独立 IP</el-radio>
                     <el-radio value="global">全平台共用</el-radio>
                   </el-radio-group>
-                  <div class="muted" style="font-size: 12px">
-                    独立：一个平台被封不牵连其他平台；共用：省快代理提取次数
-                  </div>
                 </el-form-item>
                 <el-form-item label="IP 有效期下限">
-                  <el-input-number v-model="proxy.min_ttl_seconds" :min="60" :step="60" style="width: 150px" />
-                  <span class="muted" style="margin-left: 6px">秒</span>
+                  <el-input-number v-model="proxy.min_ttl_seconds" :min="60" :step="60" class="num" />
+                  <span class="unit">秒</span>
                 </el-form-item>
                 <el-form-item label="IP 有效期上限">
-                  <el-input-number v-model="proxy.max_ttl_seconds" :min="60" :step="60" style="width: 150px" />
-                  <span class="muted" style="margin-left: 6px">秒</span>
+                  <el-input-number v-model="proxy.max_ttl_seconds" :min="60" :step="60" class="num" />
+                  <span class="unit">秒</span>
                 </el-form-item>
-                <el-form-item label="每 N 次请求换 IP">
-                  <el-input-number v-model="proxy.rotate_every_n_requests" :min="0" style="width: 150px" />
-                  <span class="muted" style="margin-left: 6px">0 = 只按有效期和失败信号换</span>
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">每 N 次请求换 IP<InfoTip content="0 = 只按有效期和失败信号换" /></span>
+                  </template>
+                  <el-input-number v-model="proxy.rotate_every_n_requests" :min="0" class="num" />
+                  <span class="unit">次</span>
                 </el-form-item>
                 <el-form-item label="新 IP 先验连通性">
                   <el-switch v-model="proxy.validate_on_fetch" />
                 </el-form-item>
 
-                <el-form-item>
+                <el-form-item class="form-actions">
                   <el-button type="primary" :loading="saving" @click="saveSection('proxy', proxy)">
                     保存代理设置
                   </el-button>
@@ -84,11 +86,11 @@
             </el-card>
           </el-col>
 
-          <el-col :span="10">
+          <el-col :xs="24" :lg="10" class="col">
             <el-card shadow="never" header="当前出口 IP">
-              <div v-if="!proxyStatus?.enabled" class="muted">代理未启用</div>
+              <div v-if="!proxyStatus?.enabled" class="muted small">代理未启用</div>
               <template v-else>
-                <div class="muted" style="margin-bottom: 10px">
+                <div class="muted small" style="margin-bottom: 10px">
                   隔离方式：{{ proxyStatus.pool_scope === 'channel' ? '每平台独立' : '全平台共用' }}
                 </div>
                 <el-descriptions v-if="Object.keys(proxyStatus.pools || {}).length" :column="1" border size="small">
@@ -96,28 +98,28 @@
                     v-for="(info, scope) in proxyStatus.pools" :key="scope"
                     :label="String(scope) === 'global' ? '全平台' : channelLabel(String(scope))"
                   >
-                    <div class="mono">{{ info.current_ip || '未持有' }}</div>
-                    <div v-if="info.remaining_ttl > 0" class="muted" style="font-size: 12px">
+                    <span class="mono">{{ info.current_ip || '未持有' }}</span>
+                    <span v-if="info.remaining_ttl > 0" class="muted small" style="margin-left: 8px">
                       剩余 {{ info.remaining_ttl }} 秒
-                    </div>
+                    </span>
                   </el-descriptions-item>
                 </el-descriptions>
-                <div v-else class="muted">还没有采集任务取过 IP</div>
+                <div v-else class="muted small">还没有采集任务取过 IP</div>
               </template>
 
-              <el-divider />
+              <div class="section-title" style="margin-top: 20px">服务状态</div>
               <el-descriptions :column="1" border size="small">
                 <el-descriptions-item label="Redis">
                   <el-tag :type="redisStatus?.connected ? 'success' : 'danger'" size="small">
                     {{ redisStatus?.connected ? '已连接' : '未连接' }}
                   </el-tag>
-                  <span v-if="redisStatus && !redisStatus.is_real_redis" class="muted" style="margin-left: 8px">
+                  <span v-if="redisStatus && !redisStatus.is_real_redis" class="muted small" style="margin-left: 8px">
                     退化为进程内缓存
                   </span>
                 </el-descriptions-item>
                 <el-descriptions-item label="调度器">
                   {{ schedulerStatus?.enabled ? '运行中' : '已关闭' }}
-                  <span class="muted">
+                  <span class="muted small">
                     （{{ schedulerStatus?.running_count || 0 }}/{{ schedulerStatus?.max_running || 0 }}）
                   </span>
                 </el-descriptions-item>
@@ -129,130 +131,165 @@
 
       <!-- 采集参数 -->
       <el-tab-pane label="采集参数" name="crawl">
-        <el-card shadow="never" style="max-width: 720px">
-          <el-form :model="crawl" label-width="200px">
-            <el-form-item label="新建任务默认关键字上限">
-              <el-input-number v-model="crawl.default_keyword_limit" :min="1" :max="1000" style="width: 150px" />
-              <span class="muted" style="margin-left: 8px">「从景区带入」一次最多带这么多</span>
+        <el-card shadow="never" class="narrow-card">
+          <el-form :model="crawl" label-width="150px" class="settings-form">
+            <div class="section-title form-section">任务默认值</div>
+            <el-form-item>
+              <template #label>
+                <span class="lbl">默认关键字上限<InfoTip content="新建任务「从景区带入」时一次最多带这么多关键字" /></span>
+              </template>
+              <el-input-number v-model="crawl.default_keyword_limit" :min="1" :max="1000" class="num" />
+              <span class="unit">个</span>
             </el-form-item>
-            <el-form-item label="默认每关键字作品数">
-              <el-input-number v-model="crawl.default_max_works" :min="0" style="width: 150px" />
+            <el-form-item label="每关键字作品数">
+              <el-input-number v-model="crawl.default_max_works" :min="0" class="num" />
+              <span class="unit">条</span>
             </el-form-item>
-            <el-form-item label="默认每作品评论数">
-              <el-input-number v-model="crawl.default_max_comments_per_work" :min="0" style="width: 150px" />
+            <el-form-item label="每作品评论数">
+              <el-input-number v-model="crawl.default_max_comments_per_work" :min="0" class="num" />
+              <span class="unit">条</span>
             </el-form-item>
-            <el-form-item label="默认采集子评论">
+            <el-form-item label="采集子评论">
               <el-switch v-model="crawl.enable_sub_comments" />
             </el-form-item>
             <el-form-item label="最深评论层级">
-              <el-input-number v-model="crawl.max_comment_level" :min="1" :max="5" style="width: 150px" />
+              <el-input-number v-model="crawl.max_comment_level" :min="1" :max="5" class="num" />
+              <span class="unit">层</span>
             </el-form-item>
-            <el-form-item label="请求间隔（秒）">
-              <el-input-number v-model="crawl.request_interval_seconds" :min="0" :step="0.5" style="width: 150px" />
-              <span class="muted" style="margin-left: 8px">实际会带 ±20% 抖动</span>
+
+            <div class="section-title form-section">请求与超时</div>
+            <el-form-item>
+              <template #label>
+                <span class="lbl">请求间隔<InfoTip content="实际会带 ±20% 抖动" /></span>
+              </template>
+              <el-input-number v-model="crawl.request_interval_seconds" :min="0" :step="0.5" class="num" />
+              <span class="unit">秒</span>
             </el-form-item>
-            <el-form-item label="单次请求超时（秒）">
-              <el-input-number v-model="crawl.request_timeout_seconds" :min="5" style="width: 150px" />
+            <el-form-item label="单次请求超时">
+              <el-input-number v-model="crawl.request_timeout_seconds" :min="5" class="num" />
+              <span class="unit">秒</span>
             </el-form-item>
             <el-form-item label="失败重试次数">
-              <el-input-number v-model="crawl.max_retries" :min="1" :max="10" style="width: 150px" />
+              <el-input-number v-model="crawl.max_retries" :min="1" :max="10" class="num" />
+              <span class="unit">次</span>
             </el-form-item>
-            <el-form-item label="任务看门狗（分钟）">
-              <el-input-number v-model="crawl.task_timeout_minutes" :min="0" :step="30" style="width: 150px" />
-              <div class="muted" style="font-size: 12px; margin-top: 4px">
-                运行超过这个时长的任务会被取消（0 = 不限制）。
-                平台风控把连接挂住时任务会永远卡在一个请求上，看门狗负责把它收掉。
-              </div>
+            <el-form-item>
+              <template #label>
+                <span class="lbl">任务看门狗<InfoTip>
+                  运行超过这个时长的任务会被取消，0 = 不限制。<br>
+                  平台风控把连接挂住时任务会一直卡在一个请求上，看门狗负责把它收掉。
+                </InfoTip></span>
+              </template>
+              <el-input-number v-model="crawl.task_timeout_minutes" :min="0" :step="30" class="num" />
+              <span class="unit">分钟</span>
             </el-form-item>
-            <el-divider content-position="left">
-              <span style="font-size: 13px; color: #7a8699">单账号配额与冷却（防账号被封）</span>
-            </el-divider>
+
+            <!--
+              平台判「机器号」不只看请求间隔，还看单个账号的总量和连续在线时长，
+              所以单独设这两道闸：任一超限账号就进入冷却，挑号时跳过，到期自动恢复。
+            -->
+            <div class="section-title form-section">
+              单账号配额与冷却
+              <InfoTip :width="380">
+                防账号被封：单账号<b>每日总量</b>或<b>连续工作时长</b>任一超限即进入冷却，挑号时自动跳过，到期自动恢复。<br>
+                <b>三项留 0 = 按平台出厂默认</b>：小红书 150 条/天、45 分钟/次、冷却 180 分钟；
+                抖音/快手 300 条、90 分钟；微博 500 条、120 分钟。<br>
+                填了则全平台统一使用；单个平台要不同，到<b>账号管理 →「配额与轮换」</b>按平台填（优先于这里）。
+              </InfoTip>
+            </div>
             <el-form-item label="启用配额">
               <el-switch v-model="crawl.account_quota.enabled" />
-              <div class="muted" style="font-size: 12px; margin-top: 4px">
-                平台判「机器号」看的不只是请求间隔（那个是上面的「请求间隔」和采集节奏），
-                还看<b>一个账号的总量和连续在线时长</b>。这两道闸任一超了，账号就进入冷却，
-                挑账号时自动跳过，到期自动恢复。
-              </div>
             </el-form-item>
-            <el-form-item label="每账号每天最多采">
+            <el-form-item>
+              <template #label>
+                <span class="lbl">每账号每天最多采<InfoTip content="0 = 用平台默认" /></span>
+              </template>
               <el-input-number
                 v-model="crawl.account_quota.daily_works" :min="0" :step="50"
-                style="width: 150px"
+                class="num"
               />
-              <span class="muted" style="margin-left: 8px">条作品，0 = 用平台默认</span>
+              <span class="unit">条作品</span>
             </el-form-item>
-            <el-form-item label="单次连续最多工作">
+            <el-form-item>
+              <template #label>
+                <span class="lbl">单次连续最多工作<InfoTip content="0 = 用平台默认" /></span>
+              </template>
               <el-input-number
                 v-model="crawl.account_quota.session_minutes" :min="0" :step="15"
-                style="width: 150px"
+                class="num"
               />
-              <span class="muted" style="margin-left: 8px">分钟，0 = 用平台默认</span>
+              <span class="unit">分钟</span>
             </el-form-item>
-            <el-form-item label="触发后冷却">
+            <el-form-item>
+              <template #label>
+                <span class="lbl">触发后冷却<InfoTip content="0 = 用平台默认" /></span>
+              </template>
+              <!-- ⚠️ min 必须是 0。以前是 1：没配过时页面初始化成 0，被输入框夹成 1，
+                   一点「保存采集参数」就把全平台冷却改成了 1 分钟——冷却形同虚设。
+                   后端 _apply 把 0 当"没填、用平台默认"，和上面两项一致。 -->
               <el-input-number
-                v-model="crawl.account_quota.cooldown_minutes" :min="1" :step="30"
-                style="width: 150px"
+                v-model="crawl.account_quota.cooldown_minutes" :min="0" :step="30"
+                class="num"
               />
-              <span class="muted" style="margin-left: 8px">分钟</span>
-              <div class="muted" style="font-size: 12px; margin-top: 4px">
-                <b>三项都留 0 = 按平台出厂默认</b>：小红书最保守（150 条/天、45 分钟/次、
-                冷却 180 分钟），抖音/快手 300 条、90 分钟，微博 500 条、120 分钟。
-                填了就全平台统一用你填的值。
-              </div>
+              <span class="unit">分钟</span>
             </el-form-item>
-            <el-form-item label="账号轮换锁">
+            <!--
+              轮换锁的由来：挑号原来按「最久没校验」排序，而「最久没校验」不等于「最久没采集」，
+              结果号有三个、压力全在一个上。它跟冷却不一样：冷却是硬闸门，这个只是「有别人就让别人上」。
+            -->
+            <el-form-item>
+              <template #label>
+                <span class="lbl">账号轮换锁<InfoTip :width="360">
+                  一个号被派去采集后，这段时间内<b>先让同组的其他号上</b>，避免压力集中在一个号。<br>
+                  0 = 默认 12 小时；单个号想用别的时长，在账号管理里那一行「编辑」中单独填。<br>
+                  <b>只有一个号（或都在锁定期内）时照用不误</b>，不会卡住采集。
+                </InfoTip></span>
+              </template>
               <el-switch v-model="crawl.account_quota.rotate_lock_enabled" />
               <el-input-number
                 v-model="crawl.account_quota.rotate_lock_hours" :min="0" :max="336" :step="6"
-                style="width: 130px; margin-left: 12px"
+                class="num" style="margin-left: 12px"
                 :disabled="crawl.account_quota.rotate_lock_enabled === false"
               />
-              <span class="muted" style="margin-left: 8px">小时</span>
-              <div class="muted" style="font-size: 12px; margin-top: 4px">
-                一个号被派去采集之后，这段时间内<b>先让同组的其他号上</b>——
-                挑号原来按「最久没校验」排序，而「最久没校验」不等于「最久没采集」，
-                结果就是号有三个、压力全在一个上。0 = 用默认的 12 小时；
-                单个号想用别的时长，在账号管理里那一行单独填。
-                <br>
-                <b>只有一个号（或所有号都在锁定期内）时照用不误</b>，不会把采集卡住——
-                它跟冷却不一样，冷却是硬闸门，这个只是「有别人就让别人上」。
-              </div>
+              <span class="unit">小时</span>
             </el-form-item>
-            <el-divider content-position="left">
-              <span style="font-size: 13px; color: #7a8699">采集水印（防重复采）</span>
-            </el-divider>
+
+            <!--
+              Redis 没连上时水印自动退化为「不跳过」——宁可重复采，也不能因为记号读不到就漏采。
+            -->
+            <div class="section-title form-section">
+              采集水印
+              <InfoTip>
+                防重复采：采过的关键字和作品在 Redis 里留记号，任务重开时直接跳过。<br>
+                Redis 未连接时自动退化为「不跳过」，宁可重复采也不漏采。
+              </InfoTip>
+            </div>
             <el-form-item label="启用水印">
               <el-switch v-model="crawl.dedup.enabled" />
-              <div class="muted" style="font-size: 12px; margin-top: 4px">
-                采过的关键字和作品会在 Redis 里留个记号，任务重开时直接跳过，
-                不用把同样的内容再采一遍。Redis 没连上时自动退化为「不跳过」——
-                宁可重复采，也不能因为记号读不到就漏采。
-              </div>
-            </el-form-item>
-            <el-form-item label="关键字水印有效期">
-              <el-input-number v-model="crawl.dedup.keyword_ttl_seconds" :min="0" :step="3600"
-                               :disabled="!crawl.dedup.enabled" style="width: 150px" />
-              <span class="muted" style="margin-left: 8px">
-                秒（{{ hoursOf(crawl.dedup.keyword_ttl_seconds) }}）
-              </span>
-              <div class="muted" style="font-size: 12px; margin-top: 4px">
-                这段时间内同一个关键字不再重采。设短了会重复采，
-                设长了新内容要等过期才采得到。
-              </div>
-            </el-form-item>
-            <el-form-item label="作品水印有效期">
-              <el-input-number v-model="crawl.dedup.work_ttl_seconds" :min="0" :step="86400"
-                               :disabled="!crawl.dedup.enabled" style="width: 150px" />
-              <span class="muted" style="margin-left: 8px">
-                秒（{{ hoursOf(crawl.dedup.work_ttl_seconds) }}）
-              </span>
-              <div class="muted" style="font-size: 12px; margin-top: 4px">
-                作品/笔记/微博级别的记号，采过的直接跳过。
-                注意它<b>不分景区</b>：同一条作品被两个景区的关键字搜到，也只采一次。
-              </div>
             </el-form-item>
             <el-form-item>
+              <template #label>
+                <span class="lbl">关键字水印有效期<InfoTip>
+                  这段时间内同一关键字不再重采。<br>设短了会重复采，设长了新内容要等过期才采得到。
+                </InfoTip></span>
+              </template>
+              <el-input-number v-model="crawl.dedup.keyword_ttl_seconds" :min="0" :step="3600"
+                               :disabled="!crawl.dedup.enabled" class="num" />
+              <span class="unit">秒 · {{ hoursOf(crawl.dedup.keyword_ttl_seconds) }}</span>
+            </el-form-item>
+            <el-form-item>
+              <template #label>
+                <span class="lbl">作品水印有效期<InfoTip>
+                  作品 / 笔记 / 微博级别的记号，采过的直接跳过。<br>
+                  <b>不分景区</b>：同一条作品被两个景区的关键字搜到，也只采一次。
+                </InfoTip></span>
+              </template>
+              <el-input-number v-model="crawl.dedup.work_ttl_seconds" :min="0" :step="86400"
+                               :disabled="!crawl.dedup.enabled" class="num" />
+              <span class="unit">秒 · {{ hoursOf(crawl.dedup.work_ttl_seconds) }}</span>
+            </el-form-item>
+
+            <el-form-item class="form-actions">
               <el-button type="primary" :loading="saving" @click="saveSection('crawl', crawl)">
                 保存采集参数
               </el-button>
@@ -264,20 +301,23 @@
       <!-- 调度与浏览器 -->
       <el-tab-pane label="调度与浏览器" name="runtime">
         <el-row :gutter="16">
-          <el-col :span="12">
+          <el-col :xs="24" :lg="10" class="col">
             <el-card shadow="never" header="调度器">
-              <el-form :model="scheduler" label-width="150px">
-                <el-form-item label="启用调度器">
+              <el-form :model="scheduler" label-width="150px" class="settings-form">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">启用调度器<InfoTip content="关闭后任务只能手动触发" /></span>
+                  </template>
                   <el-switch v-model="scheduler.enabled" />
-                  <div class="muted" style="font-size: 12px">关闭后任务只能手动触发</div>
                 </el-form-item>
                 <el-form-item label="同时运行任务数">
-                  <el-input-number v-model="scheduler.max_running_tasks" :min="1" :max="20" style="width: 150px" />
+                  <el-input-number v-model="scheduler.max_running_tasks" :min="1" :max="20" class="num" />
+                  <span class="unit">个</span>
                 </el-form-item>
                 <el-form-item label="时区">
                   <el-input v-model="scheduler.timezone" style="width: 200px" />
                 </el-form-item>
-                <el-form-item>
+                <el-form-item class="form-actions">
                   <el-button type="primary" :loading="saving" @click="saveSection('scheduler', scheduler)">
                     保存
                   </el-button>
@@ -285,48 +325,54 @@
               </el-form>
             </el-card>
           </el-col>
-          <el-col :span="12">
+          <el-col :xs="24" :lg="14" class="col">
             <el-card shadow="never" header="浏览器">
-              <el-form :model="browser" label-width="170px">
-                <el-form-item label="采集用无头模式">
+              <el-form :model="browser" label-width="150px" class="settings-form">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">采集用无头模式<InfoTip>
+                      作用于「采集」和「采集 Cookie」。<br>排查风控时关掉，能看到平台弹了什么。
+                    </InfoTip></span>
+                  </template>
                   <el-switch v-model="browser.headless" />
-                  <div class="muted" style="font-size: 12px">
-                    管「采集」和「采集 Cookie」。排查风控时关掉它，能看到平台弹了什么
-                  </div>
                 </el-form-item>
-                <el-form-item label="登录窗口用无头">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">登录窗口用无头<InfoTip :width="340">
+                      作用于「打开浏览器」的登录窗口。<b>默认关</b>：无头容易被平台风控拦掉，二维码也可能渲染不出来。<br>
+                      服务跑在自己电脑上、不想被弹窗打扰时可开启，画面通过推流照样看得到。
+                    </InfoTip></span>
+                  </template>
                   <el-switch v-model="browser.headless_login" />
-                  <div class="muted" style="font-size: 12px">
-                    管「打开浏览器」那个登录窗口。<b>默认关</b>——无头容易被平台风控拦掉，
-                    二维码也可能渲染不出来。服务跑在自己电脑上、不想被弹窗打扰就打开它，
-                    画面通过推流照样看得到
-                  </div>
                 </el-form-item>
-                <el-form-item label="定时采集 Cookie（分钟）">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">定时采集 Cookie<InfoTip content="后台按这个间隔重抓各账号 Cookie，失效的自动标红。0 = 关闭" /></span>
+                  </template>
                   <el-input-number
                     v-model="browser.auto_refresh_cookie_minutes"
-                    :min="0" :step="10" style="width: 150px"
+                    :min="0" :step="10" class="num"
                   />
-                  <div class="muted" style="font-size: 12px">
-                    后台按这个间隔把各账号的 Cookie 重抓一遍，失效的自动标红。0 = 关闭
-                  </div>
+                  <span class="unit">分钟</span>
                 </el-form-item>
-                <el-form-item label="登录态复用时长（秒）">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">登录态复用时长<InfoTip content="Cookie 在这个时间内视为新鲜，直接用，不启动浏览器" /></span>
+                  </template>
                   <el-input-number
                     v-model="browser.session_check_interval_seconds"
-                    :min="60" :step="60" style="width: 150px"
+                    :min="60" :step="60" class="num"
                   />
-                  <div class="muted" style="font-size: 12px">
-                    Cookie 在这个时间内视为新鲜，直接用，不启动浏览器
-                  </div>
+                  <span class="unit">秒</span>
                 </el-form-item>
-                <el-form-item label="登录等待超时（秒）">
-                  <el-input-number v-model="browser.login_timeout_seconds" :min="60" :step="30" style="width: 150px" />
+                <el-form-item label="登录等待超时">
+                  <el-input-number v-model="browser.login_timeout_seconds" :min="60" :step="30" class="num" />
+                  <span class="unit">秒</span>
                 </el-form-item>
                 <el-form-item label="浏览器可执行文件">
                   <el-input v-model="browser.executable_path" placeholder="留空用 Playwright 自带的" />
                 </el-form-item>
-                <el-form-item>
+                <el-form-item class="form-actions">
                   <el-button type="primary" :loading="saving" @click="saveSection('browser', browser)">
                     保存
                   </el-button>
@@ -340,52 +386,72 @@
       <!-- ==================== AI 标注 ==================== -->
       <el-tab-pane label="AI 标注" name="labeling">
         <el-row :gutter="16">
-          <el-col :span="14">
+          <el-col :xs="24" :lg="14" class="col">
             <el-card shadow="never">
               <template #header>边采边标</template>
-              <el-form label-width="150px">
-                <el-form-item label="开启边采边标">
+              <el-form label-width="150px" class="settings-form">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">开启边采边标<InfoTip>
+                      采集到的评论实时进入标注队列。<br>
+                      <b>开启前会自检</b>（模型配置、数据库联调、表结构），任一项不过就不标注，不会静默跳过。
+                    </InfoTip></span>
+                  </template>
                   <el-switch v-model="labeling.enabled" />
-                  <span class="hint">
-                    开启后采集到的评论会实时进标注队列。
-                    <b>开之前会自检</b>（模型配置、数据库联调、表结构），
-                    任一项不过就不标注，不会静默跳过。
-                  </span>
                 </el-form-item>
-                <el-form-item label="模型 API Key">
+
+                <div class="section-title form-section">模型</div>
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">API Key<InfoTip content="也可用环境变量 SMC_LABELING__ARK__API_KEY" /></span>
+                  </template>
                   <el-input v-model="labeling.ark.api_key" type="password" show-password
-                            placeholder="留空 = 不修改；也可用环境变量 SMC_LABELING__ARK__API_KEY" />
+                            placeholder="留空 = 不修改" />
                 </el-form-item>
-                <el-form-item label="模型名称">
-                  <el-input v-model="labeling.ark.model" placeholder="填方舟控制台里已开通的模型，如 glm-5-3-flash-260828" />
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">模型名称<InfoTip content="填方舟控制台里已开通的模型" /></span>
+                  </template>
+                  <el-input v-model="labeling.ark.model" placeholder="如 glm-5-3-flash-260828" />
                 </el-form-item>
                 <el-form-item label="模型地址">
                   <el-input v-model="labeling.ark.base_url" />
                 </el-form-item>
-                <el-form-item label="限流 QPS">
-                  <el-input-number v-model="labeling.ark.qps" :min="0" :max="100" />
-                  <span class="hint">每秒最多几次模型调用，0 = 不限流</span>
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">限流 QPS<InfoTip content="每秒最多几次模型调用，0 = 不限流" /></span>
+                  </template>
+                  <el-input-number v-model="labeling.ark.qps" :min="0" :max="100" class="num" />
                 </el-form-item>
-                <el-form-item label="few-shot 示例">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">few-shot 示例<InfoTip content="准确率明显更好，代价约 1.5k tokens/条" /></span>
+                  </template>
                   <el-switch v-model="labeling.ark.with_fewshot" />
-                  <span class="hint">准确率明显更好，代价约 1.5k tokens/条</span>
                 </el-form-item>
-                <el-form-item label="队列">
-                  <el-select v-model="labeling.queue_backend" style="width: 160px">
+
+                <div class="section-title form-section">执行</div>
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">队列<InfoTip content="memory 重启会丢掉没标完的任务" /></span>
+                  </template>
+                  <el-select v-model="labeling.queue_backend" class="num">
                     <el-option label="memory（单机）" value="memory" />
                     <el-option label="redis（生产）" value="redis" />
                   </el-select>
-                  <span class="hint">memory 重启会丢掉没标完的任务</span>
                 </el-form-item>
                 <el-form-item label="并发线程">
-                  <el-input-number v-model="labeling.worker_concurrency" :min="1" :max="32" />
-                </el-form-item>
-                <el-form-item label="低置信阈值">
-                  <el-input-number v-model="labeling.low_confidence_threshold"
-                                   :min="0" :max="1" :step="0.05" />
-                  <span class="hint">低于它的标成「未人工复核」，在标注审核页面能筛出来</span>
+                  <el-input-number v-model="labeling.worker_concurrency" :min="1" :max="32" class="num" />
                 </el-form-item>
                 <el-form-item>
+                  <template #label>
+                    <span class="lbl">低置信阈值<InfoTip content="低于它的标成「未人工复核」，在标注审核页面能筛出来" /></span>
+                  </template>
+                  <el-input-number v-model="labeling.low_confidence_threshold"
+                                   :min="0" :max="1" :step="0.05" class="num" />
+                </el-form-item>
+
+                <el-form-item class="form-actions">
                   <el-button type="primary" :loading="saving"
                              @click="saveSection('labeling', labeling)">保存</el-button>
                   <el-button :loading="checking" @click="runLabelingCheck">自检</el-button>
@@ -393,23 +459,27 @@
               </el-form>
             </el-card>
           </el-col>
-          <el-col :span="10">
+          <el-col :xs="24" :lg="10" class="col">
             <el-card shadow="never">
               <template #header>自检结果</template>
-              <el-empty v-if="!labelCheck" description="点左边的「自检」看模型配置、数据库联调是否就绪" />
+              <el-empty v-if="!labelCheck" :image-size="80" description="点「自检」检查模型配置与数据库是否就绪" />
               <template v-else>
                 <el-alert :closable="false" show-icon
                           :type="labelCheck.passed ? 'success' : 'error'"
                           :title="labelCheck.summary" />
                 <el-table :data="labelCheck.items" size="small" style="margin-top: 12px">
-                  <el-table-column width="46" align="center">
+                  <el-table-column width="40" align="center">
                     <template #default="{ row }">
                       <el-icon v-if="row.ok" color="#67c23a"><CircleCheckFilled /></el-icon>
                       <el-icon v-else color="#f56c6c"><CircleCloseFilled /></el-icon>
                     </template>
                   </el-table-column>
-                  <el-table-column prop="name" label="检查项" width="130" />
-                  <el-table-column prop="detail" label="说明" />
+                  <el-table-column prop="name" label="检查项" width="120" />
+                  <el-table-column label="说明">
+                    <template #default="{ row }">
+                      <span class="check-detail" :class="{ 'is-fail': !row.ok }">{{ row.detail }}</span>
+                    </template>
+                  </el-table-column>
                 </el-table>
               </template>
             </el-card>
@@ -420,46 +490,61 @@
       <!-- ==================== 通知 ==================== -->
       <el-tab-pane label="通知" name="notify">
         <el-row :gutter="16">
-          <el-col :span="14">
+          <el-col :xs="24" :lg="14" class="col">
             <el-card shadow="never">
               <template #header>飞书机器人</template>
-              <el-form label-width="150px">
-                <el-form-item label="开启通知">
+              <el-form label-width="150px" class="settings-form">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">开启通知<InfoTip content="采集需要人工介入（账号失效 / 二次验证 / 要登录）或采集报错时推送" /></span>
+                  </template>
                   <el-switch v-model="notify.enabled" />
-                  <span class="hint">
-                    采集需要人工介入（账号失效 / 二次验证 / 要登录）或采集报错时推送
-                  </span>
                 </el-form-item>
-                <el-form-item label="机器人地址">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">机器人地址<InfoTip content="飞书群机器人 Webhook，形如 https://open.feishu.cn/open-apis/bot/v2/hook/xxx" /></span>
+                  </template>
                   <el-input v-model="notify.feishu_webhook" type="password" show-password
-                            placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxx（留空 = 不修改）" />
+                            placeholder="留空 = 不修改" />
                 </el-form-item>
-                <el-form-item label="远程账号">
-                  <el-input v-model="notify.remote_account" placeholder="向日葵账号，会写进通知正文" />
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">远程账号<InfoTip content="向日葵账号，会写进通知正文" /></span>
+                  </template>
+                  <el-input v-model="notify.remote_account" placeholder="向日葵账号" />
                 </el-form-item>
                 <el-form-item label="远程密码">
                   <el-input v-model="notify.remote_password" type="password" show-password
                             placeholder="留空 = 不修改" />
                 </el-form-item>
-                <el-form-item label="同类问题冷却">
-                  <el-input-number v-model="notify.cooldown_seconds" :min="0" :step="60" />
-                  <span class="hint">
-                    秒。同一平台的同一类问题在这段时间内只发一次——
-                    否则一轮采集能刷出上百条一样的消息，真出事反而被淹掉
-                  </span>
-                </el-form-item>
-                <el-form-item label="需登录时暂停">
-                  <el-switch v-model="notify.pause_on_login_required" />
-                  <span class="hint">
-                    开启后遇到需要登录/验证会<b>暂停等人处理</b>，
-                    检测到账号恢复自动继续；关掉则直接跳过该平台
-                  </span>
-                </el-form-item>
-                <el-form-item label="最多等待">
-                  <el-input-number v-model="notify.pause_timeout_minutes" :min="0" :max="720" />
-                  <span class="hint">分钟。到点还没人处理就放弃这个平台</span>
+
+                <div class="section-title form-section">节流与暂停</div>
+                <!-- 不做冷却的话一轮采集能刷出上百条一样的消息，真出事反而被淹掉 -->
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">同类问题冷却<InfoTip content="同一平台的同一类问题在这段时间内只发一次，避免刷屏淹没真正的问题" /></span>
+                  </template>
+                  <el-input-number v-model="notify.cooldown_seconds" :min="0" :step="60" class="num" />
+                  <span class="unit">秒</span>
                 </el-form-item>
                 <el-form-item>
+                  <template #label>
+                    <span class="lbl">需登录时暂停<InfoTip>
+                      开启：遇到需要登录/验证时<b>暂停等人处理</b>，检测到账号恢复自动继续。<br>
+                      关闭：直接跳过该平台。
+                    </InfoTip></span>
+                  </template>
+                  <el-switch v-model="notify.pause_on_login_required" />
+                </el-form-item>
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">最多等待<InfoTip content="到点还没人处理就放弃这个平台" /></span>
+                  </template>
+                  <el-input-number v-model="notify.pause_timeout_minutes" :min="0" :max="720" class="num" />
+                  <span class="unit">分钟</span>
+                </el-form-item>
+
+                <el-form-item class="form-actions">
                   <el-button type="primary" :loading="saving"
                              @click="saveSection('notify', notify)">保存</el-button>
                   <el-button :loading="testingNotify" @click="testNotify">发送测试</el-button>
@@ -467,13 +552,13 @@
               </el-form>
             </el-card>
           </el-col>
-          <el-col :span="10">
+          <el-col :xs="24" :lg="10" class="col">
             <el-card shadow="never">
               <template #header>消息预览</template>
               <el-alert v-if="notifyResult && notifyResult.error" type="error" :closable="false"
-                        show-icon :title="notifyResult.error" style="margin-bottom: 10px" />
+                        show-icon :title="notifyResult.error" style="margin-bottom: 12px" />
               <el-alert v-else-if="notifyResult" type="success" :closable="false" show-icon
-                        title="已发出，去飞书群里看看" style="margin-bottom: 10px" />
+                        title="已发出，去飞书群里看看" style="margin-bottom: 12px" />
               <pre class="notify-preview">{{ notifyResult?.preview || previewPlaceholder }}</pre>
             </el-card>
           </el-col>
@@ -669,13 +754,58 @@ onMounted(load)
 </script>
 
 <style scoped>
+.col { margin-bottom: 16px; }
+.narrow-card { max-width: 760px; }
+
+/* 字段名 + ⓘ：包一层 span，避免 label 的 flex 布局把图标顶到上沿 */
+.lbl { display: inline-block; white-space: nowrap; }
+
+.settings-form :deep(.el-form-item) { margin-bottom: 18px; }
+.settings-form :deep(.el-form-item__label) { font-size: 13px; }
+.settings-form .num { width: 160px; }
+
+/* 卡片内分段标题：首段贴顶，后续段落用细分隔线隔开 */
+.form-section {
+  margin: 28px 0 16px;
+  padding-top: 20px;
+  border-top: 1px solid var(--smc-border);
+}
+.settings-form > .form-section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.unit {
+  margin-left: 8px;
+  font-size: 13px;
+  color: var(--smc-text-secondary);
+}
+.small { font-size: 12px; }
+
+.form-actions {
+  margin-top: 8px;
+  margin-bottom: 0 !important;
+}
+
+.check-detail {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--el-text-color-regular);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.check-detail.is-fail { color: var(--el-color-danger); }
+
 .notify-preview {
   background: var(--el-fill-color-light);
+  border: 1px solid var(--smc-border);
   padding: 12px 14px;
-  border-radius: 6px;
+  border-radius: var(--smc-radius-sm);
   font-family: inherit;
   font-size: 13px;
   line-height: 1.8;
+  color: var(--el-text-color-regular);
   white-space: pre-wrap;
   margin: 0;
 }

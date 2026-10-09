@@ -3,12 +3,8 @@
     :model-value="modelValue" title="从去哪儿导入景区" width="880px" top="6vh"
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
   >
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px">
-      选城市 → 勾景区 → 导入。景区 ID 和采集目标都是从去哪儿页面上抓的，
-      <b>不用手工填 POI ID</b>——手填最常见的两个问题是名字打错和 ID 少复制一位，
-      而这两个都要等到任务跑出 0 条才会发现。
-    </el-alert>
-
+    <!-- 景区 ID 和采集目标都从去哪儿页面上抓，不用手工填 POI ID：手填最常见的两个问题
+         是名字打错和 ID 少复制一位，而这两个都要等到任务跑出 0 条才会发现。 -->
     <div class="toolbar">
       <el-select
         v-model="province" clearable filterable placeholder="省份（可不选）"
@@ -39,16 +35,10 @@
       <el-button :disabled="!city" :loading="loadingPois" @click="loadPois(1)">
         查询
       </el-button>
+      <InfoTip content="选城市 → 勾景区 → 导入。景区 ID 和采集目标直接从去哪儿页面抓取，不用手填 POI ID。" />
       <div class="spacer" />
       <el-checkbox v-model="withDetail">同时抓详细档案</el-checkbox>
-      <el-tooltip
-        content="会逐个进景区详情页取开放时间/电话/介绍/优待政策/服务设施。
-                 每个景区多一次请求，勾 20 个就是 20 次，慢但档案全。
-                 不勾也能建景区和跑采集，档案之后随时可以再刷。"
-        placement="top"
-      >
-        <el-icon class="muted"><QuestionFilled /></el-icon>
-      </el-tooltip>
+      <InfoTip content="逐个进景区详情页取开放时间 / 电话 / 介绍 / 优待政策 / 服务设施，每个景区多一次请求，慢但档案全。不勾也能建景区和跑采集，档案之后随时可刷。" />
     </div>
 
     <el-table
@@ -110,7 +100,6 @@
  */
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
 import {
   qunarApi, type QunarCity, type QunarPoi, type QunarProvince,
 } from '../api'
@@ -247,9 +236,9 @@ watch(() => props.modelValue, (open) => {
 </script>
 
 <style scoped>
-.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.foot-bar { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.foot-bar { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .spacer { flex: 1; }
-.muted { color: #7a8699; font-size: 12px; }
-.sync-hint { padding: 10px 14px; color: #7a8699; font-size: 12px; }
+.foot-bar .muted { font-size: 12px; }
+.sync-hint { padding: 10px 14px; color: var(--smc-text-secondary); font-size: 12px; }
 </style>

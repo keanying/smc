@@ -1,11 +1,11 @@
 <template>
   <div class="comment-node">
     <div class="comment-meta">
-      <b style="color: #303133">{{ comment.commenter_name || comment.commenter_id || '匿名' }}</b>
+      <b class="comment-author">{{ comment.commenter_name || comment.commenter_id || '匿名' }}</b>
       <span v-if="comment.location">{{ comment.location }}</span>
       <span>{{ formatTime(comment.publish_time) }}</span>
-      <span v-if="comment.likes">👍 {{ formatCount(comment.likes) }}</span>
-      <el-tag size="small" type="info" effect="plain">{{ levelLabel }}</el-tag>
+      <span v-if="comment.likes">赞 {{ formatCount(comment.likes) }}</span>
+      <span class="comment-level">{{ levelLabel }}</span>
       <el-tag v-if="replyType" size="small" type="warning" effect="plain">{{ replyType }}</el-tag>
     </div>
 
@@ -19,7 +19,7 @@
     <div v-if="canExpand">
       <el-button link type="primary" size="small" :loading="loading" @click="toggle">
         {{ expanded ? '收起回复' : `展开 ${comment.sub_comment_count} 条回复` }}
-        <el-icon style="margin-left: 2px">
+        <el-icon class="toggle-arrow">
           <ArrowUp v-if="expanded" /><ArrowDown v-else />
         </el-icon>
       </el-button>
@@ -33,7 +33,7 @@
         v-for="child in children" :key="child.comment_id"
         :comment="child" :channel="channel" :work-id="workId" :max-level="maxLevel"
       />
-      <div v-if="childrenHasMore" style="padding: 6px 0">
+      <div v-if="childrenHasMore" class="children-more">
         <el-button link type="primary" size="small" :loading="loading" @click="loadChildren">
           还有 {{ childrenTotal - children.length }} 条，继续加载
         </el-button>
@@ -116,3 +116,35 @@ async function toggle() {
   }
 }
 </script>
+
+<style scoped>
+/* 布局类（.comment-node / .comment-meta / .comment-children）在全局 style.css 里，
+   这里只收敛本组件自己的细节 */
+.comment-author {
+  color: var(--smc-text);
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.comment-level {
+  padding: 0 6px;
+  line-height: 18px;
+  border-radius: 4px;
+  border: 1px solid var(--smc-border);
+  color: var(--smc-text-secondary);
+  font-size: 11px;
+}
+
+.comment-content {
+  color: var(--smc-text);
+  font-size: 14px;
+}
+
+.toggle-arrow {
+  margin-left: 2px;
+}
+
+.children-more {
+  padding: 6px 0;
+}
+</style>

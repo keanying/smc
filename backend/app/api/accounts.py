@@ -64,6 +64,8 @@ async def quota_usage(channel: str = "", account_name: str = "", days: int = 1,
     return ok({
         "enabled": quota.enabled,
         "limits": {ch: quota.limits_for(ch) for ch in CHANNELS_NEED_LOGIN},
+        # 不算单平台配置时的值：页面上单平台留空 = 用这个
+        "defaults": {ch: quota.base_limits_for(ch) for ch in CHANNELS_NEED_LOGIN},
         "usage": await quota.usage(channel=channel, account=account_name, days=days),
         "rotation": {
             "enabled": rotation.enabled,

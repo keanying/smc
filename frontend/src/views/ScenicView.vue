@@ -1,10 +1,10 @@
 <template>
   <div>
     <div class="page-header">
-      <div>
-        <h2 class="page-title">景区管理</h2>
-        <p class="page-subtitle">先建景区，再挂关键字和各平台采集目标；任务按景区维度组织数据</p>
-      </div>
+      <h2 class="page-title">
+        景区管理
+        <InfoTip content="先建景区，再挂关键字和各平台采集目标；任务按景区维度组织数据。点行首箭头展开配置。" />
+      </h2>
       <div>
         <el-button :icon="Upload" @click="csvVisible = true">CSV 导入</el-button>
         <el-button type="primary" :icon="Plus" @click="openScenicDialog()">新建景区</el-button>
@@ -23,12 +23,12 @@
     <el-table :data="scenics" v-loading="loading" border stripe>
       <el-table-column type="expand">
         <template #default="{ row }">
-          <div style="padding: 12px 24px">
+          <div class="expand-wrap">
             <ScenicDetail :scenic-id="row.scenic_id" :channels="channels" />
           </div>
         </template>
       </el-table-column>
-      <el-table-column prop="scenic_id" label="景区ID" width="140" />
+      <el-table-column prop="scenic_id" label="景区ID" width="170" />
       <el-table-column prop="scenic_name" label="景区名称" min-width="180" />
       <el-table-column label="地区" width="140">
         <template #default="{ row }">
@@ -56,20 +56,22 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="200" align="center">
+      <el-table-column label="操作" width="120" align="center">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openScenicDialog(row)">编辑</el-button>
-          <el-button link type="primary" @click="goCreateTask(row)">建任务</el-button>
-          <el-popconfirm
-            title="删除景区会一并删除其关键字和采集目标，已采集的数据保留。确定吗？"
-            width="280" @confirm="removeScenic(row)"
-          >
-            <template #reference><el-button link type="danger">删除</el-button></template>
-          </el-popconfirm>
+          <div class="row-actions">
+            <IconAction icon="edit" tip="编辑" @click="openScenicDialog(row)" />
+            <IconAction icon="task" tip="建任务" @click="goCreateTask(row)" />
+            <el-popconfirm
+              title="删除景区会一并删除其关键字和采集目标，已采集的数据保留。确定吗？"
+              width="280" @confirm="removeScenic(row)"
+            >
+              <template #reference><span><IconAction icon="delete" tip="删除" /></span></template>
+            </el-popconfirm>
+          </div>
         </template>
       </el-table-column>
       <template #empty>
-        <el-empty description="还没有景区，先新建一个或用 CSV 批量导入" />
+        <el-empty description="还没有景区" :image-size="80" />
       </template>
     </el-table>
 
@@ -103,11 +105,14 @@
 
     <!-- CSV 导入 -->
     <el-dialog v-model="csvVisible" title="从 CSV 批量导入景区" width="520px">
-      <el-alert type="info" :closable="false" style="margin-bottom: 14px">
-        <div>表头至少要有 <b>scenic_id</b>、<b>scenic_name</b> 两列，中文表头
-          <b>景区ID</b>、<b>景区名称</b> 也认。可选：省份、城市、备注。</div>
-        <div style="margin-top: 6px" class="mono">景区ID,景区名称,省份,城市<br />SC001,西湖风景区,浙江,杭州</div>
-      </el-alert>
+      <div class="csv-head">
+        <span class="muted">CSV 格式</span>
+        <InfoTip :width="340">
+          必填列：<b>scenic_id</b>、<b>scenic_name</b>（中文表头 景区ID、景区名称 也认）<br />
+          可选列：省份、城市、备注<br />
+          <span class="mono">景区ID,景区名称,省份,城市<br />SC001,西湖风景区,浙江,杭州</span>
+        </InfoTip>
+      </div>
       <el-upload
         drag :auto-upload="false" :limit="1" accept=".csv"
         :on-change="onCsvChange" :file-list="csvFiles"
@@ -242,3 +247,10 @@ onMounted(async () => {
   await loadScenics()
 })
 </script>
+
+<style scoped>
+.expand-wrap { padding: 8px 24px 16px; }
+.row-actions { display: inline-flex; align-items: center; gap: 2px; }
+.row-actions > span { display: inline-flex; }
+.csv-head { display: flex; align-items: center; margin-bottom: 12px; font-size: 13px; }
+</style>

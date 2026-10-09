@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 
 from ..collectors.base import (
@@ -48,6 +48,22 @@ logger = get_logger(__name__)
 #: 这两个阈值只在**单条作品内部**起兜底作用：一条作品有几千条评论时，
 #: 不至于全压在内存里等这条作品采完。
 FLUSH_THRESHOLD = 200
+
+#: 冷却刚好到期、或者还有别的号能换上时，隔多久再试。别设 0：同一秒反复捞会空转
+COOLING_RETRY_SECONDS = 60
+
+
+class AccountsCoolingDown(Exception):
+    """这个平台的账号都在冷却中：任务不跳过，排队到 resume_at 再自动执行。
+
+    和 LoginRequired 的区别：那个是"没有能用的号，要人处理"；
+    这个是"号有，只是都在歇着"，时间到了自己就好，不需要人。
+    """
+
+    def __init__(self, resume_at: datetime, reason: str):
+        super().__init__(reason)
+        self.resume_at = resume_at
+        self.reason = reason
 #: ⚠️ 光有条数阈值是**不够**的。拟人模式一条笔记要十几二十秒，
 #: 攒够 200 条要一个多小时——这段时间里数据全在内存里，库里一条都没有。
 #: 用户看到的就是"日志在刷、数据页是空的"，而且任务一旦中途出错或被停掉，
@@ -262,6 +278,50 @@ class TaskRunner:
         """当天已采成功的作品，重跑时要不要跳过评论。默认开。"""
         return bool((self.config.crawl or {}).get("skip_works_collected_today", True))
 
+    # ---------------- 账号冷却排队 ----------------
+    async def _cooling_resume_at(self, channel: str, ctx: CollectContext) -> datetime:
+        """什么时候再来：还有能用的号 → 一分钟后；都在冷却 → 最早那个恢复时。"""
+        soon = datetime.now() + timedelta(seconds=COOLING_RETRY_SECONDS)
+        try:
+            summary = await self.browser_manager.accounts.cooling_summary(
+                channel, preferred=ctx.params.get("preferred_account", ""),
+                group=ctx.params.get("account_group", ""))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("查询 %s 账号冷却情况失败，%d 秒后重试：%s",
+                           channel, COOLING_RETRY_SECONDS, exc)
+            return soon
+        resume = summary.get("resume_at")
+        if summary.get("available") or not isinstance(resume, datetime):
+            return soon
+        # 冷却到期那一刻可能刚好被别的任务抢先，留一分钟余量也避免同一秒空转
+        return max(resume + timedelta(seconds=5), soon)
+
+    async def _raise_if_all_cooling(self, channel: str, ctx: CollectContext) -> None:
+        """有登录过的号、但全都在冷却 → AccountsCoolingDown。
+
+        一个号都没有（或都失效）不在这里管：那是 LoginRequired，要人来处理。
+        """
+        accounts = getattr(self.browser_manager, "accounts", None)
+        if accounts is None or not hasattr(accounts, "cooling_summary"):
+            return
+        preferred = ctx.account_name or ""
+        ctx.params.setdefault("preferred_account", preferred)
+        try:
+            summary = await accounts.cooling_summary(
+                channel, preferred=preferred, group=ctx.params.get("account_group", ""))
+        except Exception as exc:  # noqa: BLE001
+            # 查不到就按老路走（挑号时冷却的号照样会被排掉），别因为它把任务拦下
+            logger.warning("查询 %s 账号冷却情况失败，按原流程继续：%s", channel, exc)
+            return
+        resume = summary.get("resume_at")
+        if summary.get("available") or not isinstance(resume, datetime):
+            return
+        who = f"账号 [{preferred}]" if preferred else f"{CHANNEL_LABELS.get(channel, channel)} 的账号都"
+        raise AccountsCoolingDown(
+            max(resume + timedelta(seconds=5),
+                datetime.now() + timedelta(seconds=COOLING_RETRY_SECONDS)),
+            f"{who}在冷却中，最早 {resume:%m-%d %H:%M} 恢复")
+
     # ---------------- 入口 ----------------
     async def run(self, task: Dict[str, Any], cancel_event: Optional[asyncio.Event] = None) -> Dict[str, int]:
         task_id = task["task_id"]
@@ -297,7 +357,7 @@ class TaskRunner:
                     )
                     for key in stats:
                         stats[key] += channel_stats.get(key, 0)
-                except TaskCancelled:
+                except (TaskCancelled, AccountsCoolingDown):
                     raise
                 except SlotWaitTimeout as exc:
                     # 排队等超时。这是**失败**不是"跳过"——用户要能一眼看出
@@ -348,6 +408,14 @@ class TaskRunner:
             )
             await self.tasks.mark_finished(task_id, TaskStatus.COMPLETED.value, stats=stats)
 
+        except AccountsCoolingDown as exc:
+            # 不是失败也不是跳过：排队，到点调度器自己会捞起来接着跑（重启也不丢）
+            log.warn(f"⏳ {exc.reason}。任务已排队，"
+                     f"{exc.resume_at:%m-%d %H:%M} 后自动执行")
+            await self.tasks.mark_waiting(
+                task_id, exc.resume_at,
+                f"排队等账号：{exc.reason}，{exc.resume_at:%m-%d %H:%M} 后自动执行",
+                stats=stats)
         except TaskCancelled as exc:
             log.warn(f"任务已取消：{exc}")
             await self.tasks.mark_finished(
@@ -488,6 +556,12 @@ class TaskRunner:
         #   快手 —— 每次请求的签名都要调页面里的 __ks_realm，浏览器必须常驻
         #   小红书 / 微博 —— 只要 Cookie 串，走静默刷新，不开浏览器
         ctx.params["browser_manager"] = self.browser_manager
+
+        # 账号全在冷却 → 排队，不跳过。放在占浏览器/挑号**之前**：
+        # 号都在歇着还去排浏览器队、开 profile，纯属白占资源。
+        if collector.needs_login:
+            await self._raise_if_all_cooling(channel, ctx)
+
         # 实时画面面板上要显示是哪条任务在跑，不然多条任务一起跑时分不清
         ctx.params["task_name"] = task.get("task_name") or ""
 
@@ -550,10 +624,15 @@ class TaskRunner:
         if quota is not None and collector.needs_login and ctx.account_name:
             verdict = await quota.check(channel, ctx.account_name)
             if not verdict.ok:
-                log.warn(f"⏸ {verdict.reason}。这一轮跳过 {channel}，"
-                         f"等冷却结束或换个账号再来")
-                return {"new_works": 0, "updated_works": 0,
-                        "new_comments": 0, "updated_comments": 0}
+                # ⚠️ 先把浏览器还回去：这里在下面那个 try/finally 之前，
+                #    以前直接 return，拟人模式占着的浏览器名额就再也没人还，
+                #    后面同平台的任务全卡在排队上。
+                lease.release()
+                # 以前是"这一轮跳过"，定时任务这一轮就白白丢了。
+                # 现在排队：还有别的号能换就一分钟后重来（它会挑到别的号），
+                # 都在冷却就等最早那个恢复。
+                raise AccountsCoolingDown(
+                    await self._cooling_resume_at(channel, ctx), verdict.reason)
             quota.start_session(channel, ctx.account_name)
 
         # 轮换锁：这个号派上用场了，锁定期内下一轮先让别的号上。

@@ -57,6 +57,8 @@ export const TASK_STATUS_LABELS: Record<string, string> = {
   failed: '失败',
   canceled: '已取消',
   paused: '已暂停',
+  // 账号都在冷却：任务已排队，到「下次执行」时间自动接着跑（重启也不丢）
+  waiting: '等待账号恢复',
 }
 
 export const TASK_STATUS_TYPES: Record<string, '' | 'success' | 'warning' | 'info' | 'danger'> = {
@@ -67,6 +69,7 @@ export const TASK_STATUS_TYPES: Record<string, '' | 'success' | 'warning' | 'inf
   failed: 'danger',
   canceled: 'info',
   paused: 'info',
+  waiting: 'warning',
 }
 
 export const SCHEDULE_LABELS: Record<string, string> = {

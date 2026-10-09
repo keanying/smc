@@ -1,17 +1,25 @@
 <template>
   <div>
     <!-- 排序：只在接口支持的平台上显示 -->
-    <el-form-item v-if="sortOptions.length" label="排序依据">
+    <el-form-item v-if="sortOptions.length">
+      <template #label>
+        排序依据<InfoTip v-if="mixedSorts" content="所选平台的排序档位不同，这里取交集" />
+      </template>
       <el-select :model-value="model.sort" style="width: 180px" @update:model-value="set('sort', $event)">
         <el-option v-for="o in sortOptions" :key="o.value" :label="o.label" :value="o.value" />
       </el-select>
-      <span v-if="mixedSorts" class="muted hint">所选平台的排序档位不同，这里取交集</span>
     </el-form-item>
     <el-form-item v-else-if="channels.length" label="排序依据">
       <span class="muted">接口不支持排序</span>
     </el-form-item>
 
-    <el-form-item label="发布时间">
+    <!-- 各平台的时间筛选能力差异，收在标签旁的说明图标里 -->
+    <el-form-item>
+      <template #label>
+        发布时间<InfoTip v-if="notes.length" :width="340">
+          <div v-for="(note, i) in notes" :key="i">{{ note }}</div>
+        </InfoTip>
+      </template>
       <el-select
         :model-value="model.publish_within" style="width: 180px"
         @update:model-value="onPresetChange"
@@ -27,12 +35,6 @@
         value-format="YYYY-MM-DD" style="width: 260px"
         @update:model-value="onRangeChange"
       />
-    </el-form-item>
-
-    <el-form-item v-if="notes.length" label=" ">
-      <div class="filter-notes">
-        <div v-for="(note, i) in notes" :key="i">{{ note }}</div>
-      </div>
     </el-form-item>
   </div>
 </template>
@@ -127,18 +129,6 @@ const notes = computed(() => {
 </script>
 
 <style scoped>
-.hint {
-  font-size: 12px;
-  margin-left: 8px;
-}
-
-.filter-notes {
-  font-size: 12px;
-  line-height: 1.7;
-  color: #909399;
-  background: #f8f8f9;
-  border-left: 3px solid #dcdfe6;
-  padding: 6px 10px;
-  border-radius: 3px;
-}
+/* 标签里的说明图标：label 是 flex 容器，图标默认会顶到上沿，这里让它和文字居中对齐 */
+:deep(.el-form-item__label .info-tip) { align-self: center; }
 </style>

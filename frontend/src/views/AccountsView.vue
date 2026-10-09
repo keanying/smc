@@ -1,158 +1,171 @@
 <template>
   <div>
     <div class="page-header">
-      <div>
-        <h2 class="page-title">账号管理</h2>
-        <p class="page-subtitle">
-          每个账号一个独立的浏览器 profile，登录一次之后采集任务静默复用登录态；
-          同组账号自动轮换，分摊风控压力
-        </p>
-      </div>
-      <div style="display: flex; gap: 10px">
+      <h2 class="page-title">
+        账号管理
+        <InfoTip
+          content="每个账号一个独立的浏览器 profile，登录一次后采集任务静默复用登录态；同组账号自动轮换，分摊风控压力。"
+          placement="right"
+        />
+      </h2>
+      <div class="header-actions">
+        <el-button :icon="Setting" @click="openQuotaDialog">配额与轮换</el-button>
         <el-button :icon="Odometer" :loading="probingAll" @click="probeAllVisible = true">
           全平台体检
         </el-button>
         <el-button :icon="Refresh" :loading="checkingAll" @click="checkAll">批量检测</el-button>
-        <el-button type="primary" :icon="Plus" @click="addDialog = true">添加账号</el-button>
+        <el-button type="primary" :icon="Plus" @click="openAdd">添加账号</el-button>
       </div>
     </div>
 
-    <!-- 分组统计卡片 -->
+    <!-- 分组统计卡片：点一下按该组筛选，再点取消 -->
     <div v-if="groups.length" class="group-summary">
       <div
         v-for="g in groups" :key="g.name"
-        class="group-card" :class="{ active: query.group === g.name, 'is-default': g.name === 'default' }"
+        class="group-card" :class="{ active: query.group === g.name }"
         @click="toggleGroupFilter(g.name)"
       >
-        <div class="group-icon">
-          <el-icon><FolderOpened /></el-icon>
-        </div>
-        <div class="group-info">
-          <div class="group-name">{{ g.name }}</div>
-          <div class="group-nums">
-            <span class="group-total">{{ g.total }} 个账号</span>
-            <span class="group-active" :class="{ 'text-green': g.active > 0, 'text-orange': g.active === 0 }">
-              {{ g.active }} 个可用
-            </span>
-          </div>
-        </div>
-        <div class="group-arrow">
-          <el-icon><ArrowRight /></el-icon>
+        <div class="group-name">{{ g.name }}</div>
+        <div class="group-nums">
+          <span class="group-total">{{ g.total }} 个账号</span>
+          <span class="group-active" :class="g.active > 0 ? 'is-ok' : 'is-none'">
+            {{ g.active }} 个可用
+          </span>
         </div>
       </div>
     </div>
 
-    <div class="toolbar">
-      <el-select v-model="query.channel" placeholder="平台" clearable style="width: 130px" @change="load">
+    <div class="toolbar filter-bar">
+      <el-select v-model="query.channel" placeholder="全部平台" clearable style="width: 140px" @change="load">
         <el-option v-for="c in loginChannels" :key="c.value" :label="c.label" :value="c.value" />
       </el-select>
-      <el-select v-model="query.group" placeholder="分组" clearable style="width: 150px" @change="load">
+      <el-select v-model="query.group" placeholder="全部分组" clearable style="width: 140px" @change="load">
         <el-option v-for="g in groups" :key="g.name" :label="g.name" :value="g.name" />
       </el-select>
-      <el-select v-model="query.status" placeholder="状态" clearable style="width: 130px" @change="load">
+      <el-select v-model="query.status" placeholder="全部状态" clearable style="width: 140px" @change="load">
         <el-option v-for="(label, value) in ACCOUNT_STATUS_LABELS" :key="value" :label="label" :value="value" />
       </el-select>
-      <el-button @click="load">刷新</el-button>
+      <el-button :icon="Refresh" @click="load">刷新</el-button>
+      <span class="filter-count muted">共 {{ accounts.length }} 个账号</span>
     </div>
 
-    <el-table :data="accounts" v-loading="loading" border stripe>
-      <el-table-column label="平台" width="100">
+    <el-table :data="accounts" v-loading="loading">
+      <el-table-column label="平台" width="96">
         <template #default="{ row }">
           <span class="channel-badge" :style="{ background: CHANNEL_COLORS[row.channel] }">
             {{ channelLabel(row.channel) }}
           </span>
         </template>
       </el-table-column>
-      <el-table-column prop="account_name" label="账号标识" min-width="140">
+      <el-table-column prop="account_name" label="账号标识" min-width="200">
         <template #default="{ row }">
-          <div style="font-weight: 500">{{ row.account_name }}</div>
-          <div v-if="row.nickname" class="muted" style="font-size: 12px">{{ row.nickname }}</div>
+          <div class="account-name" :title="row.account_name">{{ row.account_name }}</div>
+          <div v-if="row.nickname" class="account-sub">{{ row.nickname }}</div>
         </template>
       </el-table-column>
-      <el-table-column label="分组" width="120" align="center">
+      <el-table-column label="分组" width="110">
         <template #default="{ row }">
           <span class="group-chip">{{ row.account_group || 'default' }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="登录态" width="100" align="center">
+      <el-table-column label="登录态" width="100">
         <template #default="{ row }">
-          <el-tag :type="ACCOUNT_STATUS_TYPES[row.status]" size="small">
-            {{ ACCOUNT_STATUS_LABELS[row.status] || row.status }}
-          </el-tag>
+          <span class="status-cell">
+            <el-tooltip v-if="row.status === 'expired'" content="登录失效，需重新登录" placement="top">
+              <AppIcon name="unlink" :size="14" />
+            </el-tooltip>
+            <el-tag :type="ACCOUNT_STATUS_TYPES[row.status]" size="small" disable-transitions>
+              {{ ACCOUNT_STATUS_LABELS[row.status] || row.status }}
+            </el-tag>
+          </span>
         </template>
       </el-table-column>
-      <el-table-column label="Cookie 更新于" width="150">
-        <template #default="{ row }">{{ formatTime(row.cookie_updated_at) }}</template>
+      <el-table-column label="Cookie 更新于" width="170">
+        <template #default="{ row }"><span class="time-text">{{ formatTime(row.cookie_updated_at) }}</span></template>
       </el-table-column>
-      <el-table-column label="最近检测" width="150">
+      <el-table-column label="最近检测" width="170">
         <template #default="{ row }">
-          <div>{{ formatTime(row.last_check_time) }}</div>
+          <div class="time-text">{{ formatTime(row.last_check_time) }}</div>
           <el-tooltip v-if="row.last_error" :content="row.last_error" placement="top">
-            <span class="muted" style="font-size: 12px; color: #f56c6c">
-              {{ row.last_error.slice(0, 20) }}…
-            </span>
+            <div class="error-text">{{ row.last_error.slice(0, 20) }}…</div>
           </el-tooltip>
         </template>
       </el-table-column>
-      <el-table-column label="今日用量" width="130" align="center">
-        <template #default="{ row }">
-          <template v-if="cooling(row)">
-            <el-tooltip :content="row.cooldown_reason || '配额用满，正在冷却'">
-              <el-tag size="small" type="warning">冷却至 {{ shortTime(row.cooldown_until) }}</el-tag>
+      <el-table-column label="今日用量" width="160">
+        <template #header>
+          <span class="th-with-action">
+            今日用量
+            <el-tooltip content="配额与轮换">
+              <el-button link :icon="Setting" class="th-setting" @click="openQuotaDialog" />
             </el-tooltip>
-            <el-button link type="primary" size="small" @click="releaseCooldown(row)">
-              解除
-            </el-button>
-          </template>
+          </span>
+        </template>
+        <template #default="{ row }">
+          <div v-if="cooling(row)" class="usage-line">
+            <el-tooltip :content="row.cooldown_reason || '配额用满，正在冷却'">
+              <el-tag size="small" type="warning" disable-transitions>
+                <span class="tag-inner"><AppIcon name="lock" :size="12" />冷却至 {{ shortTime(row.cooldown_until) }}</span>
+              </el-tag>
+            </el-tooltip>
+            <IconAction icon="unlock" tip="解除冷却" @click="releaseCooldown(row)" />
+          </div>
           <template v-else>
-            <span v-if="quotaOf(row)" :class="{ 'is-warn': nearLimit(row) }">
-              {{ usedOf(row) }}/{{ quotaOf(row) }}
+            <span v-if="quotaOf(row)" class="usage-num" :class="{ 'is-warn': nearLimit(row) }">
+              {{ usedOf(row) }}<span class="usage-cap">/{{ quotaOf(row) }}</span>
             </span>
             <span v-else class="muted">—</span>
             <!-- 轮换锁跟冷却不一样：号没毛病，只是刚干过活，有别人就让别人上 -->
-            <div v-if="lockedFor(row)" style="margin-top: 2px">
+            <div v-if="lockedFor(row)" class="usage-line" style="margin-top: 4px">
               <el-tooltip
                 :content="`采过了，${lockedFor(row)}内先用同组的其他号；只有这一个号时照用不误`"
               >
-                <el-tag size="small" type="info">轮换 {{ lockedFor(row) }}</el-tag>
+                <el-tag size="small" type="info" disable-transitions>
+                  <span class="tag-inner"><AppIcon name="pending" :size="12" />轮换 {{ lockedFor(row) }}</span>
+                </el-tag>
               </el-tooltip>
-              <el-button link type="primary" size="small" @click="unlockRotation(row)">
-                解锁
-              </el-button>
+              <IconAction icon="unlock" tip="解除轮换锁" @click="unlockRotation(row)" />
             </div>
           </template>
         </template>
       </el-table-column>
-      <el-table-column label="启用" width="70" align="center">
+      <el-table-column label="启用" width="72" align="center">
         <template #default="{ row }">
-          <el-switch :model-value="!!row.enabled" @change="(v: boolean) => toggle(row, v)" />
+          <el-switch :model-value="!!row.enabled" size="small" @change="(v: boolean) => toggle(row, v)" />
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="380" align="center" fixed="right">
+      <el-table-column label="操作" width="250" align="center" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" :icon="Monitor" @click="openLogin(row)">打开浏览器</el-button>
-          <el-button link type="primary" :loading="checkingKey === rowKey(row)" @click="check(row)">
-            采集 Cookie
-          </el-button>
-          <el-button link type="primary" @click="openCookies(row)">Cookie</el-button>
-          <el-button link type="success" :icon="Search" @click="openProbe(row)">试搜</el-button>
-          <el-popconfirm title="退出登录会删除该账号的浏览器 profile，下次要重新扫码。确定吗？"
-                         width="260" @confirm="logout(row)">
-            <template #reference><el-button link type="warning">退出</el-button></template>
-          </el-popconfirm>
-          <el-popconfirm title="删除账号及其 profile？" @confirm="remove(row)">
-            <template #reference><el-button link type="danger">删除</el-button></template>
-          </el-popconfirm>
+          <div class="row-actions">
+            <IconAction icon="online" tip="打开浏览器登录" @click="openLogin(row)" />
+            <IconAction
+              icon="publish" tip="采集 Cookie"
+              :loading="checkingKey === rowKey(row)" @click="check(row)"
+            />
+            <IconAction icon="edit" tip="编辑（分组、昵称、轮换锁）" @click="openEdit(row)" />
+            <IconAction icon="view" tip="查看 / 导入 Cookie" @click="openCookies(row)" />
+            <IconAction icon="query" tip="试搜" @click="openProbe(row)" />
+            <el-popconfirm title="退出登录会删除该账号的浏览器 profile，下次要重新扫码。确定吗？"
+                           width="260" @confirm="logout(row)">
+              <template #reference>
+                <span class="pop-ref"><IconAction icon="offline" tip="退出登录" /></span>
+              </template>
+            </el-popconfirm>
+            <el-popconfirm title="删除账号及其 profile？" width="220" @confirm="remove(row)">
+              <template #reference>
+                <span class="pop-ref"><IconAction icon="delete" tip="删除" /></span>
+              </template>
+            </el-popconfirm>
+          </div>
         </template>
       </el-table-column>
-      <template #empty><el-empty description="还没有账号，点右上角「添加账号」开始" /></template>
+      <template #empty><el-empty description="还没有账号" :image-size="72" /></template>
     </el-table>
 
     <!-- 添加账号 -->
-    <el-dialog v-model="addDialog" title="添加账号" width="460px">
-      <el-form :model="form" label-width="90px">
+    <el-dialog v-model="addDialog" :title="editingRow ? '编辑账号' : '添加账号'" width="480px">
+      <el-form :model="form" label-width="100px" class="add-form">
         <el-form-item label="平台" required>
-          <el-select v-model="form.channel" style="width: 100%">
+          <el-select v-model="form.channel" style="width: 100%" :disabled="!!editingRow">
             <el-option
               v-for="c in channels" :key="c.value"
               :label="c.need_login ? c.label : `${c.label}（无需登录）`"
@@ -160,13 +173,16 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="账号标识" required>
-          <el-input v-model="form.account_name" placeholder="自己起个名字，如 抖音-运营01" />
-          <div class="muted" style="font-size: 12px; margin-top: 4px">
-            只是本地标识，用来区分多个账号；会作为浏览器 profile 的目录名
-          </div>
+        <el-form-item required>
+          <template #label>
+            账号标识<InfoTip content="只是本地标识，用来区分多个账号；也是浏览器 profile 的目录名。" />
+          </template>
+          <el-input v-model="form.account_name" placeholder="如 抖音-运营01" :disabled="!!editingRow" />
         </el-form-item>
-        <el-form-item label="账号分组">
+        <el-form-item>
+          <template #label>
+            账号分组<InfoTip content="同平台的多个账号放同一组，采集时自动轮换；任务也可以绑定只用某一组。" />
+          </template>
           <el-select
             v-model="form.account_group" filterable allow-create default-first-option
             style="width: 100%" placeholder="选已有分组，或输入新分组名回车"
@@ -174,36 +190,39 @@
             <el-option v-for="g in groups" :key="g.name" :label="g.name" :value="g.name" />
             <el-option label="default（默认组）" value="default" />
           </el-select>
-          <div class="muted" style="font-size: 12px; margin-top: 4px">
-            同平台的多个账号放同一组，采集时自动轮换；任务也可以绑定只用某一组
-          </div>
         </el-form-item>
         <el-form-item label="备注昵称">
           <el-input v-model="form.nickname" />
         </el-form-item>
-        <el-form-item label="轮换锁">
+        <el-form-item>
+          <template #label>
+            轮换锁
+            <InfoTip>
+              这个号采过之后，多久之内先让同组的其他号上；只有这一个号时照用不误。<br>
+              <b>0 = 用全局值</b>（当前 {{ rotationHours }} 小时）
+            </InfoTip>
+          </template>
           <el-input-number v-model="form.rotate_lock_hours" :min="0" :max="336" :step="6" />
-          <span class="muted" style="margin-left: 8px">小时</span>
-          <div class="muted" style="font-size: 12px; margin-top: 4px">
-            这个号采过之后，多久之内先让同组的其他号上。
-            <b>0 = 用系统设置里的全局值</b>（当前 {{ rotationHours }} 小时）。
-            只有这一个号时照用不误，不会把采集卡住。
-          </div>
+          <span class="unit">小时</span>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="addDialog = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="save">保存并登录</el-button>
+        <el-button type="primary" :loading="saving" @click="save">
+          {{ editingRow ? '保存' : '保存并登录' }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 全平台体检 -->
-    <el-dialog v-model="probeAllVisible" title="全平台采集体检" width="860px" top="5vh">
-      <el-alert type="info" :closable="false" style="margin-bottom: 14px">
-        用真实采集链路把六个平台挨个试搜一遍（只取一条、不写库），
-        抖音/快手要开浏览器页面，整个过程可能要一两分钟。
-      </el-alert>
-      <div class="toolbar" style="margin-bottom: 14px">
+    <el-dialog v-model="probeAllVisible" width="860px" top="5vh">
+      <template #header>
+        <span class="el-dialog__title">全平台采集体检</span>
+        <InfoTip
+          content="用真实采集链路把各平台挨个试搜一遍（只取一条、不写库）。抖音/快手要开浏览器页面，整个过程可能要一两分钟。"
+        />
+      </template>
+      <div class="toolbar">
         <el-input v-model="probeAllKeyword" placeholder="试搜关键字，如 天山天池" style="width: 220px" />
         <el-input v-model="probeAllCtrip" placeholder="携程 POI_ID（选填）" style="width: 180px" />
         <el-input v-model="probeAllTongcheng" placeholder="同程 sid（选填）" style="width: 160px" />
@@ -218,19 +237,19 @@
             <span class="channel-badge" :style="{ background: CHANNEL_COLORS[r.channel] }">
               {{ r.channel_label }}
             </span>
-            <el-tag :type="r.ok ? 'success' : 'danger'" size="small">
-              {{ r.ok ? `通过 · 拿到 ${r.found} 条` : '未通过' }}
+            <el-tag :type="r.ok ? 'success' : 'danger'" size="small" disable-transitions>
+              {{ r.ok ? `通过 · ${r.found} 条` : '未通过' }}
             </el-tag>
-            <span class="muted" style="font-size: 12px">{{ r.elapsed_seconds }}s</span>
+            <span class="muted probe-all-time">{{ r.elapsed_seconds }}s</span>
             <el-button
-              v-if="!r.ok || r.logs?.length" link type="primary" size="small"
+              v-if="!r.ok || r.logs?.length" link type="primary" size="small" class="probe-all-toggle"
               @click="toggleProbeDetail(r.channel)"
             >
               {{ expandedProbes.has(r.channel) ? '收起' : '详情' }}
             </el-button>
           </div>
           <div v-if="r.sample" class="probe-all-sample">
-            样例：{{ r.sample.title?.slice(0, 60) || r.sample.work_id }}
+            {{ r.sample.title?.slice(0, 60) || r.sample.work_id }}
             <span class="muted">— {{ r.sample.author }}</span>
           </div>
           <div v-if="!r.ok && r.error" class="probe-all-error">{{ r.error }}</div>
@@ -245,13 +264,88 @@
           </div>
         </div>
       </div>
-      <el-empty v-else-if="!probingAll" description="填好关键字后点「开始体检」" :image-size="60" />
+      <el-empty v-else-if="!probingAll" description="填好关键字，点「开始体检」" :image-size="60" />
     </el-dialog>
 
     <LoginBrowser
       :visible="loginVisible" :channel="loginTarget.channel" :account-name="loginTarget.accountName"
       @close="onLoginClosed"
     />
+    <!-- 配额与轮换：原来只能去「系统设置」里改全局值，单平台的上限根本没地方改 -->
+    <el-dialog v-model="quotaDialog" title="配额与轮换" width="720px">
+      <el-form label-width="104px" label-position="left" class="quota-form">
+        <el-form-item>
+          <template #label>
+            启用配额<InfoTip content="超过任一上限，账号自动冷却，到期自动恢复。" />
+          </template>
+          <el-switch v-model="quotaForm.enabled" />
+        </el-form-item>
+      </el-form>
+      <div class="section-title">
+        各平台上限
+        <InfoTip
+          content="留空 = 用默认值（灰字）。默认值来自「系统设置 → 采集参数」里的全局配额，没填全局就是平台出厂值。"
+        />
+      </div>
+      <el-table :data="quotaRows" size="small" class="quota-table">
+        <el-table-column label="平台" width="96">
+          <template #default="{ row }">
+            <span class="channel-badge" :style="{ background: CHANNEL_COLORS[row.channel] }">
+              {{ channelLabel(row.channel) }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="每天最多采（条）">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.daily_works" :min="1" :step="50" :value-on-clear="null"
+              :placeholder="`默认 ${row.defaults.daily_works}`" controls-position="right"
+              :disabled="!quotaForm.enabled" style="width: 140px"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="单次连续工作（分钟）">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.session_minutes" :min="1" :step="15" :value-on-clear="null"
+              :placeholder="`默认 ${row.defaults.session_minutes || '不限'}`" controls-position="right"
+              :disabled="!quotaForm.enabled" style="width: 140px"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="触发后冷却（分钟）">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.cooldown_minutes" :min="1" :step="30" :value-on-clear="null"
+              :placeholder="`默认 ${row.defaults.cooldown_minutes}`" controls-position="right"
+              :disabled="!quotaForm.enabled" style="width: 140px"
+            />
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-form label-width="104px" label-position="left" class="quota-form" style="margin-top: 20px">
+        <el-form-item>
+          <template #label>
+            账号轮换锁
+            <InfoTip>
+              一个号采过之后，这段时间内先让同组的其他号上；只有一个号时照用不误。<br>
+              单个账号想用别的时长，在那一行「编辑」里单独填（以账号自己的为准）。
+            </InfoTip>
+          </template>
+          <el-switch v-model="quotaForm.rotate_lock_enabled" />
+          <el-input-number
+            v-model="quotaForm.rotate_lock_hours" :min="1" :max="336" :step="6"
+            :disabled="!quotaForm.rotate_lock_enabled" style="width: 130px; margin-left: 12px"
+          />
+          <span class="unit">小时</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="quotaDialog = false">取消</el-button>
+        <el-button type="primary" :loading="savingQuota" @click="saveQuota">保存</el-button>
+      </template>
+    </el-dialog>
+
     <CookieDialog
       v-model="cookieVisible" :channel="cookieTarget.channel"
       :account-name="cookieTarget.accountName" @changed="load"
@@ -266,8 +360,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowRight, FolderOpened, Monitor, Odometer, Plus, Refresh, Search } from '@element-plus/icons-vue'
-import { accountApi, type Account, type AccountQuotaInfo, type AccountGroup, type ChannelOption, type ProbeReport } from '../api'
+import { Odometer, Plus, Refresh, Setting } from '@element-plus/icons-vue'
+import {
+  accountApi, settingsApi, type Account, type AccountQuotaInfo, type AccountQuotaLimits,
+  type AccountGroup, type ChannelOption, type ProbeReport,
+} from '../api'
 import {
   ACCOUNT_STATUS_LABELS, ACCOUNT_STATUS_TYPES, CHANNEL_COLORS,
   channelLabel, formatTime,
@@ -295,6 +392,23 @@ const form = reactive({
   channel: 'douyin', account_name: '', nickname: '', account_group: 'default',
   rotate_lock_hours: 0,
 })
+/** 正在编辑的账号；null = 添加。平台和账号标识是主键，编辑时不能改 */
+const editingRow = ref<Account | null>(null)
+
+function openAdd() {
+  editingRow.value = null
+  Object.assign(form, { account_name: '', nickname: '', account_group: 'default', rotate_lock_hours: 0 })
+  addDialog.value = true
+}
+
+function openEdit(row: Account) {
+  editingRow.value = row
+  Object.assign(form, {
+    channel: row.channel, account_name: row.account_name, nickname: row.nickname || '',
+    account_group: row.account_group || 'default', rotate_lock_hours: row.rotate_lock_hours || 0,
+  })
+  addDialog.value = true
+}
 
 // 全平台体检
 const probeAllVisible = ref(false)
@@ -393,6 +507,78 @@ function lockedFor(row: Account): string {
   return `${Math.max(1, Math.ceil(left / 60))} 分钟`
 }
 
+/**
+ * 「配额与轮换」对话框。
+ *
+ * 存的地方和「系统设置 → 采集参数」是同一份（crawl.account_quota），
+ * 单平台的值写进 per_channel——后端一直支持，只是以前页面上没入口。
+ * 输入框留空（null）= 用默认值，存成 0：后端 _apply 把 0 当"没填"，不是"不限"。
+ */
+type QuotaKey = keyof AccountQuotaLimits
+const QUOTA_KEYS: QuotaKey[] = ['daily_works', 'session_minutes', 'cooldown_minutes']
+interface QuotaRow {
+  channel: string
+  daily_works: number | null
+  session_minutes: number | null
+  cooldown_minutes: number | null
+  defaults: AccountQuotaLimits
+}
+const quotaDialog = ref(false)
+const savingQuota = ref(false)
+const quotaRows = ref<QuotaRow[]>([])
+const quotaForm = reactive({ enabled: true, rotate_lock_enabled: true, rotate_lock_hours: 12 })
+
+async function openQuotaDialog() {
+  const [settings, info] = await Promise.all([settingsApi.get(), accountApi.quota({ days: 1 })])
+  quotaInfo.value = info
+  const cfg = settings.config?.crawl?.account_quota || {}
+  const perChannel: Record<string, Partial<AccountQuotaLimits>> = cfg.per_channel || {}
+  quotaForm.enabled = cfg.enabled !== false
+  quotaForm.rotate_lock_enabled = cfg.rotate_lock_enabled !== false
+  quotaForm.rotate_lock_hours = info.rotation?.default_hours || 12
+  quotaRows.value = Object.keys(info.limits || {}).map((channel) => {
+    const own = perChannel[channel] || {}
+    const row: QuotaRow = {
+      channel,
+      daily_works: null, session_minutes: null, cooldown_minutes: null,
+      defaults: info.defaults?.[channel] || info.limits[channel],
+    }
+    for (const key of QUOTA_KEYS) {
+      const v = Number(own[key] || 0)
+      row[key] = v > 0 ? v : null
+    }
+    return row
+  })
+  quotaDialog.value = true
+}
+
+async function saveQuota() {
+  savingQuota.value = true
+  try {
+    const perChannel: Record<string, AccountQuotaLimits> = {}
+    for (const row of quotaRows.value) {
+      perChannel[row.channel] = {
+        daily_works: row.daily_works || 0,
+        session_minutes: row.session_minutes || 0,
+        cooldown_minutes: row.cooldown_minutes || 0,
+      }
+    }
+    await settingsApi.save('crawl', {
+      account_quota: {
+        enabled: quotaForm.enabled,
+        rotate_lock_enabled: quotaForm.rotate_lock_enabled,
+        rotate_lock_hours: quotaForm.rotate_lock_hours,
+        per_channel: perChannel,
+      },
+    })
+    ElMessage.success('已保存，下次挑号/采集时生效')
+    quotaDialog.value = false
+    await loadQuota()
+  } finally {
+    savingQuota.value = false
+  }
+}
+
 async function unlockRotation(row: Account) {
   // ⚠️ 这个**不**弹确认框。跟解除冷却不一样：轮换锁只是"刚干过活，让别人
   //    先上"的软偏好，解掉它顶多是这个号被连着用两轮，配额和冷却那两道
@@ -431,15 +617,24 @@ async function save() {
   }
   saving.value = true
   try {
+    // 编辑也走这个接口：后端按 平台+账号 upsert，登录态/Cookie 不动。
+    // ⚠️ enabled、login_type 必须原样带回去，否则停用的号一编辑就被悄悄启用了
+    const editing = editingRow.value
     await accountApi.create({
       channel: form.channel,
       account_name: form.account_name.trim(),
       nickname: form.nickname || null,
       account_group: form.account_group || 'default',
       rotate_lock_hours: form.rotate_lock_hours || 0,
+      ...(editing ? { enabled: editing.enabled, login_type: editing.login_type } : {}),
     })
     addDialog.value = false
     await Promise.all([load(), loadGroups()])
+    if (editing) {
+      ElMessage.success('已保存')
+      editingRow.value = null
+      return
+    }
     openLogin({ channel: form.channel, account_name: form.account_name.trim() } as Account)
     form.account_name = ''
     form.nickname = ''
@@ -582,74 +777,44 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 今日用量接近上限时标黄：再采下去就要进冷却了 */
-.is-warn { color: #d97706; font-weight: 600; }
+.header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.header-actions .el-button + .el-button,
+.filter-bar .el-button + .el-button { margin-left: 0; }
+
+/* ---------- 分组统计卡片 ---------- */
 .group-summary {
   display: grid;
-  /* ⚠️ 240 不是拍脑袋：图标 40 + 间距 12 + 「1 个账号 1 个可用」约 120
-     + 箭头 14 + 左右内边距 40 ≈ 226，再留一点余量。
-     之前是 200，正好差一点点，于是「1 个账号」从字中间断成
-     「1 个账 / 号」——看着像文案写错了，其实是宽度不够。 */
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px;
+  /* ⚠️ 最小宽度要容得下「NN 个账号 · NN 个可用」一整行（约 130px + 内边距 32）。
+     以前卡片里还有图标和箭头，宽度给 200 时正好差一点点，于是「1 个账号」
+     从字中间断成「1 个账 / 号」——看着像文案写错了，其实是宽度不够。 */
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
   margin-bottom: 20px;
 }
 .group-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
-  background: #fff;
-  border: 1px solid #e8ecf3;
-  border-radius: 12px;
+  padding: 14px 16px;
+  background: var(--smc-card-bg);
+  border: 1px solid var(--smc-border);
+  border-radius: var(--smc-radius);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
-.group-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(16, 24, 40, 0.08);
-  border-color: #4f6ef7;
-}
+.group-card:hover { border-color: var(--smc-border-strong); }
 .group-card.active {
-  background: #eef2ff;
-  border-color: #4f6ef7;
-  box-shadow: 0 4px 12px rgba(79, 110, 247, 0.15);
-}
-.group-card.is-default {
-  background: linear-gradient(135deg, #f0f5ff 0%, #e6f0ff 100%);
-  border-color: #91caff;
-}
-.group-card.is-default.active {
-  background: linear-gradient(135deg, #d6e4ff 0%, #cce0ff 100%);
-  border-color: #4f6ef7;
-}
-.group-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: #f0f2f5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  color: #4f6ef7;
-  flex-shrink: 0;
-}
-.group-card.active .group-icon {
-  background: #4f6ef7;
-  color: #fff;
-}
-.group-info {
-  flex: 1;
-  min-width: 0;
+  border-color: var(--smc-primary);
+  background: var(--smc-primary-light);
 }
 .group-name {
   font-size: 14px;
   font-weight: 600;
-  color: #1f2733;
-  margin-bottom: 4px;
+  color: var(--smc-text);
+  margin-bottom: 6px;
   /* 分组名是用户自己起的，可能很长；省略号比换行好——
-     换行会把下面那行数字顶下去，四张卡片高度参差不齐 */
+     换行会把下面那行数字顶下去，几张卡片高度参差不齐 */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -670,33 +835,145 @@ onMounted(() => {
   white-space: nowrap;
   flex-shrink: 0;
 }
-.group-total {
-  color: #7a8699;
-}
-.group-active {
-  font-weight: 500;
-}
+.group-total { color: var(--smc-text-secondary); }
 /* 两个数字之间加个分隔点，比单纯留空更容易一眼分开 */
 .group-active::before {
   content: '·';
   margin-right: 8px;
-  color: #d5dbe6;
-  font-weight: 400;
+  color: var(--smc-text-tertiary);
 }
-.group-active.text-green {
-  color: #10b981;
+.group-active.is-ok { color: #16a34a; }
+.group-active.is-none { color: #d97706; }
+
+/* ---------- 筛选栏 ---------- */
+.filter-count {
+  margin-left: auto;
+  font-size: 13px;
 }
-.group-active.text-orange {
-  color: #f59e0b;
+
+/* ---------- 表格 ---------- */
+.account-name {
+  font-weight: 500;
+  color: var(--smc-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.group-arrow {
-  color: #c9d2e0;
-  font-size: 14px;
-  flex-shrink: 0;
-  transition: transform 0.2s ease;
+.account-sub {
+  font-size: 12px;
+  color: var(--smc-text-secondary);
+  margin-top: 2px;
 }
-.group-card:hover .group-arrow {
-  transform: translateX(4px);
-  color: #4f6ef7;
+.status-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.time-text {
+  font-size: 13px;
+  white-space: nowrap;
+  color: #5b6375;
+  font-variant-numeric: tabular-nums;
+}
+.error-text {
+  font-size: 12px;
+  color: #dc2626;
+  margin-top: 2px;
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.th-with-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.th-setting {
+  color: var(--smc-text-secondary);
+  padding: 0 2px;
+  height: auto;
+}
+.th-setting:hover { color: var(--smc-primary); }
+.usage-line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.usage-num { font-variant-numeric: tabular-nums; }
+.usage-cap { color: var(--smc-text-secondary); }
+/* 今日用量接近上限时标黄：再采下去就要进冷却了 */
+.is-warn,
+.is-warn .usage-cap { color: #d97706; font-weight: 600; }
+.tag-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.pop-ref { display: inline-flex; }
+
+/* ---------- 弹窗 ---------- */
+.unit {
+  margin-left: 8px;
+  color: var(--smc-text-secondary);
+  font-size: 13px;
+}
+.add-form :deep(.el-form-item__label),
+.quota-form :deep(.el-form-item__label) {
+  align-items: center;
+}
+.quota-form :deep(.el-form-item) { margin-bottom: 12px; }
+.quota-table { margin-bottom: 4px; }
+
+/* 全平台体检结果 */
+.probe-all-results {
+  border: 1px solid var(--smc-border);
+  border-radius: var(--smc-radius-sm);
+}
+.probe-all-row {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--smc-border);
+}
+.probe-all-row:last-child { border-bottom: none; }
+.probe-all-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.probe-all-time { font-size: 12px; }
+.probe-all-toggle { margin-left: auto; }
+.probe-all-sample {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #4a5263;
+}
+.probe-all-error {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #dc2626;
+  word-break: break-all;
+}
+.probe-all-detail {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: #fafbfc;
+  border-radius: var(--smc-radius-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.probe-log-line.lv-warn { color: #d97706; }
+.probe-log-line.lv-error { color: #dc2626; }
+.probe-http {
+  margin-top: 6px;
+  color: var(--smc-text-secondary);
+  word-break: break-all;
 }
 </style>

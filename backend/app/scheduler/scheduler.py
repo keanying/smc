@@ -254,7 +254,12 @@ class TaskScheduler:
         event = self._cancel_events.get(task_id)
         if event is None:
             # 没在跑，但可能是排队中的周期任务，直接停用
+            task = await self.tasks.get(task_id)
             await self.tasks.update(task_id, {"status": TaskStatus.CANCELED.value})
+            if task and task.get("status") == TaskStatus.WAITING.value:
+                # 取消"排队等账号"：next_run_time 还是那个恢复时刻，不改的话
+                # 到点照样会被捞起来跑。按任务自己的调度规则重新算（一次性的就停用）。
+                await self.tasks.reschedule(task)
             return False
         event.set()
         return True

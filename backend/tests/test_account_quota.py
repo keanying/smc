@@ -123,6 +123,18 @@ def test_per_channel_beats_global():
     assert q.limits_for("douyin")["daily_works"] == 42
 
 
+def test_base_limits_ignore_per_channel():
+    """账号管理页单平台那一格的占位提示：不算单平台配置时是多少。"""
+    q = _quota({"enabled": True, "daily_works": 42,
+                "per_channel": {"xiaohongshu": {"daily_works": 7}}})
+    assert q.limits_for("xiaohongshu")["daily_works"] == 7
+    assert q.base_limits_for("xiaohongshu")["daily_works"] == 42
+    # 没填全局时就是平台出厂默认
+    q = _quota({"enabled": True, "per_channel": {"xiaohongshu": {"daily_works": 7}}})
+    assert q.base_limits_for("xiaohongshu")["daily_works"] == 150
+    assert q.base_limits_for("weibo")["daily_works"] == 500
+
+
 def test_zero_means_use_factory_default_not_unlimited():
     """页面上三个数字框默认是 0，提示写的是"留 0 = 按平台出厂默认"。
 

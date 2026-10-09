@@ -1,10 +1,7 @@
 <template>
   <div v-loading="loading">
     <div class="page-header">
-      <div>
-        <h2 class="page-title">{{ task?.task_name || '任务详情' }}</h2>
-        <p class="page-subtitle mono">{{ taskId }}</p>
-      </div>
+      <h2 class="page-title">{{ task?.task_name || '任务详情' }}</h2>
       <div>
         <el-button @click="$router.push('/tasks')">返回列表</el-button>
         <el-button :icon="Edit" @click="editVisible = true">编辑</el-button>
@@ -31,13 +28,13 @@
                   {{ connected ? '已连接' : '未连接' }}
                 </el-tag>
                 <el-checkbox v-model="autoScroll" label="自动滚动" size="small" />
-                <el-button link size="small" @click="clearLogs">清空</el-button>
+                <IconAction icon="clear" tip="清空日志" @click="clearLogs" />
               </div>
             </div>
           </template>
 
           <div ref="terminal" class="log-terminal">
-            <div v-if="!logs.length" class="muted">暂无日志。任务开始执行后会实时显示在这里。</div>
+            <div v-if="!logs.length" class="muted">暂无日志，任务执行后实时显示</div>
             <div v-for="(log, index) in logs" :key="index" class="log-line">
               <span class="log-time">{{ log.log_time.slice(11, 19) }}</span>
               <span v-if="log.channel" class="log-channel">[{{ channelLabel(log.channel) }}]</span>
@@ -51,12 +48,19 @@
         <el-card shadow="never" header="任务状态">
           <el-descriptions :column="1" size="small" border>
             <el-descriptions-item label="状态">
-              <el-tag :type="TASK_STATUS_TYPES[task?.status || '']" size="small">
+              <el-tag :type="TASK_STATUS_TYPES[task?.status || '']" size="small" class="status-tag">
+                <AppIcon v-if="task?.status === 'waiting'" name="pending" :size="12" class="status-icon" />
                 {{ TASK_STATUS_LABELS[task?.status || ''] || task?.status }}
               </el-tag>
+              <span v-if="task?.status === 'waiting' && task?.next_run_time" class="muted waiting-eta">
+                预计 {{ formatTime(task.next_run_time) }} 恢复
+              </span>
             </el-descriptions-item>
             <el-descriptions-item label="进度">
               <el-progress :percentage="task?.progress || 0" :stroke-width="10" />
+            </el-descriptions-item>
+            <el-descriptions-item label="任务 ID">
+              <span class="mono task-id">{{ taskId }}</span>
             </el-descriptions-item>
             <el-descriptions-item label="景区">{{ task?.scenic_id || '-' }}</el-descriptions-item>
             <el-descriptions-item label="平台">
@@ -93,24 +97,26 @@
             </div>
           </div>
 
+          <!-- waiting 状态下 error 里放的是排队原因（账号冷却/轮换锁定），不是报错 -->
           <el-alert
-            v-if="task?.error" type="error" :closable="false" style="margin-top: 14px"
-            title="最近一次错误" :description="task.error"
+            v-if="task?.error" :type="task.status === 'waiting' ? 'warning' : 'error'"
+            :closable="false" style="margin-top: 16px"
+            :title="task.status === 'waiting' ? '等待原因' : '最近一次错误'" :description="task.error"
           />
         </el-card>
 
         <el-card shadow="never" style="margin-top: 16px">
           <template #header>
             <div style="display: flex; justify-content: space-between; align-items: center">
-              <span>采集上限</span>
-              <el-button link type="primary" size="small" @click="editVisible = true">修改</el-button>
+              <span>采集上限<InfoTip content="携程/同程没有作品，只有景区点评，所以作品数为空" /></span>
+              <IconAction icon="edit" tip="修改" @click="editVisible = true" />
             </div>
           </template>
           <el-table :data="task?.collect_limits || []" size="small" border>
-            <el-table-column label="平台" width="80">
+            <el-table-column label="平台" width="72">
               <template #default="{ row }">{{ channelLabel(row.channel) }}</template>
             </el-table-column>
-            <el-table-column label="采集模式" width="90">
+            <el-table-column label="采集模式" width="82">
               <template #default="{ row }">
                 <el-tag
                   v-if="row.supports_browser_engine" size="small" effect="plain"
@@ -119,7 +125,7 @@
                 <span v-else class="muted">接口</span>
               </template>
             </el-table-column>
-            <el-table-column label="作品数" width="80" align="right">
+            <el-table-column label="作品数" width="72" align="right">
               <template #default="{ row }">
                 <span v-if="row.has_works">{{ row.max_works || '不限' }}</span>
                 <span v-else class="muted">—</span>
@@ -131,7 +137,7 @@
                 <el-tag v-if="row.customized" size="small" type="warning" effect="plain">单独设置</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="翻页" width="70" align="right">
+            <el-table-column label="翻页" width="60" align="right">
               <template #default="{ row }">
                 <span v-if="!row.has_works">{{ row.max_pages || '不限' }}</span>
                 <span v-else class="muted">—</span>
@@ -141,21 +147,15 @@
           </el-table>
 
           <template v-if="task?.search_filters?.length">
-            <el-divider content-position="left" style="margin: 14px 0 8px">搜索条件</el-divider>
-            <div v-for="row in task.search_filters" :key="row.channel"
-                 class="muted" style="font-size: 12px; line-height: 1.9">
-              <b>{{ channelLabel(row.channel) }}</b>：{{ row.description }}
+            <div class="sub-title">搜索条件</div>
+            <div v-for="row in task.search_filters" :key="row.channel" class="sub-text">
+              <span class="sub-key">{{ channelLabel(row.channel) }}</span>{{ row.description }}
             </div>
           </template>
           <template v-if="task?.content_filter">
-            <el-divider content-position="left" style="margin: 14px 0 8px">内容过滤</el-divider>
-            <div class="muted" style="font-size: 12px; line-height: 1.9">
-              {{ task.content_filter.description }}
-            </div>
+            <div class="sub-title">内容过滤</div>
+            <div class="sub-text">{{ task.content_filter.description }}</div>
           </template>
-          <div class="muted" style="font-size: 12px; margin-top: 6px">
-            携程/同程没有作品，只有景区点评，所以作品数一栏为空。
-          </div>
         </el-card>
 
         <el-card shadow="never" style="margin-top: 16px" header="关键字">
@@ -165,7 +165,7 @@
               style="margin: 0 6px 6px 0"
             >{{ k }}</el-tag>
           </div>
-          <span v-else class="muted">未指定（执行时从景区自动带入）</span>
+          <span v-else class="muted" style="font-size: 13px">未指定，执行时从景区自动带入</span>
         </el-card>
       </el-col>
     </el-row>
@@ -299,3 +299,21 @@ onUnmounted(() => {
   window.clearTimeout(timer)
 })
 </script>
+
+<style scoped>
+.status-tag .status-icon { margin-right: 3px; vertical-align: -2px; }
+.waiting-eta { margin-left: 8px; font-size: 12px; }
+.task-id { font-size: 12px; color: var(--smc-text-secondary); word-break: break-all; }
+.sub-title {
+  margin: 16px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--smc-text);
+}
+.sub-text {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--smc-text-secondary);
+}
+.sub-key { color: var(--smc-text); margin-right: 6px; }
+</style>

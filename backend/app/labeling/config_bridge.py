@@ -238,13 +238,8 @@ def build_engine_config(config: Config) -> Dict[str, Any]:
     return _deep_merge(engine_defaults(), overrides)
 
 
-def write_runtime_config(config: Config) -> Path:
-    """把生成的配置落盘，返回路径。
-
-    ⚠️ 里面有明文 API Key 和数据库口令，所以：
-      - 落在 data/labeling/ 下（打包时 data/ 整个排除）
-      - 权限 0600
-    """
+def runtime_config_path(config: Config) -> Path:
+    """运行时配置落盘的位置。data/labeling/ 下的其它运行时文件（补标断点）也放这儿。"""
     target = Path(config.get("labeling.runtime_config_path")
                   or "./data/labeling/engine.runtime.yaml")
     if not target.is_absolute():
@@ -253,6 +248,17 @@ def write_runtime_config(config: Config) -> Path:
         src = getattr(config, "source_path", None)
         root = Path(src).resolve().parents[1] if src else Path.cwd()
         target = root / target
+    return target
+
+
+def write_runtime_config(config: Config) -> Path:
+    """把生成的配置落盘，返回路径。
+
+    ⚠️ 里面有明文 API Key 和数据库口令，所以：
+      - 落在 data/labeling/ 下（打包时 data/ 整个排除）
+      - 权限 0600
+    """
+    target = runtime_config_path(config)
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = build_engine_config(config)
     with target.open("w", encoding="utf-8") as fh:

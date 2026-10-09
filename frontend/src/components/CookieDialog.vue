@@ -1,23 +1,23 @@
 <template>
   <el-dialog
-    v-model="visible" width="760px" destroy-on-close
+    v-model="visible" width="720px" destroy-on-close
     :close-on-click-modal="false" @open="onOpen"
   >
     <template #header>
-      <span>Cookie — {{ channelLabel(channel) }} / {{ accountName }}</span>
+      <span class="el-dialog__title">Cookie</span>
+      <span class="dialog-sub">{{ channelLabel(channel) }} / {{ accountName }}</span>
     </template>
 
     <!-- 当前状态 -->
-    <el-card shadow="never" style="margin-bottom: 14px">
-      <template #header>
-        <div style="display: flex; justify-content: space-between; align-items: center">
-          <span>当前登录态</span>
-          <el-button link :icon="Refresh" :loading="loadingState" @click="loadState">刷新</el-button>
-        </div>
-      </template>
-
+    <div class="section-title">
+      当前登录态
+      <el-button link :icon="Refresh" :loading="loadingState" class="section-action" @click="loadState">
+        刷新
+      </el-button>
+    </div>
+    <div class="cookie-block">
       <div v-if="state" class="cookie-state">
-        <el-tag :type="state.logged_in ? 'success' : 'danger'" effect="dark">
+        <el-tag :type="state.logged_in ? 'success' : 'danger'" disable-transitions>
           {{ state.logged_in ? '已登录' : '未登录' }}
         </el-tag>
         <span>共 <b>{{ state.count }}</b> 个 Cookie</span>
@@ -26,68 +26,69 @@
 
       <el-alert
         v-if="state && !state.logged_in" type="error" :closable="false" show-icon
-        style="margin-top: 10px"
-        title="这些 Cookie 里没有登录凭据"
+        style="margin-top: 12px"
       >
-        <div>
-          需要下面任意一个：
+        <template #title>
+          缺少登录凭据
+          <InfoTip
+            content="只有游客 Cookie 的话，抖音会返回「请先登录，再继续搜索吧」。用下面的粘贴导入补一份真正的登录 Cookie 即可。"
+          />
+        </template>
+        <div class="expected-names">
+          需要以下任意一个：
           <el-tag
             v-for="name in state.expected_any_of" :key="name"
-            size="small" class="mono" style="margin: 2px 4px 2px 0"
+            size="small" class="mono" disable-transitions
           >{{ name }}</el-tag>
-        </div>
-        <div style="margin-top: 6px">
-          只有游客 Cookie 的话，抖音会返回「请先登录，再继续搜索吧」。
-          用下面的方式补一份真正的登录 Cookie 即可。
         </div>
       </el-alert>
 
-      <el-collapse v-if="state?.names.length" style="margin-top: 8px">
-        <el-collapse-item :title="`查看全部 ${state.names.length} 个 Cookie 名`">
-          <el-tag
-            v-for="name in state.names" :key="name" size="small"
-            :type="state.expected_any_of.includes(name) ? 'success' : 'info'"
-            effect="plain" class="mono" style="margin: 2px 4px 2px 0"
-          >{{ name }}</el-tag>
-          <div class="muted" style="font-size: 12px; margin-top: 6px">
-            绿色的是登录凭据。这里只显示名字，不显示值。
+      <el-collapse v-if="state?.names.length" class="cookie-names">
+        <el-collapse-item>
+          <template #title>
+            全部 {{ state.names.length }} 个 Cookie 名
+            <InfoTip content="绿色的是登录凭据。这里只显示名字，不显示值。" />
+          </template>
+          <div class="name-tags">
+            <el-tag
+              v-for="name in state.names" :key="name" size="small"
+              :type="state.expected_any_of.includes(name) ? 'success' : 'info'"
+              effect="plain" class="mono" disable-transitions
+            >{{ name }}</el-tag>
           </div>
         </el-collapse-item>
       </el-collapse>
-    </el-card>
+    </div>
 
     <!-- 导入 -->
-    <el-card shadow="never">
-      <template #header><span>粘贴导入</span></template>
+    <div class="section-title" style="margin-top: 20px">
+      粘贴导入
+      <InfoTip :width="360">
+        1. 在你自己的浏览器里登录该平台<br>
+        2. 用 Cookie-Editor 插件点 <b>Export</b>（JSON 格式，推荐——带域名和过期时间）<br>
+        3. 粘到下面，点「导入 Cookie」<br>
+        导入的 Cookie 会同时写进这个账号的浏览器 profile——抖音和快手采集时要开真实页面算签名，只存数据库那边还是未登录状态。
+      </InfoTip>
+      <el-link
+        v-if="state?.home_url" type="primary" :href="state.home_url" target="_blank"
+        :underline="false" class="section-action"
+      >
+        打开登录页
+      </el-link>
+    </div>
 
-      <ol class="cookie-howto">
-        <li>
-          在你自己的浏览器里登录
-          <el-link v-if="state?.home_url" type="primary" :href="state.home_url" target="_blank">
-            {{ state.home_url }}
-          </el-link>
-        </li>
-        <li>用 Cookie-Editor 插件点 <b>Export</b>（JSON 格式，推荐——带域名和过期时间）</li>
-        <li>粘到下面，点导入</li>
-      </ol>
+    <el-input
+      v-model="raw" type="textarea" :rows="7"
+      placeholder='两种格式都认：&#10;[{"name":"sessionid","value":"...","domain":".douyin.com",...}]&#10;或&#10;sessionid=xxx; sid_tt=yyy; uid_tt=zzz'
+      class="mono"
+    />
 
-      <el-input
-        v-model="raw" type="textarea" :rows="7"
-        placeholder='两种格式都认：&#10;[{"name":"sessionid","value":"...","domain":".douyin.com",...}]&#10;或&#10;sessionid=xxx; sid_tt=yyy; uid_tt=zzz'
-        class="mono"
-      />
-      <div class="muted" style="font-size: 12px; margin-top: 6px">
-        导入的 Cookie 会同时写进这个账号的浏览器 profile ——
-        抖音和快手采集时要开真实页面算签名，只存数据库那边还是未登录状态。
-      </div>
-
-      <el-alert
-        v-if="importResult" :closable="false" show-icon style="margin-top: 10px"
-        :type="importResult.profile_warning ? 'warning' : 'success'"
-        :title="importResult.profile_warning
-          || `导入成功：${importResult.count} 个 Cookie（${importResult.format === 'json' ? 'JSON' : '请求头串'} 格式），已写入浏览器 profile`"
-      />
-    </el-card>
+    <el-alert
+      v-if="importResult" :closable="false" show-icon style="margin-top: 12px"
+      :type="importResult.profile_warning ? 'warning' : 'success'"
+      :title="importResult.profile_warning
+        || `已导入 ${importResult.count} 个 Cookie（${importResult.format === 'json' ? 'JSON' : '请求头串'}），已写入浏览器 profile`"
+    />
 
     <template #footer>
       <el-button @click="visible = false">关闭</el-button>
@@ -176,18 +177,47 @@ async function harvest() {
 </script>
 
 <style scoped>
+.dialog-sub {
+  margin-left: 10px;
+  font-size: 13px;
+  color: var(--smc-text-secondary);
+}
+.section-action { margin-left: auto; font-weight: 400; }
+.cookie-block {
+  padding: 14px 16px;
+  border: 1px solid var(--smc-border);
+  border-radius: var(--smc-radius-sm);
+}
 .cookie-state {
   display: flex;
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
-}
-
-.cookie-howto {
-  margin: 0 0 10px;
-  padding-left: 20px;
   font-size: 13px;
-  line-height: 1.9;
-  color: #606266;
+}
+.expected-names {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.cookie-names {
+  margin-top: 10px;
+  border-top: none;
+  border-bottom: none;
+}
+.cookie-names :deep(.el-collapse-item__header) {
+  height: 32px;
+  border-bottom: none;
+  font-size: 13px;
+  color: #5b6375;
+}
+.cookie-names :deep(.el-collapse-item__wrap) { border-bottom: none; }
+.cookie-names :deep(.el-collapse-item__content) { padding-bottom: 4px; }
+.name-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 </style>

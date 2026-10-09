@@ -128,7 +128,10 @@ async def lifespan(app: FastAPI):
     if _notifier.enabled:
         logger.info("通知：飞书机器人已开启（需要人工介入或采集报错时会推送）")
     if (config.get("labeling") or {}).get("enabled"):
-        logger.info("边采边标：已开启（首次使用时会先自检，任一项不过就不标注）")
+        # 重启前队列里没标完的，现在就接着标——不等下一次采集任务来"顺便"拉起引擎。
+        # 放后台跑：自检要真打一次模型，别拖慢服务启动
+        logger.info("边采边标：已开启，正在检查并续标队列里剩下的评论")
+        asyncio.create_task(_get_labeling_manager(config)._resume_quietly("服务启动"))
 
     try:
         yield

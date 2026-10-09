@@ -1,14 +1,13 @@
 <template>
   <div class="archive-page">
-    <div class="page-head">
-      <div>
-        <h2>景区档案</h2>
-        <p class="muted">
-          三个平台的景区资料库：<b>采一次落库</b>，之后建景区、加采集目标都在库里挑，
-          不用每次去打平台的接口。这里存的是平台自己的景区资料（名称/等级/地址/开放时间…），
-          <b>不是点评</b>，不参与标注。
-        </p>
-      </div>
+    <div class="page-header">
+      <h2 class="page-title">
+        景区档案
+        <InfoTip :width="340">
+          三个平台的景区资料库：<b>采一次落库</b>，之后建景区、加采集目标都在库里挑，不用每次请求平台。<br />
+          存的是平台的景区资料（名称 / 等级 / 地址 / 开放时间…），<b>不是点评</b>，不参与标注。
+        </InfoTip>
+      </h2>
       <div class="stat-row">
         <div v-for="s in stats" :key="s.channel" class="stat-card">
           <div class="stat-name">{{ channelLabel(s.channel) }}</div>
@@ -26,15 +25,6 @@
         </template>
       </el-tab-pane>
     </el-tabs>
-
-    <el-alert
-      v-if="currentChannel && !currentChannel.supports_detail"
-      type="warning" :closable="false" style="margin-bottom: 12px"
-    >
-      <b>{{ currentChannel.label }}没有景区详情页</b>——列表页只给名称、等级、地址、省市这几样。
-      所以开放时间 / 电话 / 优待政策 / 服务设施 / 介绍这几列对它<b>永远是空的</b>，
-      这不是采失败，重采多少次也不会有。
-    </el-alert>
 
     <!-- 采集作业进度 -->
     <el-card v-if="job" shadow="never" class="job-card" :class="`is-${job.status}`">
@@ -114,25 +104,27 @@
         <el-checkbox v-model="withDetail" :disabled="!currentChannel?.supports_detail">
           同时采详情
         </el-checkbox>
-        <el-tooltip
-          content="逐个进景区详情页取开放时间/电话/优待政策/服务设施/介绍。
-                   一个省几百上千条，每条一次请求，会慢很多。不勾也能先把名录采下来，
-                   详情之后随时补。"
-          placement="top"
-        >
-          <el-icon class="muted"><QuestionFilled /></el-icon>
-        </el-tooltip>
+        <InfoTip :width="340">
+          <template v-if="currentChannel && !currentChannel.supports_detail">
+            <b>{{ currentChannel.label }}没有景区详情页</b>，列表页只给名称、等级、地址、省市；
+            开放时间 / 电话 / 优待政策 / 服务设施 / 介绍对它永远为空，不是采集失败，重采也不会有。
+          </template>
+          <template v-else>
+            逐个进景区详情页取开放时间 / 电话 / 优待政策 / 服务设施 / 介绍。
+            每条一次请求，一个省几百上千条会慢很多；不勾也能先采名录，详情之后随时补。
+          </template>
+        </InfoTip>
         <el-button
           type="primary" size="small" :disabled="!selectedRegions.length || job?.status === 'running'"
           @click="startCollect"
         >
-          采集选中的 {{ selectedRegions.length || '' }} 个区域
+          采集选中区域{{ selectedRegions.length ? `（${selectedRegions.length}）` : '' }}
         </el-button>
       </div>
 
       <el-empty
         v-if="!regions.length" :image-size="60"
-        description="还没有区域清单——点「重新探测」从平台上抓，抓不到就手工添加一条"
+        description="还没有区域清单，点「重新探测」获取，或手工添加"
       />
       <!-- 收起时把已选的摘要留在外面：勾了十几个省再一收，
            什么都不显示的话就不知道自己到底选了什么，只能再展开确认一遍。 -->
@@ -140,7 +132,7 @@
         <template v-if="selectedRegions.length">
           已选 {{ selectedRegions.length }} 个：{{ selectedNames }}
         </template>
-        <template v-else>区域清单已收起，点上面的标题展开</template>
+        <template v-else>已收起，点标题展开</template>
       </div>
       <el-checkbox-group v-else v-model="selectedRegions" class="region-grid">
         <el-checkbox v-for="r in visibleRegions" :key="r.region_id" :value="r.region_id">
@@ -197,6 +189,12 @@
         <el-table-column prop="address" label="地址" min-width="200" show-overflow-tooltip />
         <el-table-column prop="poi_id" label="POI ID" width="110" class-name="mono" />
         <el-table-column label="详情" width="90" align="center">
+          <template #header>
+            详情<InfoTip
+              v-if="currentChannel && !currentChannel.supports_detail"
+              :content="`${currentChannel.label}没有景区详情页，开放时间 / 电话 / 优待政策 / 服务设施 / 介绍永远为空，不是采集失败。`"
+            />
+          </template>
           <template #default="{ row }">
             <el-tooltip v-if="row.detail_status === 'error'" :content="row.detail_error">
               <el-tag size="small" type="danger">失败</el-tag>
@@ -206,20 +204,20 @@
             <el-tag v-else size="small">待采</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="210" align="center">
+        <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button link type="primary" @click="openAttach(row)">挂到景区</el-button>
-            <el-button
-              link type="primary" :disabled="row.detail_status === 'unsupported'"
-              @click="refreshOne(row)"
-            >
-              重采
-            </el-button>
+            <div class="row-actions">
+              <IconAction icon="view" tip="详情" @click="openDetail(row)" />
+              <IconAction icon="transfer" tip="挂到景区" @click="openAttach(row)" />
+              <IconAction
+                icon="query" tip="重新采集" :disabled="row.detail_status === 'unsupported'"
+                @click="refreshOne(row)"
+              />
+            </div>
           </template>
         </el-table-column>
         <template #empty>
-          <el-empty description="这个渠道还没有档案——先在上面选区域采一次" :image-size="60" />
+          <el-empty description="还没有档案，先在上面选区域采集" :image-size="60" />
         </template>
       </el-table>
 
@@ -266,10 +264,13 @@
 
     <!-- 挂到已有景区 -->
     <el-dialog v-model="attachVisible" title="挂到已有景区" width="480px">
-      <el-alert type="info" :closable="false" style="margin-bottom: 12px">
-        同一个景区在三个平台上各有一个 POI。用这里把它们挂到<b>同一个景区</b>下，
-        数据才归在一起；走「建为景区」会各建一个，同一个景区的数据被劈成三份。
-      </el-alert>
+      <div class="field-label">
+        目标景区
+        <InfoTip>
+          同一个景区在三个平台上各有一个 POI，挂到<b>同一个景区</b>下数据才归在一起；
+          走「建为景区」会各建一个，数据被劈成三份。
+        </InfoTip>
+      </div>
       <el-select
         v-model="attachScenic" filterable remote :remote-method="searchScenics"
         :loading="searchingScenic" placeholder="输入景区名称搜索" style="width: 100%"
@@ -287,13 +288,15 @@
 
     <!-- 手工加区域 -->
     <el-dialog v-model="manualVisible" title="手工添加采集区域" width="480px">
-      <el-alert type="info" :closable="false" style="margin-bottom: 12px">
-        区域清单是从平台页面上扒的，平台一改版就可能探测不到。
-        这里能手填一条，功能就不会被一次改版彻底堵死。<br />
-        编号填平台自己的：携程是 districtId，同程是 pid，去哪儿是城市 slug。
-      </el-alert>
+      <!-- 区域清单是从平台页面上扒的，平台一改版就可能探测不到；
+           留一个手填入口，功能就不会被一次改版彻底堵死。 -->
       <el-form label-width="90px">
-        <el-form-item label="区域编号">
+        <el-form-item>
+          <template #label>
+            <span class="label-tip">
+              区域编号<InfoTip content="填平台自己的编号：携程 districtId，同程 pid，去哪儿城市 slug。平台改版探测不到区域时用这里补。" />
+            </span>
+          </template>
           <el-input v-model="manualForm.region_id" placeholder="如 6 / 110000 / guiyang" />
         </el-form-item>
         <el-form-item label="区域名称">
@@ -318,7 +321,7 @@
  */
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowRight, QuestionFilled, Refresh, Search } from '@element-plus/icons-vue'
+import { ArrowRight, Refresh, Search } from '@element-plus/icons-vue'
 import {
   archiveApi, qunarApi, scenicApi,
   type ArchiveChannel, type ArchiveItem, type ArchiveJob, type ArchiveRegion,
@@ -655,13 +658,21 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 
 <style scoped>
 .archive-page { display: flex; flex-direction: column; gap: 12px; }
-.page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
-.page-head h2 { margin: 0 0 4px; }
-.page-head p { margin: 0; max-width: 720px; line-height: 1.6; }
+.archive-page .page-header { margin-bottom: 0; }
 .stat-row { display: flex; gap: 10px; }
-.stat-card { min-width: 110px; padding: 10px 14px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; }
-.stat-name { font-size: 12px; color: var(--el-text-color-secondary); }
-.stat-num { font-size: 22px; font-weight: 600; line-height: 1.2; }
+.stat-card {
+  min-width: 112px;
+  padding: 8px 14px;
+  border: 1px solid var(--smc-border);
+  border-radius: 8px;
+  background: var(--smc-card-bg);
+}
+.stat-name { font-size: 12px; color: var(--smc-text-secondary); }
+.stat-num { font-size: 20px; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.stat-card .muted { font-size: 12px; }
+.row-actions { display: inline-flex; align-items: center; gap: 2px; }
+.label-tip { display: inline-flex; align-items: center; }
+.field-label { display: flex; align-items: center; font-size: 13px; color: var(--el-text-color-regular); margin-bottom: 8px; }
 .ch-tabs { margin-bottom: -8px; }
 .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .spacer { flex: 1; }

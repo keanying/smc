@@ -1,31 +1,54 @@
 <template>
   <div class="labeling-view">
-    <!-- 引擎状态横幅：没开 / 开了但不可用 / 正常，三种都要一眼看出来 -->
-    <el-alert
-      v-if="!status?.engine_present"
-      type="error" :closable="false" show-icon
-      title="没找到标注引擎"
-      description="backend/vendor/opinion_labeling_engine 不完整，标注功能不可用。"
-    />
-    <el-alert
-      v-else-if="status?.degraded"
-      type="error" :closable="false" show-icon
-      title="标注引擎已降级，本次运行不再尝试标注"
-      :description="status.error || '未知原因，点「自检」查看详情'"
-    />
-    <el-alert
-      v-else-if="!status?.enabled"
-      type="info" :closable="false" show-icon
-      title="边采边标未开启：采集时不会自动标注"
-      description="到「系统设置 → 标注」里打开。历史数据可以用下面的「一键补标」补。"
-    />
+    <!--
+      引擎状态：没开 / 开了但不可用 / 正常，三种都要一眼看出来。
+      原来是整条 el-alert 横幅，现在收成标题旁的状态标签，详情悬停 ⓘ 看。
+      status 还没回来时不显示，免得首屏先闪一下「没找到标注引擎」。
+    -->
+    <div class="page-header">
+      <h2 class="page-title">
+        标注审核
+        <template v-if="status">
+          <el-tag
+            v-if="!status.engine_present" type="danger" size="small" class="engine-tag"
+          >没找到标注引擎</el-tag>
+          <el-tag
+            v-else-if="status.degraded" type="danger" size="small" class="engine-tag"
+          >标注引擎已降级</el-tag>
+          <el-tag
+            v-else-if="!status.enabled" type="info" size="small" class="engine-tag"
+          >边采边标未开启</el-tag>
+          <el-tag v-else type="success" size="small" class="engine-tag">边采边标已开启</el-tag>
+          <InfoTip :width="340">
+            <template v-if="!status.engine_present">
+              backend/vendor/opinion_labeling_engine 不完整，标注功能不可用。
+            </template>
+            <template v-else-if="status.degraded">
+              本次运行不再尝试标注。<br>{{ status.error || '未知原因，点「自检」查看详情' }}
+            </template>
+            <template v-else-if="!status.enabled">
+              采集时不会自动标注。到「系统设置 → 标注」里打开；历史数据用「一键补标」补。
+            </template>
+            <template v-else>采集时自动标注；历史未标注的数据可用「一键补标」补。</template>
+          </InfoTip>
+        </template>
+      </h2>
+      <div class="header-actions">
+        <el-button @click="runCheck">
+          <AppIcon name="query" :size="14" class="btn-icon" />自检
+        </el-button>
+        <el-button :loading="backfilling" @click="startBackfill">
+          <AppIcon v-if="!backfilling" name="task" :size="14" class="btn-icon" />一键补标历史未标注
+        </el-button>
+      </div>
+    </div>
 
-    <!-- 顶部：景区筛选 + 进度 + 动作 -->
+    <!-- 顶部：景区筛选 + 进度 -->
     <el-card shadow="never" class="head-card">
       <div class="filters">
         <el-select
           v-model="query.scenic_id" filterable clearable
-          placeholder="选择景区（必选，按景区审核）" style="width: 260px"
+          placeholder="全部景区" style="width: 220px"
           @change="onScopeChange"
         >
           <el-option
@@ -58,38 +81,49 @@
           style="width: 200px" @keyup.enter="reload" @clear="reload"
         />
         <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
-
-        <div class="spacer" />
-        <el-button :icon="FirstAidKit" @click="runCheck">自检</el-button>
-        <el-button type="warning" :icon="MagicStick" :loading="backfilling"
-                   @click="startBackfill">
-          一键补标历史未标注
-        </el-button>
       </div>
 
+      <!-- 四组统计：数字默认中性色，只有情感正负和"错误"类用颜色提示 -->
       <div v-if="stats" class="stat-row">
-        <div class="stat"><span class="n">{{ stats.total }}</span><span class="k">评论总数</span></div>
-        <div class="stat is-ok"><span class="n">{{ stats.labeled }}</span><span class="k">已标注</span></div>
-        <div class="stat is-warn"><span class="n">{{ stats.unlabeled }}</span><span class="k">未标注</span></div>
-        <el-divider direction="vertical" />
-        <div class="stat"><span class="n up">{{ stats.positive }}</span><span class="k">正向</span></div>
-        <div class="stat"><span class="n">{{ stats.neutral }}</span><span class="k">中性</span></div>
-        <div class="stat"><span class="n down">{{ stats.negative }}</span><span class="k">负向</span></div>
-        <el-divider direction="vertical" />
-        <div class="stat is-warn"><span class="n">{{ stats.pending_review }}</span><span class="k">待人工复核</span></div>
-        <div class="stat is-ok"><span class="n">{{ stats.ai_ok }}</span><span class="k">AI标注成功</span></div>
-        <div class="stat"><span class="n down">{{ stats.ai_failed }}</span><span class="k">AI标注错误</span></div>
-        <div class="stat is-warn"><span class="n">{{ stats.ai_low_conf }}</span><span class="k">低置信</span></div>
-        <el-divider direction="vertical" />
-        <div class="stat is-ok"><span class="n">{{ stats.human_right }}</span><span class="k">复核正确</span></div>
-        <div class="stat"><span class="n down">{{ stats.human_wrong }}</span><span class="k">复核错误</span></div>
-        <div class="stat is-ok"><span class="n">{{ stats.human_fixed }}</span><span class="k">复核成功</span></div>
+        <div class="stat-group">
+          <div class="stat-group-title">进度</div>
+          <div class="stat-items">
+            <div class="stat"><span class="n">{{ stats.total }}</span><span class="k">评论总数</span></div>
+            <div class="stat"><span class="n">{{ stats.labeled }}</span><span class="k">已标注</span></div>
+            <div class="stat"><span class="n">{{ stats.unlabeled }}</span><span class="k">未标注</span></div>
+          </div>
+        </div>
+        <div class="stat-group">
+          <div class="stat-group-title">情感</div>
+          <div class="stat-items">
+            <div class="stat"><span class="n" :class="{ up: stats.positive > 0 }">{{ stats.positive }}</span><span class="k">正向</span></div>
+            <div class="stat"><span class="n">{{ stats.neutral }}</span><span class="k">中性</span></div>
+            <div class="stat"><span class="n" :class="{ down: stats.negative > 0 }">{{ stats.negative }}</span><span class="k">负向</span></div>
+          </div>
+        </div>
+        <div class="stat-group">
+          <div class="stat-group-title">AI 标注</div>
+          <div class="stat-items">
+            <div class="stat"><span class="n">{{ stats.pending_review }}</span><span class="k">待人工复核</span></div>
+            <div class="stat"><span class="n">{{ stats.ai_ok }}</span><span class="k">AI标注成功</span></div>
+            <div class="stat"><span class="n" :class="{ down: stats.ai_failed > 0 }">{{ stats.ai_failed }}</span><span class="k">AI标注错误</span></div>
+            <div class="stat"><span class="n">{{ stats.ai_low_conf }}</span><span class="k">低置信</span></div>
+          </div>
+        </div>
+        <div class="stat-group">
+          <div class="stat-group-title">人工复核</div>
+          <div class="stat-items">
+            <div class="stat"><span class="n">{{ stats.human_right }}</span><span class="k">复核正确</span></div>
+            <div class="stat"><span class="n" :class="{ down: stats.human_wrong > 0 }">{{ stats.human_wrong }}</span><span class="k">复核错误</span></div>
+            <div class="stat"><span class="n">{{ stats.human_fixed }}</span><span class="k">复核成功</span></div>
+          </div>
+        </div>
       </div>
 
       <!-- 补标进度 -->
       <div v-if="job" class="job-panel" :class="`is-${job.status}`">
         <div class="job-head">
-          <el-tag :type="jobTagType" size="small" effect="dark">{{ jobLabel }}</el-tag>
+          <el-tag :type="jobTagType" size="small">{{ jobLabel }}</el-tag>
           <span class="job-title">{{ jobTitle }}</span>
           <div class="spacer" />
           <span class="job-meta">已用时 {{ fmtDuration(job.elapsed_seconds) }}</span>
@@ -113,7 +147,7 @@
           :percentage="job.percent"
           :status="job.status === 'failed' ? 'exception'
                    : (job.status === 'finished' ? 'success' : undefined)"
-          :stroke-width="14" :text-inside="true"
+          :stroke-width="8"
         />
 
         <div class="job-nums">
@@ -129,8 +163,7 @@
         <!-- 队列里还压着东西时，进度条可能几十秒不动。不解释一句，
              用户会以为卡死了然后去重启服务，那才是真的把事情搞砸。 -->
         <div v-if="job.status === 'running' && job.done < job.submitted" class="job-hint">
-          已喂进去的这批正在跑，写回是攒够一批才落库的，
-          所以进度条会一格一格跳，不是卡住了。
+          这一批正在跑，攒够一批才写回，进度条会分段跳动，不是卡住了。
         </div>
         <div v-if="job.error" class="job-error">{{ job.error }}</div>
       </div>
@@ -178,13 +211,13 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="情感" width="96" align="center">
+        <el-table-column label="情感" width="90" align="center">
           <template #default="{ row }">
-            <el-tag v-if="row.sentiment_label" size="small"
+            <el-tag v-if="row.sentiment_label" size="small" effect="light"
                     :type="sentimentType(row.sentiment_score)">
               {{ row.sentiment_label }}
             </el-tag>
-            <el-tag v-else size="small" type="info">未标注</el-tag>
+            <span v-else class="muted">未标注</span>
           </template>
         </el-table-column>
 
@@ -195,33 +228,34 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="标注/复核" width="120" align="center">
+        <el-table-column label="标注/复核" width="130" align="center">
           <template #default="{ row }">
-            <el-tag size="small" :type="reviewType(row.label_review_flag)">
+            <span class="review-state" :class="`is-${reviewType(row.label_review_flag) || 'primary'}`">
+              <i class="review-dot" />
               {{ row.label_review_label || reviewLabel(row.label_review_flag) }}
-            </el-tag>
+            </span>
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="310" align="center">
+        <!--
+          图标按钮：标对了=online(通过) 标错了=offline(否决) 修改=edit
+          AI 再标=publish(立即执行) 撤销复核=revoke。未标注的行不能复核对错。
+        -->
+        <el-table-column label="操作" width="176" align="center">
           <template #default="{ row }">
-            <el-button
-              link type="success" size="small" :disabled="!row.labeled"
-              @click="review(row, 1)"
-            >标对了</el-button>
-            <el-button
-              link type="danger" size="small" :disabled="!row.labeled"
-              @click="review(row, 2)"
-            >标错了</el-button>
-            <el-button link type="primary" size="small" @click="openEdit(row)">修改</el-button>
-            <el-button
-              link type="warning" size="small"
-              :loading="relabelingId === row.id" @click="relabelOne(row)"
-            >AI 再标</el-button>
-            <el-button
-              v-if="row.label_review_flag !== 0" link size="small"
-              @click="resetOne(row)"
-            >撤销</el-button>
+            <div class="row-actions">
+              <IconAction icon="online" tip="标对了" :disabled="!row.labeled" @click="review(row, 1)" />
+              <IconAction icon="offline" tip="标错了" :disabled="!row.labeled" @click="review(row, 2)" />
+              <IconAction icon="edit" tip="人工修改" @click="openEdit(row)" />
+              <IconAction
+                icon="publish" tip="AI 再标"
+                :loading="relabelingId === row.id" @click="relabelOne(row)"
+              />
+              <IconAction
+                v-if="row.label_review_flag !== 0" icon="revoke" tip="撤销复核"
+                @click="resetOne(row)"
+              />
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -236,10 +270,14 @@
     </el-card>
 
     <!-- 人工修改 -->
-    <el-dialog v-model="editVisible" title="人工修改标注" width="640px">
+    <el-dialog v-model="editVisible" width="640px">
+      <template #header>
+        <span class="el-dialog__title dialog-title">
+          人工修改标注
+          <InfoTip content="保存后这条会标记为「复核成功」（label_review_flag=3）。补标只取「未标注」的行，所以不会被 AI 覆盖。" />
+        </span>
+      </template>
       <div v-if="editing" class="edit-body">
-        <el-alert type="info" :closable="false" class="edit-hint"
-                  title="保存后这条会标记为「复核成功」（label_review_flag=3）。补标只取「未标注」的行，所以不会被 AI 覆盖。" />
         <div class="edit-content">{{ editing.content }}</div>
         <el-form label-width="90px">
           <el-form-item label="情感">
@@ -269,7 +307,7 @@
       </div>
       <template #footer>
         <el-button @click="editVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveEdit">保存并标记为「复核成功」</el-button>
+        <el-button type="primary" :loading="saving" @click="saveEdit">保存为复核成功</el-button>
       </template>
     </el-dialog>
 
@@ -298,7 +336,8 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 // ⚠️ 图标名要在 @element-plus/icons-vue 里真的存在。
 // 这套图标**没有** Stethoscope，写了会编译不过（"没有导出的成员"）。
-import { FirstAidKit, MagicStick, Search } from '@element-plus/icons-vue'
+// （自检/补标按钮现在用客户图标集 AppIcon，这里只剩搜索图标）
+import { Search } from '@element-plus/icons-vue'
 import {
   labelingApi, scenicApi,
   type BackfillJob, type ChannelOption, type LabelComment,
@@ -605,59 +644,92 @@ onUnmounted(() => window.clearInterval(timer))
 </script>
 
 <style scoped>
-.labeling-view { display: flex; flex-direction: column; gap: 12px; }
-.head-card :deep(.el-card__body) { padding: 14px 16px; }
-.filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.labeling-view { display: flex; flex-direction: column; gap: 16px; }
+.labeling-view > .page-header { margin-bottom: 4px; }
+.engine-tag { margin-left: 10px; font-weight: 500; }
+.header-actions { display: flex; gap: 8px; }
+.header-actions .el-button + .el-button { margin-left: 0; }
+.btn-icon { margin-right: 6px; }
+.dialog-title { display: inline-flex; align-items: center; }
+
+.head-card :deep(.el-card__body) { padding: 16px 20px !important; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .spacer { flex: 1; }
+
+/* ---------- 统计：四组并排，组间细竖线分隔 ---------- */
 .stat-row {
-  display: flex; align-items: center; gap: 22px;
-  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--el-border-color-lighter);
-  flex-wrap: wrap;
+  display: flex; flex-wrap: wrap; gap: 0;
+  margin-top: 16px; padding-top: 16px;
+  border-top: 1px solid var(--smc-border);
 }
-.stat { display: flex; flex-direction: column; align-items: center; min-width: 56px; }
-.stat .n { font-size: 20px; font-weight: 600; line-height: 1.2; }
-.stat .k { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
-.stat.is-ok .n { color: var(--el-color-success); }
-.stat.is-warn .n { color: var(--el-color-warning); }
+.stat-group { padding: 0 28px; }
+.stat-group:first-child { padding-left: 0; }
+.stat-group + .stat-group { border-left: 1px solid var(--smc-border); }
+.stat-group-title {
+  font-size: 12px; color: var(--smc-text-tertiary);
+  margin-bottom: 8px; letter-spacing: 0.3px;
+}
+.stat-items { display: flex; gap: 24px; }
+.stat { display: flex; flex-direction: column; min-width: 44px; }
+.stat .n {
+  font-size: 20px; font-weight: 600; line-height: 1.2;
+  color: var(--smc-text); font-variant-numeric: tabular-nums;
+}
+.stat .k { font-size: 12px; color: var(--smc-text-secondary); margin-top: 2px; white-space: nowrap; }
 .stat .n.up { color: var(--el-color-success); }
 .stat .n.down { color: var(--el-color-danger); }
-.job-bar { margin-top: 12px; }
-.content { line-height: 1.5; word-break: break-all; }
-.meta { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px; }
-.muted { color: var(--el-text-color-placeholder); }
+
+/* ---------- 列表 ---------- */
+.content { line-height: 1.55; word-break: break-all; color: var(--smc-text); }
+.meta { font-size: 12px; color: var(--smc-text-secondary); margin-top: 4px; }
+.muted { color: var(--el-text-color-placeholder); font-size: 12px; }
 .tag { margin: 2px 4px 2px 0; }
-.expand { padding: 4px 12px; font-size: 13px; }
+.row-actions { display: inline-flex; align-items: center; }
+
+/* 复核状态：圆点 + 文字，比一列实心色块更好扫 */
+.review-state {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--el-text-color-regular); white-space: nowrap;
+}
+.review-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--smc-text-tertiary); }
+.review-state.is-success .review-dot { background: var(--el-color-success); }
+.review-state.is-danger { color: var(--el-color-danger); }
+.review-state.is-danger .review-dot { background: var(--el-color-danger); }
+.review-state.is-warning .review-dot { background: var(--el-color-warning); }
+.review-state.is-primary .review-dot { background: var(--smc-primary); }
+.review-state.is-info { color: var(--smc-text-secondary); }
+
+.expand { padding: 4px 16px 4px 48px; font-size: 13px; }
 .expand-line { margin: 6px 0; }
-.expand-line b { display: inline-block; width: 74px; color: var(--el-text-color-secondary); font-weight: 500; }
-.pager { margin-top: 14px; justify-content: flex-end; }
+.expand-line b { display: inline-block; width: 74px; color: var(--smc-text-secondary); font-weight: 500; }
+.pager { margin-top: 16px; justify-content: flex-end; }
+
 .edit-content {
-  background: var(--el-fill-color-light); padding: 10px 12px;
-  border-radius: 6px; margin: 12px 0; line-height: 1.6; word-break: break-all;
+  background: var(--smc-bg); padding: 10px 12px;
+  border-radius: var(--smc-radius-sm); margin: 0 0 16px; line-height: 1.6; word-break: break-all;
 }
-.edit-hint { margin-bottom: 4px; }
 .check-table { margin-top: 12px; }
+
+/* ---------- 补标进度 ---------- */
 .job-panel {
-  margin-top: 12px;
+  margin-top: 16px;
   padding: 12px 14px;
-  border: 1px solid #e8ecf3;
-  border-radius: 10px;
-  background: #fbfcfe;
+  border: 1px solid var(--smc-border);
+  border-radius: var(--smc-radius-sm);
+  background: var(--smc-card-bg);
 }
-.job-panel.is-running { border-color: #f0c78a; background: #fffbf3; }
-.job-panel.is-finished { border-color: #a7e3c4; background: #f4fcf8; }
-.job-panel.is-failed { border-color: #f3b5b5; background: #fff6f6; }
 .job-head {
   display: flex; align-items: center; gap: 10px;
   margin-bottom: 10px; font-size: 13px;
 }
-.job-title { font-weight: 500; color: #1f2733; }
-.job-meta { color: #7a8699; font-size: 12px; white-space: nowrap; }
+.job-title { font-weight: 500; color: var(--smc-text); }
+.job-meta { color: var(--smc-text-secondary); font-size: 12px; white-space: nowrap; }
 .job-nums {
-  margin-top: 8px; font-size: 12px; color: #5b6779;
+  margin-top: 8px; font-size: 12px; color: var(--smc-text-secondary);
   display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
 }
-.job-nums b { color: #1f2733; font-weight: 600; }
-.job-nums .sep { color: #c9d2e0; }
-.job-hint { margin-top: 6px; font-size: 12px; color: #97a1b2; }
-.job-error { margin-top: 6px; font-size: 12px; color: #f56c6c; }
+.job-nums b { color: var(--smc-text); font-weight: 600; }
+.job-nums .sep { color: var(--smc-text-tertiary); }
+.job-hint { margin-top: 6px; font-size: 12px; color: var(--smc-text-tertiary); }
+.job-error { margin-top: 6px; font-size: 12px; color: var(--el-color-danger); }
 </style>

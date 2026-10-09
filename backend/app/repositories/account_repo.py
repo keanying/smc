@@ -252,6 +252,32 @@ class AccountRepository:
             logger.warning("[轮换] 给 %s/%s 上锁失败，本次不影响采集：%s",
                            channel, account_name, exc)
 
+    async def cooling_summary(
+        self, channel: str, *, preferred: str = "", group: str = "",
+    ) -> Dict[str, Any]:
+        """这个平台（/分组/指定账号）现在有几个号能用，没得用的话最早几点能恢复。
+
+        给"账号都在冷却 → 任务排队"用：available == 0 且 resume_at 不为空，
+        说明号是有的、只是都在冷却，任务该等而不是跳过；
+        两个都是 0/空，说明压根没有登录过的号，那是要人处理的事（LoginRequired）。
+        """
+        clauses = ["channel = %s", "enabled = 1", "status = %s"]
+        args: List[Any] = [channel, AccountStatus.ACTIVE.value]
+        if preferred:
+            clauses.append("account_name = %s")
+            args.append(preferred)
+        elif group:
+            clauses.append("account_group = %s")
+            args.append(group)
+        row = await self.db.fetch_one(
+            f"SELECT SUM(CASE WHEN {_NOT_COOLING} THEN 1 ELSE 0 END) AS available, "
+            f"MIN(CASE WHEN {_NOT_COOLING} THEN NULL ELSE cooldown_until END) AS resume_at "
+            f"FROM `src_opinion_social_account` WHERE {' AND '.join(clauses)}",
+            args,
+        ) or {}
+        return {"available": int(row.get("available") or 0),
+                "resume_at": row.get("resume_at")}
+
     async def list_active(self, channel: str) -> List[Dict]:
         return await self.db.fetch_all(
             f"SELECT * FROM `src_opinion_social_account` "
