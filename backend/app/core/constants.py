@@ -60,6 +60,8 @@ class TaskStatus(str, Enum):
     FAILED = "failed"
     CANCELED = "canceled"
     PAUSED = "paused"
+    #: 账号都在冷却中，任务已排队；next_run_time = 最早恢复时间，到点自动执行
+    WAITING = "waiting"
 
 
 class ScheduleType(str, Enum):
