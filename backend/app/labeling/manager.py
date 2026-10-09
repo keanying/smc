@@ -181,6 +181,10 @@ class LabelingManager:
             items.append(CheckItem("配置校验", False, str(exc)))
             return items
 
+        # ---- 模型连通：真打一次。Key/模型名"填了"不等于"能用" ----
+        ok, detail = probe_model(cfg.llm)
+        items.append(CheckItem("模型连通", ok, detail))
+
         try:
             tax = Taxonomy.load(cfg.taxonomy_path)
             items.append(CheckItem(
@@ -316,6 +320,28 @@ class LabelingManager:
             logger.info("[标注] 引擎已停止")
         except Exception as exc:            # noqa: BLE001
             logger.warning("[标注] 引擎停止时出错（忽略）：%s", exc)
+
+    async def reset(self) -> None:
+        """系统设置里改了「AI 标注」之后调用：停掉旧引擎、清掉降级标记。
+
+        ⚠️ 不调这个，页面上改模型名称 / API Key 是**不生效**的：
+        引擎启动时就把 Key 和模型名烤进了 HTTP 客户端，之后只认那一份。
+        真实发生过：方舟上旧模型被关了（InvalidEndpoint.ClosedEndpoint），
+        用户在页面上换了模型、提示"已保存并立即生效"，引擎却还在打旧模型，
+        每条评论都进失败池，直到重启服务。
+
+        下一次 submit_comments / 补标会按新配置重新自检、重新启动。
+        """
+        # 正在跑的补标要先叫停：引擎被抽走后它会撞上 None 报一堆看不懂的错
+        for job in self._jobs.values():
+            if job.status == "running":
+                job.cancel_requested = True
+                job.error = "AI 标注配置已修改，补标已中止；按新配置重新发起即可"
+        async with self._lock:
+            await self.stop()
+            self._degraded = False
+            self._start_error = ""
+        logger.info("[标注] 配置已变更，引擎将按新配置重启")
 
     # ------------------------------------------------------------------ 边采边标
     async def submit_comments(self, rows: List[Dict[str, Any]]) -> int:
@@ -523,6 +549,11 @@ class LabelingManager:
                         "已取消" if job.status == "canceled" else "结束",
                         job.submitted, job.done, job.total)
         except Exception as exc:            # noqa: BLE001
+            if job.cancel_requested and self._engine is None:
+                # reset() 抽走了引擎：这是预期内的中止，别报成失败
+                job.status = "canceled"
+                logger.info("[标注] 补标任务 %s 因配置变更中止", job.job_id)
+                return
             job.status = "failed"
             job.error = str(exc)
             logger.error("[标注] 补标任务 %s 失败：%s", job.job_id, exc)
@@ -669,6 +700,67 @@ def _result_to_dict(result: Any) -> Dict[str, Any]:
     }
 
 
+#: 方舟常见的"配置类"错误码 → 该去哪儿改。这些重试一万次也不会好。
+_ARK_HINTS = {
+    "InvalidEndpoint.ClosedEndpoint":
+        "模型服务在方舟上已关闭/未开通（或这个模型版本已下线）。"
+        "到方舟控制台「开通管理」开通，或把「模型名称」换成已开通的模型",
+    "InvalidEndpointOrModel.NotFound":
+        "模型名称不存在或这个 Key 没有权限，检查「模型名称」拼写",
+    "ModelNotOpen": "这个模型还没在方舟控制台开通",
+    "AuthenticationError": "API Key 无效，检查「模型 API Key」",
+    "AccessDenied": "这个 Key 没有调用该模型的权限",
+}
+
+
+def probe_model(llm: Any, *, transport: Any = None) -> "tuple[bool, str]":
+    """用最小的请求真打一次模型接口，确认 Key + 模型名 + 地址三者配得上。
+
+    ⚠️ 为什么自检要有这一项：Key 和模型名只校验"填没填"的话，
+    模型在方舟上被关掉（InvalidEndpoint.ClosedEndpoint）时自检照样全绿，
+    开了边采边标之后**每一条评论**都重试 3 次再进失败池，日志刷屏。
+    在这里一次就能拦下来，并且告诉用户去哪儿改。
+
+    只看 HTTP 状态：2xx 就算通，不关心输出被不被截断——
+    这里只验"连得上、认不认这个模型"，标注效果不是自检的事。
+    """
+    import httpx
+
+    payload: Dict[str, Any] = {
+        "model": llm.model,
+        "stream": False,
+        "input": [{"role": "user",
+                   "content": [{"type": "input_text", "text": "ping"}]}],
+        "max_output_tokens": 16,
+    }
+    # 和正式调用保持一致（比如关思考链），免得自检过了、正式请求被拒
+    if getattr(llm, "extra_body", None):
+        payload.update(llm.extra_body)
+    try:
+        with httpx.Client(transport=transport, timeout=httpx.Timeout(
+                30.0, connect=float(getattr(llm, "connect_timeout", 5.0)))) as client:
+            resp = client.post(llm.url, json=payload, headers={
+                "Authorization": f"Bearer {llm.api_key}",
+                "Content-Type": "application/json",
+            })
+    except httpx.HTTPError as exc:
+        return False, f"连不上 {llm.url}：{exc}"
+
+    if resp.status_code < 400:
+        return True, f"{llm.model} 调用正常"
+
+    code, message = "", resp.text[:300]
+    try:
+        err = (resp.json() or {}).get("error") or {}
+        code = str(err.get("code") or "")
+        message = str(err.get("message") or message)[:300]
+    except ValueError:
+        pass
+    hint = next((h for k, h in _ARK_HINTS.items() if code.startswith(k)), "")
+    detail = f"模型 {llm.model} 调用失败：HTTP {resp.status_code} {code} {message}".strip()
+    return False, f"{detail.rstrip('.。')}。{hint}" if hint else detail
+
+
 _manager: Optional[LabelingManager] = None
 
 
@@ -694,6 +786,9 @@ class _DisabledManager:
 
     async def submit_comments(self, rows) -> int:
         return 0
+
+    async def reset(self) -> None:
+        return None
 
     async def status(self):
         return {"enabled": False, "running": False,

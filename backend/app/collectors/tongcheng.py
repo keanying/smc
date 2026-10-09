@@ -138,7 +138,7 @@ class TongchengCollector(BaseCollector):
         return self.new_work(
             ctx,
             work_id=sid,
-            work_url=f"https://www.ly.com/scenery/BookSceneryTicket_{sid}.html",
+            work_url=self.poi_homepage(target, f"https://www.ly.com/scenery/BookSceneryTicket_{sid}.html"),
             author_id="tongcheng",
             author_name="同程",
             title=f"{target.name or ctx.scenic_name} · 同程点评",

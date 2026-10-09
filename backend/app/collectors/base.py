@@ -375,6 +375,16 @@ class BaseCollector(ABC):
         return None
 
     # ---------------- 给子类用的小工具 ----------------
+    @staticmethod
+    def poi_homepage(target: CollectTarget, fallback: str) -> str:
+        """合成作品的 work_url：采集目标里**手工指定了景区主页就用它**，
+        没指定才用按 POI ID 拼出来的默认链接。
+
+        携程/同程/去哪儿同一个景区常有好几个页面（门票页、攻略页、点评页），
+        按 ID 拼出来的那个未必是使用方要的那个，所以以人填的为准。
+        """
+        return (target.url or "").strip() or fallback
+
     def new_work(self, ctx: CollectContext, work_id: str, **kwargs) -> WorkItem:
         return WorkItem(
             channel=self.channel,

@@ -121,7 +121,7 @@ class CtripCollector(BaseCollector):
         return self.new_work(
             ctx,
             work_id=poi_id,
-            work_url=f"https://you.ctrip.com/sight/{poi_id}.html",
+            work_url=self.poi_homepage(target, f"https://you.ctrip.com/sight/{poi_id}.html"),
             author_id="ctrip",
             author_name="携程",
             title=f"{target.name or ctx.scenic_name} · 携程点评",

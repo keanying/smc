@@ -357,7 +357,7 @@
                             placeholder="留空 = 不修改；也可用环境变量 SMC_LABELING__ARK__API_KEY" />
                 </el-form-item>
                 <el-form-item label="模型名称">
-                  <el-input v-model="labeling.ark.model" placeholder="如 deepseek-v4-flash-260425" />
+                  <el-input v-model="labeling.ark.model" placeholder="填方舟控制台里已开通的模型，如 glm-5-3-flash-260828" />
                 </el-form-item>
                 <el-form-item label="模型地址">
                   <el-input v-model="labeling.ark.base_url" />
