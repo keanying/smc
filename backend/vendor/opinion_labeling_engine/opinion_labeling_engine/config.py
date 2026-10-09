@@ -123,7 +123,7 @@ class LLMConfig:
     model: str = ""
     temperature: float = 0.01
     top_p: float = 0.7
-    max_output_tokens: int = 4096
+    max_output_tokens: int = 9096
     max_output_tokens_cap: int = 16384
     extra_body: Dict[str, Any] = field(default_factory=dict)
     connect_timeout: float = 5.0

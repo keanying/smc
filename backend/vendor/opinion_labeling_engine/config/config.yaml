@@ -34,7 +34,9 @@ llm:
   top_p: 0.7
   # 输出预算。注意推理模型（deepseek-v4-flash 等）的思考过程也吃这份额度，
   # 给小了会出现 incomplete_details.reason=length：正文一个字都没出来，或者断成半截 JSON。
-  max_output_tokens: 4096
+  # 9096：客户指定。推理模型的思考过程也吃这份额度，4096 时经常被截断、翻倍重试，
+  # 一条评论要调两三次模型——这是"标注很慢"的主要来源之一
+  max_output_tokens: 9096
   # 遇到截断时客户端会把预算翻倍重试，最多涨到这个上限
   max_output_tokens_cap: 16384
   # 透传给厂商的私有参数，原样并进请求体。默认为空。
