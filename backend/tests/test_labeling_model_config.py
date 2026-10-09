@@ -118,7 +118,7 @@ def test_reset_cancels_running_backfill_with_a_reason():
 
     asyncio.run(mgr.reset())
 
-    assert running.cancel_requested and "配置已修改" in running.error
+    assert running.cancel_requested and running.interrupted and "配置变更" in running.error
     assert not done.cancel_requested
 
 
@@ -291,3 +291,113 @@ def test_recent_pending_where_is_valid_sql():
         assert cur.fetchone()[0] == 2, "只要最近的、0 或 NULL 的"
         cur.execute("DROP DATABASE smc_where_check")
     conn.close()
+
+
+# ---------------------------------------------------------------- 补标被关机打断
+# 线上原样：关服务时日志里
+#   「补标任务 bf1791545054-1 失败：'NoneType' object has no attribute 'wait_idle'」
+# stop() 先把引擎抽走了，补标任务还在等它排干。而且补标只在内存里，
+# 重启后剩下没捞的就再也没人管了。
+
+def _mgr_with_marker(tmp_path, enabled=False):
+    cfg = {"labeling": {"enabled": enabled},
+           "labeling.runtime_config_path": str(tmp_path / "engine.runtime.yaml")}
+    return LabelingManager(SimpleNamespace(get=lambda key, default=None: cfg.get(key, default),
+                                           source_path=None))
+
+
+def test_stop_interrupts_backfill_instead_of_crashing_it(tmp_path):
+    mgr = _mgr_with_marker(tmp_path)
+    job = BackfillJob(job_id="bf1", status="running")
+    mgr._jobs = {"bf1": job}
+    mgr._engine = _FakeEngine()
+    asyncio.run(mgr.stop())
+    assert job.cancel_requested and job.interrupted
+
+
+def test_interrupted_backfill_is_canceled_not_failed_and_keeps_marker(tmp_path):
+    mgr = _mgr_with_marker(tmp_path)
+    job = BackfillJob(job_id="bf1", status="running", scenic_id="S1")
+    mgr._jobs = {"bf1": job}
+    mgr._save_backfill_marker(job, 0)
+    job.interrupted = job.cancel_requested = True
+    mgr._engine = None
+
+    def _boom(j):
+        raise AttributeError("'NoneType' object has no attribute 'wait_idle'")
+    mgr._count_unlabeled = _boom
+    asyncio.run(mgr._run_backfill(job, 0))
+
+    assert job.status == "canceled", "被关机打断不是失败"
+    assert mgr._load_backfill_marker()["scenic_id"] == "S1", "断点要留着，重启后接着补"
+
+
+def test_finished_or_user_canceled_backfill_clears_marker(tmp_path):
+    mgr = _mgr_with_marker(tmp_path)
+    job = BackfillJob(job_id="bf1", status="running")
+    mgr._save_backfill_marker(job, 0)
+    mgr._count_unlabeled = lambda j: 0          # 没东西可补 → 正常结束
+    asyncio.run(mgr._run_backfill(job, 0))
+    assert job.status == "finished"
+    assert mgr._load_backfill_marker() is None
+
+
+def test_restart_resumes_unfinished_backfill(tmp_path):
+    mgr = _mgr_with_marker(tmp_path, enabled=True)
+    mgr._save_backfill_marker(
+        BackfillJob(job_id="old", scenic_id="S1", channel="xiaohongshu"), 500)
+    engine = _Engine("redis", backlog=3)
+
+    async def _start():
+        mgr._engine = engine
+        return True
+    mgr.ensure_started = _start
+    started = []
+
+    async def _start_backfill(**kw):
+        started.append(kw)
+        return BackfillJob(job_id="new")
+    mgr.start_backfill = _start_backfill
+
+    msg = asyncio.run(mgr.resume_pending())
+    assert started == [{"scenic_id": "S1", "channel": "xiaohongshu", "limit": 500}]
+    assert "接着补" in msg and "3" in msg
+
+
+
+
+def test_interrupted_backfill_marker_keeps_only_remaining_budget(tmp_path):
+    mgr = _mgr_with_marker(tmp_path)
+    job = BackfillJob(job_id="bf1", status="running", scenic_id="S1", submitted=200)
+    job.interrupted = job.cancel_requested = True
+    mgr._save_backfill_marker(job, 1000)
+
+    def _boom(j):
+        raise AttributeError("engine gone")
+    mgr._count_unlabeled = _boom
+    asyncio.run(mgr._run_backfill(job, 1000))
+    assert mgr._load_backfill_marker()["limit"] == 800, "已喂进队列的 200 条不能再算一遍"
+
+
+def test_backfill_waits_for_existing_queue_before_fetching(tmp_path):
+    """队列里还排着的评论也"没标签"，不先等它们标完就捞，会被重复提交、标两遍。"""
+    mgr = _mgr_with_marker(tmp_path)
+    order = []
+    mgr._count_unlabeled = lambda j: 10
+    mgr._queue_backlog = lambda: 0 if "drain" in order else 5
+
+    async def _drain(job, n):
+        order.append("drain")
+        return True
+
+    def _fetch(job, size):
+        order.append("fetch")
+        return []
+    mgr._drain = _drain
+    mgr._fetch_unlabeled = _fetch
+
+    async def _progress(job):
+        return None
+    mgr._refresh_progress = _progress
+    asyncio.run(mgr._run_backfill(BackfillJob(job_id="bf", status="running"), 0))
+    assert order[:2] == ["drain", "fetch"]

@@ -21,10 +21,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ..core.config import Config
@@ -67,6 +69,8 @@ class BackfillJob:
     #: 取消标志。一键补标动辄十几分钟、每条都花钱，
     #: 没有"停"这个动作的话，点错了只能重启服务。
     cancel_requested: bool = False
+    #: 被服务关闭 / 配置变更打断（不是人点的取消）：断点保留，重启后自动接着补
+    interrupted: bool = False
 
     def touch(self) -> None:
         self.updated_at = time.time()
@@ -313,6 +317,11 @@ class LabelingManager:
         return engine
 
     async def stop(self) -> None:
+        # ⚠️ 先叫停正在跑的补标，再抽走引擎。以前顺序反了：服务关闭时
+        #    补标任务撞上 self._engine=None，日志里一句
+        #    「补标任务 xxx 失败：'NoneType' object has no attribute 'wait_idle'」。
+        #    这不是失败，是被打断——断点留着，重启后 resume_pending 会接着补。
+        self._interrupt_backfills("服务关闭或配置变更，补标中止；重启/恢复后会自动接着补")
         engine, self._engine = self._engine, None
         if engine is None:
             return
@@ -333,11 +342,6 @@ class LabelingManager:
 
         下一次 submit_comments / 补标会按新配置重新自检、重新启动。
         """
-        # 正在跑的补标要先叫停：引擎被抽走后它会撞上 None 报一堆看不懂的错
-        for job in self._jobs.values():
-            if job.status == "running":
-                job.cancel_requested = True
-                job.error = "AI 标注配置已修改，补标已中止；按新配置重新发起即可"
         async with self._lock:
             await self.stop()
             self._degraded = False
@@ -372,13 +376,19 @@ class LabelingManager:
             msg = f"边采边标已开启，但引擎没能启动，队列暂不处理：{self._start_error}"
             logger.warning("[标注] %s", msg)
             return msg
+        resumed_backfill = await self._resume_backfill()
         backend = str(getattr(self._engine.cfg.queue, "backend", "memory"))
         if backend == "redis":
             backlog = self._queue_backlog()
             msg = (f"Redis 队列里还有 {backlog} 条待标注，已接着处理" if backlog
                    else "队列为空，引擎已就绪")
+            msg += resumed_backfill
             logger.info("[标注] %s", msg)
             return msg
+        if resumed_backfill:
+            # 补标捞的是全部未标注，最近没标过的也在里面，不用再按窗口补投一遍
+            logger.info("[标注] %s", resumed_backfill.strip("；"))
+            return resumed_backfill.strip("；")
         rows = await asyncio.to_thread(self._fetch_recent_pending)
         if not rows:
             return "队列为空，引擎已就绪"
@@ -387,6 +397,20 @@ class LabelingManager:
                f"没标过的 {submitted} 条重新入队")
         logger.info("[标注] %s", msg)
         return msg
+
+    async def _resume_backfill(self) -> str:
+        """上次没补完的一键补标（服务关闭/配置变更打断的），接着补。"""
+        marker = self._load_backfill_marker()
+        if not marker:
+            return ""
+        if any(j.status == "running" for j in self._jobs.values()):
+            return ""
+        job = await self.start_backfill(
+            scenic_id=str(marker.get("scenic_id") or ""),
+            channel=str(marker.get("channel") or ""),
+            limit=int(marker.get("limit") or 0))
+        scope = "、".join(x for x in (marker.get("scenic_id"), marker.get("channel")) if x) or "全部"
+        return f"；上次没补完的一键补标（{scope}）已接着补（{job.job_id}）"
 
     async def _resume_quietly(self, why: str) -> None:
         try:
@@ -534,8 +558,50 @@ class LabelingManager:
         job = BackfillJob(job_id=f"bf{int(time.time())}-{self._job_seq}",
                           scenic_id=scenic_id, channel=channel)
         self._jobs[job.job_id] = job
+        # 断点落盘：服务中途重启的话，resume_pending 会照这个接着补
+        self._save_backfill_marker(job, limit)
         asyncio.create_task(self._run_backfill(job, limit))
         return job
+
+    def _interrupt_backfills(self, reason: str) -> None:
+        for job in self._jobs.values():
+            if job.status == "running":
+                job.cancel_requested = True
+                job.interrupted = True
+                job.error = reason
+                job.touch()
+
+    # ---- 补标断点：服务重启后接着补 ----
+    def _backfill_marker(self) -> Path:
+        return config_bridge.runtime_config_path(self.config).parent / "backfill.json"
+
+    def _save_backfill_marker(self, job: BackfillJob, limit: int) -> None:
+        try:
+            path = self._backfill_marker()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({
+                "scenic_id": job.scenic_id, "channel": job.channel, "limit": int(limit or 0),
+                "job_id": job.job_id, "started_at": job.started_at,
+            }, ensure_ascii=False), encoding="utf-8")
+        except Exception as exc:            # noqa: BLE001
+            logger.warning("[标注] 记录补标断点失败（不影响本次补标，只是重启后不会自动续）：%s", exc)
+
+    def _clear_backfill_marker(self) -> None:
+        try:
+            self._backfill_marker().unlink(missing_ok=True)
+        except Exception as exc:            # noqa: BLE001
+            logger.warning("[标注] 清除补标断点失败：%s", exc)
+
+    def _load_backfill_marker(self) -> Optional[Dict[str, Any]]:
+        try:
+            path = self._backfill_marker()
+            if not path.exists():
+                return None
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else None
+        except Exception as exc:            # noqa: BLE001
+            logger.warning("[标注] 补标断点读不了，忽略：%s", exc)
+            return None
 
     def cancel_backfill(self, job_id: str) -> bool:
         """请求停止补标。已经喂进队列的那批还会跑完（不能半路撕掉）。"""
@@ -572,6 +638,18 @@ class LabelingManager:
 
             logger.info("[标注] 补标任务 %s 开始，共 %d 条待标注（每批 %d）",
                         job.job_id, job.total, self.BACKFILL_BATCH)
+
+            # ⚠️ 先等队列里**已有**的标完再捞。fetch_unlabeled 只看"有没有标签"，
+            #    还排在队列里的（边采边标推进来的、或重启前没跑完的）也满足条件——
+            #    不等的话同一条评论会被再提交一次，标两遍、花两遍钱。
+            #    等不完也不算失败（比如被杀掉的进程留下的在途租约要等引擎回收），
+            #    超时就照常往下走，最多是少数几条重复。
+            backlog = self._queue_backlog()
+            if backlog:
+                logger.info("[标注] 补标任务 %s：队列里还有 %d 条，先等它们标完再捞，免得重复提交",
+                            job.job_id, backlog)
+                if not await self._drain(job, backlog):
+                    logger.warning("[标注] 补标任务 %s：等队列排空超时，照常继续", job.job_id)
 
             remaining_budget = int(limit) if limit and limit > 0 else 0
             while True:
@@ -618,10 +696,10 @@ class LabelingManager:
                         "已取消" if job.status == "canceled" else "结束",
                         job.submitted, job.done, job.total)
         except Exception as exc:            # noqa: BLE001
-            if job.cancel_requested and self._engine is None:
-                # reset() 抽走了引擎：这是预期内的中止，别报成失败
+            if job.interrupted or (job.cancel_requested and self._engine is None):
+                # stop()/reset() 抽走了引擎：预期内的中止，别报成失败
                 job.status = "canceled"
-                logger.info("[标注] 补标任务 %s 因配置变更中止", job.job_id)
+                logger.info("[标注] 补标任务 %s 被打断（%s）", job.job_id, job.error)
                 return
             job.status = "failed"
             job.error = str(exc)
@@ -629,6 +707,17 @@ class LabelingManager:
         finally:
             job.finished_at = time.time()
             job.touch()
+            # 被打断的留着断点等重启续补；跑完、人点取消、真失败的都清掉。
+            # 有上限的话断点里记**剩下**的额度：已喂进队列的那些（redis 队列重启不丢）
+            # 不能再算一遍，否则续补一次就把上限多用了一截
+            if not job.interrupted:
+                self._clear_backfill_marker()
+            elif limit and limit > 0:
+                left = int(limit) - int(job.submitted)
+                if left > 0:
+                    self._save_backfill_marker(job, left)
+                else:
+                    self._clear_backfill_marker()
 
     async def _drain(self, job: BackfillJob, batch_size: int) -> bool:
         """等当前这批标完并落库，期间每秒刷新一次进度。
