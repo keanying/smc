@@ -169,7 +169,7 @@
         </el-button>
       </div>
 
-      <el-table :data="items" v-loading="loading" border size="small" @selection-change="onSelect">
+      <el-table :data="items" v-loading="loading" size="small" class="data-table" max-height="calc(100vh - 420px)" @selection-change="onSelect">
         <el-table-column type="selection" width="44" />
         <el-table-column prop="poi_name" label="景区名称" min-width="180">
           <template #default="{ row }">

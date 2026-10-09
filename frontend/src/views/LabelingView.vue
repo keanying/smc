@@ -171,7 +171,7 @@
 
     <!-- 列表 -->
     <el-card shadow="never">
-      <el-table :data="rows" v-loading="loading" row-key="id" size="small">
+      <el-table :data="rows" v-loading="loading" row-key="id" size="small" class="data-table" max-height="calc(100vh - 400px)">
         <el-table-column type="expand">
           <template #default="{ row }">
             <div class="expand">

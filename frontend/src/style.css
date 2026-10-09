@@ -150,20 +150,55 @@ body {
 }
 .el-card__body { padding: 20px !important; }
 
-/* ---------------- 表格（Element Plus 覆写） ---------------- */
+/* ---------------- 表格（Element Plus 覆写） ----------------
+   参照客户给的 hina-ui DataTable：圆角卡片 + 轻阴影、浅灰表头、
+   只有行间细线（没有竖线）、行高 44、表头吸顶。
+   主列表在页面里加 `class="data-table"` 和 `max-height`，表头就固定在顶上，
+   表体在框内滚动（Element Plus 的 max-height 本身就是吸顶表头）。 */
 .el-table {
-  --el-table-header-bg-color: #fafbfc;
-  --el-table-row-hover-bg-color: #f7f8fb;
-  --el-table-border-color: var(--smc-border);
-  --el-table-text-color: #3a4253;
-  --el-table-header-text-color: #6b7385;
-  border-radius: var(--smc-radius-sm);
+  --el-table-border-color: rgba(0, 0, 0, 0.08);
+  --el-table-border: 1px solid rgba(0, 0, 0, 0.08);
+  --el-table-header-bg-color: #f5f5f5;
+  --el-table-header-text-color: #525252;
+  --el-table-text-color: #171717;
+  --el-table-row-hover-bg-color: #fafafa;
+  --el-table-bg-color: #ffffff;
+  --el-table-tr-bg-color: #ffffff;
+  font-size: 14px;
+  border-radius: var(--smc-radius);
   overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.05);
+}
+/* 外层已经有边框/阴影的容器里，表格不再叠一层阴影 */
+.el-card .el-table, .el-dialog .el-table, .el-table .el-table, .el-collapse .el-table {
+  box-shadow: none;
 }
 .el-table th.el-table__cell {
   font-weight: 500;
-  font-size: 13px;
+  font-size: 14px;
+  height: 45px;
+  background: #f5f5f5;
 }
+.el-table .el-table__cell { padding: 10px 0; }
+.el-table .cell { padding: 0 12px; line-height: 22px; }
+.el-table--small .el-table__cell { padding: 7px 0; }
+.el-table--small th.el-table__cell { height: 40px; }
+.el-table--small, .el-table--small .el-table__cell { font-size: 13px; }
+/* 只要行间线，不要竖线——带 border 属性的表也统一 */
+.el-table--border .el-table__cell { border-right: none !important; }
+.el-table--border .el-table__inner-wrapper::after,
+.el-table--border::after, .el-table--border::before,
+.el-table__border-left-patch { display: none !important; }
+.el-table__inner-wrapper::before { background-color: transparent; }
+.el-table .el-table__row--striped td.el-table__cell { background: #ffffff !important; }
+/* 滚出可视区时的边缘阴影：表体能左右滚时，固定列边上有一道柔和的分隔 */
+.el-table__fixed-right-patch { background: #f5f5f5; }
+.el-table .el-table-fixed-column--right.is-first-column::before,
+.el-table .el-table-fixed-column--left.is-last-column::before {
+  box-shadow: inset 10px 0 10px -10px rgba(0, 0, 0, 0.12);
+}
+.el-table__empty-text { color: var(--smc-text-secondary); }
 
 /* ---------------- 表单 ---------------- */
 .el-form-item__label { color: #5b6375 !important; }
