@@ -1,0 +1,30 @@
+# 配置与密钥
+config/config.yaml
+config/config_v1.yaml
+docker/.env
+backend/.env.test
+*.env
+
+# 运行时数据
+data/
+!data/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# 前端
+frontend/node_modules/
+# frontend/dist 是构建产物，按需决定是否入库
+frontend/dist/
+
+# 编辑器
+.idea/
+.vscode/
+.DS_Store
+
+# Node 桥接脚本（运行时生成）
+backend/libs/_bridge.cjs

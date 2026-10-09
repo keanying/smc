@@ -1,0 +1,28 @@
+# 采集服务镜像。基于 Playwright 官方镜像，浏览器和系统依赖都已装好，
+# 不用自己去解决 libnss3/libatk 那一堆缺库问题。
+FROM mcr.microsoft.com/playwright/python:v1.49.1-jammy
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    TZ=Asia/Shanghai \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# 依赖单独一层，改代码不会让 pip install 重跑
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+
+COPY backend /app/backend
+COPY config /app/config
+
+# 采集产物、浏览器 profile、导出文件都落在这里，用卷挂出去
+RUN mkdir -p /app/data/browser_profiles /app/data/exports /app/data/logs
+
+WORKDIR /app/backend
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=4).status==200 else 1)"
+
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,577 @@
+{
+  "isSuccess": 1,
+  "errorMsg": "",
+  "isCache": 0,
+  "pageInfo": {
+    "page": 1,
+    "pageSize": 10,
+    "totalPage": 74,
+    "totalCount": 740
+  },
+  "degreeLevel": "82",
+  "starNum": "3.8",
+  "totalNum": "740",
+  "goodNum": 565,
+  "midNum": 47,
+  "badNum": 128,
+  "hasImgNum": 95,
+  "dpList": [
+    {
+      "commentType": "1",
+      "dpContent": "就是人太多了，人山人海的",
+      "dpDate": "2025-01-29",
+      "dpGuid": "6d2fa8c8-4822-4042-80f4-dfe4c347c842",
+      "dpId": "6d2fa8c8-4822-4042-80f4-dfe4c347c842",
+      "DPItemId": "32289",
+      "DPItemName": "八大处公园",
+      "DPSite": "1",
+      "dpTripMode": "0",
+      "dpTripPurpose": "",
+      "DPUserLevel": "1",
+      "dpUserName": "同程会员_C5813641E07",
+      "highLightColor": "",
+      "homeId": "",
+      "isElite": "0",
+      "isMyComments": "",
+      "isPraised": "0",
+      "lineAccess": "好评",
+      "markColor": "",
+      "memberGradeUrl": "",
+      "memberHeaderImgUrl": "https://pic5.40017.cn/i/ori/1difaMet93G.jpg",
+      "mobile": "",
+      "productPriceDesc": "",
+      "servicePoint": "1",
+      "zanCount": "0",
+      "csReplyList": null,
+      "dpImgUrl": [],
+      "subList": [],
+      "dpImpressionList": [],
+      "DPPlusStatus": 0,
+      "DPLocation": "北京"
+    },
+    {
+      "commentType": "6",
+      "dpContent": "环境清静优雅，干净！",
+      "dpDate": "2024-12-14",
+      "dpGuid": "cf9a4d27-7523-4d18-9a2c-7b1aaa681056",
+      "dpId": "cf9a4d27-7523-4d18-9a2c-7b1aaa681056",
+      "DPItemId": "32289",
+      "DPItemName": "",
+      "DPSite": "6",
+      "dpTripMode": "0",
+      "dpTripPurpose": "0,",
+      "DPUserLevel": "2",
+      "dpUserName": "同程会员_98D0392D40B",
+      "highLightColor": "",
+      "homeId": "",
+      "isElite": "0",
+      "isMyComments": "",
+      "isPraised": "0",
+      "lineAccess": "好评",
+      "markColor": "",
+      "memberGradeUrl": "",
+      "memberHeaderImgUrl": "https://pic5.40017.cn/i/ori/1difaMet93G.jpg",
+      "mobile": "",
+      "productPriceDesc": "",
+      "servicePoint": "1",
+      "zanCount": "0",
+      "csReplyList": null,
+      "dpImgUrl": [],
+      "subList": [],
+      "dpImpressionList": [],
+      "DPPlusStatus": 0,
+      "DPLocation": "北京"
+    },
+    {
+      "commentType": "6",
+      "dpContent": "周末带着俩兄弟 开心的一天",
+      "dpDate": "2024-12-01",
+      "dpGuid": "5d80e1c7-eb3d-46c9-89af-7446949ba1f4",
+      "dpId": "5d80e1c7-eb3d-46c9-89af-7446949ba1f4",
+      "DPItemId": "32289",
+      "DPItemName": "",
+      "DPSite": "6",
+      "dpTripMode": "0",
+      "dpTripPurpose": "0,",
+      "DPUserLevel": "1",
+      "dpUserName": "同程会员_4E9C934F1A4",
+      "highLightColor": "",
+      "homeId": "",
+      "isElite": "0",
+      "isMyComments": "",
+      "isPraised": "0",
+      "lineAccess": "好评",
+      "markColor": "",
+      "memberGradeUrl": "",
+      "memberHeaderImgUrl": "https://pic5.40017.cn/i/ori/1difaMet93G.jpg",
+      "mobile": "",
+      "productPriceDesc": "",
+      "servicePoint": "1",
+      "zanCount": "0",
+      "csReplyList": null,
+      "dpImgUrl": [],
+      "subList": [],
+      "dpImpressionList": [],
+      "DPPlusStatus": 0,
+      "DPLocation": "北京"
+    },
+    {
+      "commentType": "6",
+      "dpContent": "好哈哈哈哈哈哈哈哈哈哈",
+      "dpDate": "2024-12-01",
+      "dpGuid": "be8f2a0d-266e-4cc4-bced-1fd0258ea68c",
+      "dpId": "be8f2a0d-266e-4cc4-bced-1fd0258ea68c",
+      "DPItemId": "32289",
+      "DPItemName": "",
+      "DPSite": "6",
+      "dpTripMode": "0",
+      "dpTripPurpose": "0,",
+      "DPUserLevel": "1",
+      "dpUserName": "同程会员_388A92E9D5E",
+      "highLightColor": "",
+      "homeId": "",
+      "isElite": "0",
+      "isMyComments": "",
+      "isPraised": "0",
+      "lineAccess": "好评",
+      "markColor": "",
+      "memberGradeUrl": "",
+      "memberHeaderImgUrl": "https://pic5.40017.cn/i/ori/1difaMet93G.jpg",
+      "mobile": "",
+      "productPriceDesc": "",
+      "servicePoint": "1",
+      "zanCount": "0",
+      "csReplyList": null,
+      "dpImgUrl": [],
+      "subList": [],
+      "dpImpressionList": [],
+      "DPPlusStatus": 0,
+      "DPLocation": "北京"
+    },
+    {
+      "commentType": "6",
+      "dpContent": "这个公园挺漂亮，人又少，风景又好，干啥呢？",
+      "dpDate": "2024-11-23",
+      "dpGuid": "519353b9-6349-4d02-a7bb-628eafd09400",
+      "dpId": "519353b9-6349-4d02-a7bb-628eafd09400",
+      "DPItemId": "32289",
+      "DPItemName": "",
+      "DPSite": "6",
+      "dpTripMode": "0",
+      "dpTripPurpose": "0,",
+      "DPUserLevel": "1",
+      "dpUserName": "同程会员_E77C6262580",
+      "highLightColor": "",
+      "homeId": "",
+      "isElite": "0",
+      "isMyComments": "",
+      "isPraised": "0",
+      "lineAccess": "好评",
+      "markColor": "",
+      "memberGradeUrl": "",
+      "memberHeaderImgUrl": "https://pic5.40017.cn/i/ori/1difaMet93G.jpg",
+      "mobile": "",
+      "productPriceDesc": "",
+      "servicePoint": "1",
+      "zanCount": "0",
+      "csReplyList": null,
+      "dpImgUrl": [],
+      "subList": [],
+      "dpImpressionList": [],
+      "DPPlusStatus": 0,
+      "DPLocation": "北京"
+    },
+    {
+      "commentType": "6",
+      "dpContent": "一堆广告，同程要倒闭了吗？",
+      "dpDate": "2024-11-23",
+      "dpGuid": "ba9babcd-4c7e-422e-a5aa-b6e0335fcad6",
+      "dpId": "ba9babcd-4c7e-422e-a5aa-b6e0335fcad6",
+      "DPItemId": "32289",
+      "DPItemName": "",
+      "DPSite": "6",
+      "dpTripMode": "0",
+      "dpTripPurpose": "0,",
+      "DPUserLevel": "1",
+      "dpUserName": "同程会员_F7FDDD10AA6",
+      "highLightColor": "",
+      "homeId": "",
+      "isElite": "0",
+      "isMyComments": "",
+      "isPraised": "0",
+      "lineAccess": "差评",
+      "markColor": "",
+      "memberGradeUrl": "",
+      "memberHeaderImgUrl": "https://pic5.40017.cn/i/ori/1difaMet93G.jpg",
+      "mobile": "",
+      "productPriceDesc": "",
+      "servicePoint": "3",
+      "zanCount": "0",
+      "csReplyList": [
+        {
+          "replyContent": "尊敬的客户您好，感谢您的反馈。给您此次的出行带来的不好的感受我们也很揪心，跟您真诚的致歉希望能弥补您心情上的遗憾！我们会不断加强整合套餐、优化线路，提供更高性价比的套餐，更多样化的组合产品，期待与您携手并肩，成为您旅游的首选！祝您快乐每一程！"
+        }
+      ],
+      "dpImgUrl": [],
+      "subList": [],
+      "dpImpressionList": [],
+      "DPPlusStatus": 0,
+      "DPLocation": "北京"
+    },
+    {
+      "commentType": "1",
+      "dpContent": "💰门票价格：10元",
+      "dpDate": "2024-11-17",
+      "dpGuid": "a9790697-ca66-465a-8182-a33830679309",
+      "dpId": "a9790697-ca66-465a-8182-a33830679309",
+      "DPItemId": "32289",
+      "DPItemName": "八大处公园",
+      "DPSite": "1",
+      "dpTripMode": "0",
+      "dpTripPurpose": "7,",
+      "DPUserLevel": "1",
+      "dpUserName": "BD564A346DAED8CD",
+      "highLightColor": "",
+      "homeId": "",
+      "isElite": "0",
+      "isMyComments": "",
+      "isPraised": "0",
+      "lineAccess": "好评",
+      "markColor": "",
+      "memberGradeUrl": "",
+      "memberHeaderImgUrl": "https://pic5.40017.cn/i/ori/1dhW3XOpwZ2.jpg",
+      "mobile": "",
+      "productPriceDesc": "",
+      "servicePoint": "1",
+      "zanCount": "0",
+      "csReplyList": null,
+      "dpImgUrl": [
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6PkBIlLq.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6PkBIlLq.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6PkBIlLq_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6IRcVeCY.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6IRcVeCY.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6IRcVeCY_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6PviviUw.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6PviviUw.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6PviviUw_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6IMs2GI0.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6IMs2GI0.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6IMs2GI0_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6PDrcA12.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6PDrcA12.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6PDrcA12_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6PIxamje.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6PIxamje.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6PIxamje_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6PNhLKNO.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6PNhLKNO.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6PNhLKNO_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6PXsfaxO.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6PXsfaxO.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6PXsfaxO_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6IwW1uVy.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6IwW1uVy.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6IwW1uVy_150x150_00.jpg"
+        }
+      ],
+      "subList": [],
+      "dpImpressionList": [],
+      "DPPlusStatus": 0,
+      "DPLocation": "河北"
+    },
+    {
+      "commentType": "1",
+      "dpContent": "不用去取票，刷身份证就可以进去了，特别方便！",
+      "dpDate": "2024-11-17",
+      "dpGuid": "73d04457-6cbf-49c4-8168-2a409ec7c442",
+      "dpId": "73d04457-6cbf-49c4-8168-2a409ec7c442",
+      "DPItemId": "32289",
+      "DPItemName": "八大处公园",
+      "DPSite": "1",
+      "dpTripMode": "0",
+      "dpTripPurpose": "2,",
+      "DPUserLevel": "1",
+      "dpUserName": "BD564A346DAED8CD",
+      "highLightColor": "",
+      "homeId": "",
+      "isElite": "0",
+      "isMyComments": "",
+      "isPraised": "0",
+      "lineAccess": "好评",
+      "markColor": "",
+      "memberGradeUrl": "",
+      "memberHeaderImgUrl": "https://pic5.40017.cn/i/ori/1dhW3XOpwZ2.jpg",
+      "mobile": "",
+      "productPriceDesc": "",
+      "servicePoint": "1",
+      "zanCount": "1",
+      "csReplyList": null,
+      "dpImgUrl": [
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6HZGXBDi.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6HZGXBDi.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6HZGXBDi_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6IaKNiDK.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6IaKNiDK.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6IaKNiDK_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6Ij93gvC.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6Ij93gvC.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6Ij93gvC_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6Iorejmw.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6Iorejmw.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6Iorejmw_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6IwW1uVy.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6IwW1uVy.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6IwW1uVy_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6IGw7skM.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6IGw7skM.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6IGw7skM_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6IMs2GI0.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6IMs2GI0.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6IMs2GI0_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6IRcVeCY.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6IRcVeCY.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6IRcVeCY_150x150_00.jpg"
+        },
+        {
+          "imgUrl": "//pic5.40017.cn/i/ori/1yB6IWZti8w.jpg",
+          "originalImgUrl": "//pic5.40017.cn/i/ori/1yB6IWZti8w.jpg",
+          "smallImgUrl": "//pic5.40017.cn/i/ori/1yB6IWZti8w_150x150_00.jpg"
+        }
+      ],
+      "subList": [],
+      "dpImpressionList": [],
+      "DPPlusStatus": 0,
+      "DPLocation": "河北"
+    },
+    {
+      "commentType": "6",
+      "dpContent": "**太差劲了，一直跳出自己的广告挡住进园需扫的二维码，对**没好感",
+      "dpDate": "2024-11-14",
+      "dpGuid": "f92610f9-16d6-4939-b825-68b0d28d500f",
+      "dpId": "f92610f9-16d6-4939-b825-68b0d28d500f",
+      "DPItemId": "32289",
+      "DPItemName": "",
+      "DPSite": "6",
+      "dpTripMode": "0",
+      "dpTripPurpose": "0,",
+      "DPUserLevel": "1",
+      "dpUserName": "同程会员_DE304D134D7",
+      "highLightColor": "",
+      "homeId": "",
+      "isElite": "0",
+      "isMyComments": "",
+      "isPraised": "0",
+      "lineAccess": "差评",
+      "markColor": "",
+      "memberGradeUrl": "",
+      "memberHeaderImgUrl": "https://pic5.40017.cn/i/ori/1difaMet93G.jpg",
+      "mobile": "",
+      "productPriceDesc": "",
+      "servicePoint": "3",
+      "zanCount": "0",
+      "csReplyList": [
+        {
+          "replyContent": "尊敬的客人您好，非常感谢您的反馈，此次服务给您带来不好的感受，我司深表歉意，此问题已经排查原因并会尽快修复，希望您继续关注同程，感谢有您，一路同程。"
+        }
+      ],
+      "dpImgUrl": [],
+      "subList": [],
+      "dpImpressionList": [],
+      "DPPlusStatus": 0,
+      "DPLocation": "北京"
+    },
+    {
+      "commentType": "6",
+      "dpContent": "环境太差了，下次不去了。",
+      "dpDate": "2024-11-10",
+      "dpGuid": "40512338-b181-460f-93f5-bbcbf349a263",
+      "dpId": "40512338-b181-460f-93f5-bbcbf349a263",
+      "DPItemId": "32289",
+      "DPItemName": "",
+      "DPSite": "6",
+      "dpTripMode": "0",
+      "dpTripPurpose": "0,",
+      "DPUserLevel": "1",
+      "dpUserName": "同程会员_5456A9193A9",
+      "highLightColor": "",
+      "homeId": "",
+      "isElite": "0",
+      "isMyComments": "",
+      "isPraised": "0",
+      "lineAccess": "差评",
+      "markColor": "",
+      "memberGradeUrl": "",
+      "memberHeaderImgUrl": "https://pic5.40017.cn/i/ori/1difaMet93G.jpg",
+      "mobile": "",
+      "productPriceDesc": "",
+      "servicePoint": "3",
+      "zanCount": "0",
+      "csReplyList": [
+        {
+          "replyContent": "尊敬的客人您好，非常感谢您的反馈，此次服务给您带来不好的感受，我司深表歉意，此问题已经排查原因并会尽快修复，希望您继续关注同程，感谢有您，一路同程。"
+        }
+      ],
+      "dpImgUrl": [],
+      "subList": [],
+      "dpImpressionList": [],
+      "DPPlusStatus": 0,
+      "DPLocation": "北京"
+    }
+  ],
+  "isShowConinsicon": 0,
+  "rulesContent": "",
+  "dpConinRemark": "",
+  "isCanEnter": 0,
+  "isCanDianPingBefore": 0,
+  "externalUrl": "",
+  "serviceScoreAvgList": [
+    {
+      "score": "10",
+      "serviceName": "同程服务"
+    },
+    {
+      "score": "10",
+      "serviceName": "产品便捷"
+    },
+    {
+      "score": "10",
+      "serviceName": "性价比"
+    },
+    {
+      "score": "10",
+      "serviceName": "景区体验"
+    }
+  ],
+  "dpTagList": [
+    {
+      "tagColor": "",
+      "tagId": "1",
+      "tagName": "全部(740)",
+      "tagNum": "740",
+      "tagType": "",
+      "tagBorderColor": ""
+    },
+    {
+      "tagColor": "",
+      "tagId": "6",
+      "tagName": "最新(740)",
+      "tagNum": "740",
+      "tagType": "",
+      "tagBorderColor": ""
+    },
+    {
+      "tagColor": "",
+      "tagId": "2",
+      "tagName": "好评(565)",
+      "tagNum": "565",
+      "tagType": "",
+      "tagBorderColor": ""
+    },
+    {
+      "tagColor": "",
+      "tagId": "3",
+      "tagName": "中评(47)",
+      "tagNum": "47",
+      "tagType": "",
+      "tagBorderColor": ""
+    },
+    {
+      "tagColor": "",
+      "tagId": "4",
+      "tagName": "差评(128)",
+      "tagNum": "128",
+      "tagType": "",
+      "tagBorderColor": ""
+    },
+    {
+      "tagColor": "",
+      "tagId": "5",
+      "tagName": "有图(95)",
+      "tagNum": "95",
+      "tagType": "",
+      "tagBorderColor": ""
+    },
+    {
+      "tagColor": "",
+      "tagId": "65",
+      "tagName": "环境好(22)",
+      "tagNum": "22",
+      "tagType": "",
+      "tagBorderColor": ""
+    },
+    {
+      "tagColor": "",
+      "tagId": "15",
+      "tagName": "整体不错(19)",
+      "tagNum": "19",
+      "tagType": "",
+      "tagBorderColor": ""
+    },
+    {
+      "tagColor": "",
+      "tagId": "317",
+      "tagName": "风光好(4)",
+      "tagNum": "4",
+      "tagType": "",
+      "tagBorderColor": ""
+    },
+    {
+      "tagColor": "",
+      "tagId": "33",
+      "tagName": "空气好(3)",
+      "tagNum": "3",
+      "tagType": "",
+      "tagBorderColor": ""
+    },
+    {
+      "tagColor": "",
+      "tagId": "29",
+      "tagName": "地方大(2)",
+      "tagNum": "2",
+      "tagType": "",
+      "tagBorderColor": ""
+    },
+    {
+      "tagColor": "",
+      "tagId": "200",
+      "tagName": "人满(1)",
+      "tagNum": "1",
+      "tagType": "",
+      "tagBorderColor": ""
+    }
+  ],
+  "dianpingInfo": []
+}

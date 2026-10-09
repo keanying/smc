@@ -1,0 +1,43 @@
+{
+  "code": 200,
+  "msg": "success",
+  "result": {
+    "totalCount": 23,
+    "items": [
+      {
+        "commentId": 901001,
+        "userInfo": {"userId": "U10001", "nickName": "爱旅行的小李"},
+        "score": 5.0,
+        "scores": [
+          {"name": "景色", "score": 5.0},
+          {"name": "趣味", "score": 4.5},
+          {"name": "性价比", "score": 4.0}
+        ],
+        "content": "西湖的荷花开得正好，建议早上去人少。",
+        "publishTime": "/Date(1786955245000+0800)/",
+        "ipLocatedName": "浙江",
+        "touristTypeDisplay": "情侣出游",
+        "usefulCount": 12,
+        "images": [{"url": "https://dimg.ctrip.com/a.jpg"}, {"url": "https://dimg.ctrip.com/b.jpg"}],
+        "replyList": [
+          {
+            "replyId": 901001901,
+            "content": "感谢您的分享，欢迎再来！",
+            "replyTime": "/Date(1786961245000+0800)/",
+            "replyUserName": "景区官方"
+          }
+        ]
+      },
+      {
+        "commentId": 901002,
+        "userInfo": {"userId": "U10002", "nickName": "老王"},
+        "score": 3.0,
+        "scores": [{"name": "景色", "score": 4.0}],
+        "content": "人太多了，停车不方便。",
+        "publishTime": "/Date(1786868845000+0800)/",
+        "ipLocatedName": "IP属地：江苏",
+        "usefulCount": 3
+      }
+    ]
+  }
+}

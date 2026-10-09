@@ -1,0 +1,5 @@
+PyYAML>=6.0
+requests>=2.28
+PyMySQL>=1.1.0
+redis>=5.0.0          ; 仅 queue.backend=redis 时需要
+pytest>=7.0           ; 仅开发/测试需要

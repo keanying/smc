@@ -1,0 +1,189 @@
+{
+  "ResponseStatus": {
+    "Timestamp": "/Date(1787746962062+0800)/",
+    "Ack": "Success",
+    "Errors": [],
+    "Build": null,
+    "Version": null,
+    "Extension": [
+      {
+        "Id": "CLOGGING_TRACE_ID",
+        "Version": null,
+        "ContentType": null,
+        "Value": "3868213565913691586"
+      },
+      {
+        "Id": "RootMessageId",
+        "Version": null,
+        "ContentType": null,
+        "Value": "100025527-0a957c42-496596-1405395"
+      }
+    ]
+  },
+  "code": 200,
+  "msg": "请求成功",
+  "result": {
+    "items": [
+      {
+        "commentId": 802887065,
+        "poiInfo": null,
+        "userInfo": {
+          "userId": 72935427,
+          "uid": null,
+          "clientAuth": "0569B7D89E1145E4ADB43AD66FDC10A9",
+          "userNick": "YoYo_1R1P9X8E",
+          "userImage": "https://dimg04.c-ctrip.com/images/Z8090n000000ee68v850D_R_180_180.jpg",
+          "userMedals": [],
+          "userMember": "钻石贵宾",
+          "identitiesName": "",
+          "userMemberCode": "30",
+          "url": "https://m.ctrip.com/webapp/you/tripshoot/user/home?seo=0&autoawaken=close&popup=close&isHideHeader=true&isHideNavBar=YES&navBarStyle=white&type=0&clientAuth=0569B7D89E1145E4ADB43AD66FDC10A9",
+          "vIcon": "",
+          "identityDesc": "",
+          "tag": null,
+          "showTagList": null,
+          "levelValueIcon": "https://pages.c-ctrip.com/livestream/userpage/ic_level_4.png",
+          "urls": {
+            "appUrl": "/rn_ugc_taro/_crn_config?CRNModuleName=communityTaro&CRNType=1&initialPage=userHome&clientAuth=0569B7D89E1145E4ADB43AD66FDC10A9",
+            "h5Url": "https://m.ctrip.com/webapp/you/community/user?seo=0&clientAuth=0569B7D89E1145E4ADB43AD66FDC10A9&isHideHeader=true&isHideNavBar=YES",
+            "wechatUrl": "https://m.ctrip.com/webapp/you/tripshoot/user/home?seo=0&clientAuth=0569B7D89E1145E4ADB43AD66FDC10A9&isHideHeader=true&isHideNavBar=YES&isMini=1",
+            "mainWechatUrl": "/pages/ugc/user/index?clientAuth=0569B7D89E1145E4ADB43AD66FDC10A9"
+          }
+        },
+        "extInfo": {
+          "playTime": null,
+          "duration": 0,
+          "durationType": 0,
+          "avgCost": null,
+          "airplane": null,
+          "seatLevel": null,
+          "departure": null,
+          "arrival": null
+        },
+        "replyInfo": [],
+        "replyTypeList": null,
+        "commentKeywordList": [],
+        "commentTagInfo": [],
+        "resourceId": 4649,
+        "resourceType": 11,
+        "businessId": 1701556,
+        "businessType": 70,
+        "districtId": 2506,
+        "sourceType": 5,
+        "externalResourceId": 1128147867791460,
+        "hasVoted": false,
+        "isUnUseful": false,
+        "showUsefulModule": null,
+        "isPicked": false,
+        "isGood": false,
+        "isOwner": false,
+        "fromType": 1,
+        "fromTypeText": "来自订单",
+        "publishTime": "/Date(1787631227000+0800)/",
+        "publishStatus": 6,
+        "usefulCount": 0,
+        "replyCount": 0,
+        "score": 5.0,
+        "touristType": 2,
+        "images": [
+          {
+            "imageId": 2325681739,
+            "height": 2280,
+            "width": 1928,
+            "imageSrcUrl": "https://dimg04.c-ctrip.com/images/0EQ6712000tn4qerf1416_W_640_10000.jpg?proc=autoorient",
+            "imageThumbUrl": "https://dimg04.c-ctrip.com/images/0EQ6712000tn4qerf1416_D_180_180.jpg?proc=autoorient",
+            "tagText": null,
+            "tagId": null
+          },
+          {
+            "imageId": 2325681700,
+            "height": 1536,
+            "width": 2048,
+            "imageSrcUrl": "https://dimg04.c-ctrip.com/images/0EQ0m12000tn4w9hp7D01_W_640_10000.jpg?proc=autoorient",
+            "imageThumbUrl": "https://dimg04.c-ctrip.com/images/0EQ0m12000tn4w9hp7D01_D_180_180.jpg?proc=autoorient",
+            "tagText": null,
+            "tagId": null
+          },
+          {
+            "imageId": 2325681738,
+            "height": 1536,
+            "width": 2048,
+            "imageSrcUrl": "https://dimg04.c-ctrip.com/images/0EQ4b12000tn55dskD3E8_W_640_10000.jpg?proc=autoorient",
+            "imageThumbUrl": "https://dimg04.c-ctrip.com/images/0EQ4b12000tn55dskD3E8_D_180_180.jpg?proc=autoorient",
+            "tagText": null,
+            "tagId": null
+          },
+          {
+            "imageId": 2325681699,
+            "height": 2048,
+            "width": 1536,
+            "imageSrcUrl": "https://dimg04.c-ctrip.com/images/0EQ6812000tn4xlub360F_W_640_10000.jpg?proc=autoorient",
+            "imageThumbUrl": "https://dimg04.c-ctrip.com/images/0EQ6812000tn4xlub360F_D_180_180.jpg?proc=autoorient",
+            "tagText": null,
+            "tagId": null
+          }
+        ],
+        "videos": [],
+        "scores": [
+          {
+            "logicValue": 1,
+            "logicName": null,
+            "score": 5.0,
+            "name": "景色"
+          },
+          {
+            "logicValue": 2,
+            "logicName": null,
+            "score": 5.0,
+            "name": "趣味"
+          },
+          {
+            "logicValue": 3,
+            "logicName": null,
+            "score": 5.0,
+            "name": "性价比"
+          }
+        ],
+        "voteUsers": [],
+        "content": "这里真的绝了！雪山、湖水、绿草，随手一拍就是壁纸级别的风景📸。空气特别清新，走着走着心情都变好了～服务也挺贴心，性价比超高，强烈推荐来一趟！👍👍",
+        "languageType": "zh-cn",
+        "translateContent": null,
+        "translateLanguageType": null,
+        "canEdit": false,
+        "jumpUrl": "/trip_flutter?flutterName=flutter_trip_shoot_review_detail&businessId=802887065",
+        "jumpH5Url": "https://m.ctrip.com/webapp/you/comment/detail/4649/11/802887065.html",
+        "replyJumpUrl": "/rn_destination_video/main.js?CRNModuleName=destinationlive&CRNType=1&initialPage=CommentFloat&id=802887065&isPresent=0&topPercent=0.3&isTransparentBg=YES&scene=review&topBackgroundColor=rgba(0,0,0,0.6)",
+        "publishTypeTag": "2026-08-25 发布点评",
+        "isTripShoot": false,
+        "aiTagIdSens": null,
+        "replyTag": null,
+        "replyContent": null,
+        "replyTime": null,
+        "setTitle": null,
+        "outerTitle": null,
+        "impressionTags": null,
+        "recommendItems": null,
+        "childrenTag": null,
+        "ipLocatedName": "上海",
+        "replyIpLocatedName": null,
+        "isFollow": false,
+        "isDeleted": false,
+        "clientInfo": "{\"clientId\":\"\",\"currency\":\"\",\"platform\":\"\",\"cctPlatform\":\"\"}",
+        "ip": null,
+        "jumpMiniAppUrl": "/pages/gs/comment/detail?BusinessId=0&BusinessType=0&CommentId=802887065&POIId=0&SightId=0",
+        "isAnonym": false,
+        "theForkLogoUrl": null,
+        "timeDuration": null,
+        "touristTypeDisplay": "家庭亲子",
+        "originContent": null,
+        "collectCnt": 0,
+        "hasCollected": false,
+        "isUnderReview": null
+      }
+    ],
+    "commentTagId": 0,
+    "totalCollapseCount": 0,
+    "totalCount": 9736,
+    "totalHideCount": 4960
+  }
+}

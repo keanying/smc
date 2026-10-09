@@ -1,0 +1,45 @@
+# --- Web 服务 ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+python-multipart==0.0.20
+websockets==14.1
+
+# --- 存储 ---
+aiomysql==0.2.0
+PyMySQL==1.1.1
+redis==5.2.1
+
+# --- 采集 ---
+httpx[http2]==0.28.1
+playwright==1.49.1
+parsel==1.9.1
+tenacity==9.0.0
+# 小红书 X-S/X-T/x-s-common 签名的纯 Python 实现（不需要浏览器）
+xhshow>=0.2.0
+# PyExecJS 已停止维护且在 Python 3.11+ 构建失败；
+# 需要执行平台签名 JS 时改为直接调用 Node 子进程（app/utils/jsvm.py）
+
+# --- 调度 ---
+APScheduler==3.11.0
+croniter==6.0.0
+tzdata==2024.2
+
+# --- 配置与工具 ---
+PyYAML==6.0.2
+python-dotenv==1.0.1
+
+# --- 加解密（小红书等平台参数依赖） ---
+pycryptodome>=3.23.0
+cryptography==44.0.0
+
+# --- 测试 ---
+pytest==8.3.4
+pytest-asyncio==0.25.0
+# 去哪儿采集器的页面解析用它（vendor/qunar_crawler/parsers.py）。
+# ⚠️ 本来就装在环境里、但没写进这个文件——新机器上 pip install -r 之后
+#    服务能起来，跑去哪儿任务时才 ImportError，极难往依赖上想。
+beautifulsoup4>=4.12
+# 读机器内存：浏览器闸门据此决定还能不能再开一个 Chromium
+# （读不到时会退回 /proc/meminfo，Windows 上则放弃限制，服务不受影响）
+psutil>=5.9

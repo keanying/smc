@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      ⚠️ 不发 Referer。各平台的图片 CDN（微博的 sinaimg、抖音的 douyinpic、
+      小红书的 xhscdn）都做了防盗链：请求里带着别的站点的 Referer 就回 403。
+      表现非常具有迷惑性——把图片地址复制到浏览器地址栏能正常打开
+      （那样不带 Referer），可页面里就是一片"加载失败"，
+      让人以为是采到的地址不对。
+      加这一行之后浏览器对所有外链资源都不发 Referer，图片就能显示了。
+    -->
+    <meta name="referrer" content="no-referrer" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>景区社媒采集系统</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

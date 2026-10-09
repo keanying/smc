@@ -1,0 +1,254 @@
+﻿# ============================================================================
+# opinion_labeling_engine 运行配置
+# ----------------------------------------------------------------------------
+# 所有配置项均支持环境变量覆盖，语法 ${ENV_NAME} 或 ${ENV_NAME:默认值}。
+# 敏感信息（API Key、数据库口令）建议只写在环境变量里，不要提交进仓库。
+# ============================================================================
+
+app:
+  name: opinion_labeling_engine
+  # 运行环境标识，仅用于日志与监控打点
+  env: ${APP_ENV:dev}
+
+logging:
+  level: ${LOG_LEVEL:INFO}
+  # 日志文件目录；留空则只输出到控制台
+  dir: logs
+  file: engine.log
+  # 单文件最大字节数与保留份数
+  max_bytes: 52428800
+  backup_count: 7
+  # 是否在日志里打印评论原文（生产建议 false，避免大量文本刷屏）
+  log_content: false
+
+# ---------------------------------------------------------------------------
+# 大模型（火山方舟 Ark / responses 协议）
+# ---------------------------------------------------------------------------
+llm:
+  base_url: ${ARK_BASE_URL:https://ark.cn-beijing.volces.com/api/v3}
+  endpoint: /responses
+  api_key: ${ARK_API_KEY:ark-30981}
+  model: ${ARK_MODEL:deepseek-v4-flash-260425}
+  # 采样参数：标注任务要稳定可复现，温度压到很低
+  temperature: 0.01
+  top_p: 0.7
+  # 输出预算。注意推理模型（deepseek-v4-flash 等）的思考过程也吃这份额度，
+  # 给小了会出现 incomplete_details.reason=length：正文一个字都没出来，或者断成半截 JSON。
+  max_output_tokens: 8096
+  # 遇到截断时客户端会把预算翻倍重试，最多涨到这个上限
+  max_output_tokens_cap: 16384
+  # 透传给厂商的私有参数，原样并进请求体。默认为空。
+  # 标注任务不需要思考链，关掉能省一半以上输出 token；具体参数名以你们的方舟版本为准，
+  # 常见写法二选一（先用 --limit 3 --dry-run 验证不报 400 再放量）：
+  #   extra_body: {"thinking": {"type": "disabled"}}
+  #   extra_body: {"reasoning": {"effort": "minimal"}}
+  extra_body: {}
+  # 单次 HTTP 超时（连接秒, 读取秒）
+  connect_timeout: 15
+  read_timeout: 120
+  # 失败重试：仅对超时、5xx、429、以及输出无法解析的情况重试
+  max_retries: 3
+  retry_backoff_base: 1.0      # 指数退避基数（秒），第 n 次等待 base * 2^(n-1) + 抖动
+  retry_backoff_max: 20.0
+  # 全局限流：每秒最多发起多少次模型调用（令牌桶），0 表示不限流
+  rate_limit_qps: ${ARK_QPS:8}
+  # 调用粒度：single = 一条评论一次请求（准确率优先）
+  strategy: single
+  # 是否在提示词中携带少样本示例。
+  # 开启后 system+few-shot 约 6000 字符（≈3.5k tokens），准确率明显更好；
+  # 若单条成本敏感、且抽验准确率已达标，可关掉省掉约 1.5k tokens/条。
+  with_fewshot: true
+  # 少样本示例怎么送给模型：
+  #   inline  —— 示例作为文本折进 system 段，input 里不出现任何 assistant item（默认，兼容性最好）
+  #   message —— 示例走独立的 user/assistant 轮，模型学得略准一点
+  # 方舟对 input 里的 assistant item 要求带 status 字段，message 模式已按协议补上；
+  # 若换了网关又报 MissingParameter 之类的错，切回 inline 即可。
+  fewshot_style: inline
+  # system 段怎么送：
+  #   system —— 独立的 system item（标准做法，默认）
+  #   user   —— 折进唯一的 user item，此时 input 里只有一个 user 元素，
+  #             与方舟文档最小请求样例的形状完全一致。网关报 input 相关的参数错时切这个。
+  system_role: system
+
+# ---------------------------------------------------------------------------
+# 内容清洗（进模型之前的第一道闸）
+# ---------------------------------------------------------------------------
+cleaning:
+  # 清洗后有效正文的最小长度，低于此值判定为无意义内容，直接中性落库、不调模型
+  min_valid_length: 2
+  # 送入模型的正文最大长度，超长截断（保留头部）
+  max_content_length: 1000
+  # 是否把 extra_content 里的结构化信息（评分、游客类型）作为上下文喂给模型
+  use_extra_content: true
+  # 纯表情/纯符号内容的兜底标注
+  invalid_sentiment_label: 中性
+  invalid_sentiment_score: 0
+
+# ---------------------------------------------------------------------------
+# 标注后处理边界规则
+# ---------------------------------------------------------------------------
+labeling:
+  # 关键词最短字符数（要求 4：不允许单字关键词）
+  keyword_min_length: 2
+  keyword_max_length: 12
+  # 单条评论最多保留多少个关键词
+  keyword_max_count: 8
+  # 关键词必须能在评论原文中找到（要求 4：杜绝幻觉），开启后不匹配的一律丢弃
+  keyword_must_appear_in_content: true
+  # 允许的模糊匹配：关键词中的字符按序出现在原文里也算命中（应对模型做了轻微改写）
+  keyword_allow_subsequence_match: true
+  # 单条评论最多保留多少个维度标签
+  dimension_max_count: 6
+  # 单条评论最多保留多少个实体标签
+  entity_max_count: 6
+  # 维度标签必须命中 taxonomy.yaml 的合法路径，否则丢弃（要求 2）
+  strict_dimension_whitelist: true
+  # 实体标签必须命中 taxonomy.yaml 的实体子类，否则丢弃
+  strict_entity_whitelist: true
+  # 与景区主体无关时强制中性并清空维度/关键词（要求 3）
+  force_neutral_when_irrelevant: true
+
+  # --- 咨询提问类评论（要求 5）------------------------------------------------
+  # 「最近人多吗」「要预约吗」「4岁多能去吗」是出行前打听，不是评价。
+  # 放任不管的后果：它抽出的「人多」经聚合变成「人多拥挤」，混进拥挤度统计——
+  # 而问这话的人恰恰还没去，等于拿潜在客流的热度去给景区的拥挤度扣分，
+  # 越热门的景区被黑得越狠。问「人多吗」的人永远比抱怨人多的人多得多。
+  # 只出现在疑问小句里的词不做关键词（「风景真好，几点关门？」前半句照常保留）
+  drop_inquiry_keywords: true
+  # 整条评论每一句都是提问 → 强制中性、清空维度（实体保留，"大家在问什么"有价值）
+  neutralize_pure_inquiry: true
+  # 整词都是数量表达的不做关键词：4岁多 / 两小时 / 50块 / 3个人。
+  # 「排队两小时」词头是评价对象，不受影响，照常保留。
+  drop_quantity_only_keywords: true
+  # 模型调用失败/输出解析失败时，是否把"中性"写进库。
+  # false（默认）：不写库，转入失败池（见 failure_store）等后续重标。
+  #   写个假中性会把行占掉——以后既认不出它是失败的，下游指标还会把它
+  #   当成一条真实的中性评价，把景区得分往 5 分拉。
+  # true：老行为，失败也写中性兜底。只有在"宁可有个值也不要 NULL"时才开。
+  write_on_model_failure: false
+  # 整体情感与维度情感冲突时的裁决：model = 信模型，majority = 按维度多数票
+  overall_sentiment_arbiter: model
+  # 置信度低于该阈值的结果打人工复核标记（写入 review_flag，见 storage.review_column）
+  low_confidence_threshold: 0.6
+
+# ---------------------------------------------------------------------------
+# 队列（不依赖业务表；redis = 生产，memory = 单机/联调）
+# ---------------------------------------------------------------------------
+queue:
+  backend: ${QUEUE_BACKEND:redis}    # redis | memory
+  # 入队时若队列已满的行为：block = 阻塞等待，drop = 丢弃并计数
+  full_policy: block
+  max_size: 100000
+  # 单条任务最大重试次数，超过进死信
+  max_attempts: 3
+  # 从队列取任务的阻塞等待秒数
+  pop_timeout: 2
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6378}
+    db: ${REDIS_DB:1}
+    password: ${REDIS_PASSWORD:Ef2AAHEB6jxNA4ST}
+    # 键前缀，多环境共用一套 Redis 时靠它隔离
+    key_prefix: ${REDIS_PREFIX:ole}
+    socket_timeout: 5
+    # 可靠投递：任务被 worker 取走后先落 processing 队列，处理完才删除；
+    # 超过 visibility_timeout 秒仍在 processing 的，视为 worker 崩溃，回收重投
+    visibility_timeout: 300
+    reclaim_interval: 60
+
+# ---------------------------------------------------------------------------
+# 失败池：模型标注失败的评论存这里，不写库，等后续重标
+# ---------------------------------------------------------------------------
+# 固定走 Redis，与 queue.backend 无关——队列可以是 memory，
+# 但失败记录必须跨进程重启存活，否则"后续再标注"无从谈起。
+failure_store:
+  enabled: true
+  backend: ${FAILURE_STORE_BACKEND:redis}    # redis | memory | none
+  # 池子上限，超了从最早的记录开始丢，防止把 Redis 内存吃干净
+  max_records: 200000
+  # 记录保留天数，0 = 永久
+  ttl_days: 30
+  # 重标时只取失败超过这么久的记录：刚失败的先晾一会儿，
+  # 避免模型正在抽风时反复重试同一批，白烧 token
+  retry_min_age_seconds: 60
+  # 一次重标取多少条
+  retry_batch_size: 200
+  # 连接信息缺省沿用 queue.redis，只有需要用另一个实例时才在这里覆盖
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6378}
+    db: ${REDIS_DB:1}
+    password: ${REDIS_PASSWORD:Ef2AAHEB6jxNA4ST}
+    key_prefix: ${REDIS_PREFIX:ole}
+    socket_timeout: 5
+
+# ---------------------------------------------------------------------------
+# Worker
+# ---------------------------------------------------------------------------
+worker:
+  # 并发消费线程数（受 llm.rate_limit_qps 全局约束）
+  concurrency: ${WORKER_CONCURRENCY:4}
+  # 写库批大小与最长攒批时间（秒）：满一个条件就 flush
+  flush_batch_size: 50
+  flush_interval: 3
+  # 优雅停机等待秒数
+  shutdown_timeout: 30
+
+# ---------------------------------------------------------------------------
+# MySQL：只用于写回标注结果，不承担队列职责
+# ---------------------------------------------------------------------------
+mysql:
+  host: ${MYSQL_HOST:localhost}
+  port: ${MYSQL_PORT:3306}
+  user: ${MYSQL_USER:opinionhub}
+  password: ${MYSQL_PASSWORD:8drfEYnxAdcW5aP3}
+  database: ${MYSQL_DATABASE:opinionhub}
+  charset: utf8mb4
+  connect_timeout: 10
+  # 连接池大小，建议 >= worker.concurrency
+  pool_size: 8
+  # 写库失败重试
+  max_retries: 3
+
+storage:
+  table: src_opinion_social_work_comment_di
+  # 定位一行数据的业务主键（组合唯一）：渠道 + 景区ID + 评论ID。
+  # 这三个字段同时也是调用方入参的必填项，任一为空引擎会在入队时直接拒绝。
+  # 这组列上必须有索引，否则每条 UPDATE 都会全表扫描（见 sql/optional_review_column.sql）。
+  key_columns: [channel, scenic_id, comment_id]
+  # 调用方约定要传的入参字段。其中属于 key_columns 的缺失 = 直接拒绝入队；
+  # 不属于 key_columns 的缺失 = 只打 WARNING 不拦截（不影响写回，但会影响准确率或可追溯性）。
+  required_input_fields: [channel, work_id, scenic_id, scenic_name, comment_id, content]
+  # 标注结果写入的目标列
+  columns:
+    sentiment_label: sentiment_label
+    sentiment_score: sentiment_score
+    dimension_tags: dimension_tags
+    entity_tags: entity_tags
+    keyword_tags: keyword_tags
+    # 归类关键词。表里没这一列就把下面这行删掉／注释掉，引擎会自动跳过。
+    # 建表语句见 sql/aggregation_keyword_tags.sql
+    aggregation_keyword_tags: aggregation_keyword_tags
+  # AI标注 / 人工复核标记列。表里没有这列就留空，程序会自动跳过整套标记逻辑。
+  # 建表：见 sql/optional_review_column.sql
+  review_column: label_review_flag
+  # 各档取值，语义与建表注释一致：
+  #   0未标注 1人工复核正确 2人工复核错误 3复核成功 4AI标注成功 5AI标注错误 6未人工复核
+  # 1/2/3 由人工填，引擎只写 4/5/6。
+  review_flags:
+    ai_success: 4            # 标注成功且置信度达标
+    ai_failed: 5             # 模型调用或解析失败
+    ai_low_confidence: 6     # 标注成功但置信度低于阈值，待人工复核
+  # 哪些标记算"待标注"，跑批默认只取这些行。
+  #   [0]     —— 只标从没标过的（默认，已标注的绝不重复花钱）
+  #   [0, 4]  —— 连 AI 已标成功的也一起重标
+  # 注意：引擎标成功后会把标记写成 4。所以一旦把 4 放进来，
+  # 取数条件就不会随处理收缩（标完还是匹配），脚本会自动改用游标翻页，
+  # 否则抽干循环会把同一批数据无限重标。用 --pending-flags 可以按次覆盖。
+  pending_flags: [0]
+  # 标注失败时只把标记置成 ai_failed，五个标注字段一个都不动。
+  # 这样失败的行在 SQL 里也能盘点（label_review_flag=5），
+  # 与 Redis 失败池互为补充：Redis 管重标，这个字段管盘点。
+  write_flag_on_failure: true
+  # JSON 字段是否写成 ensure_ascii=False 的中文明文（与样例数据保持一致）
+  json_ensure_ascii: false
