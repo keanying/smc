@@ -125,7 +125,8 @@
       <template #label>采集目标 <el-badge :value="targets.length" :max="999" type="primary" /></template>
 
       <el-alert type="info" :closable="false" style="margin-bottom: 12px">
-        <b>POI</b>：携程填 POI_ID，同程填 sid —— 这两个平台只有景区点评，没有作品。<br />
+        <b>POI</b>：携程填 POI_ID，同程填 sid，去哪儿填 POI ID —— 这三个平台只有景区点评，没有作品。
+        可另填<b>景区主页链接</b>，采集时写进作品链接（work_url）；不填则按 POI ID 自动生成。<br />
         <b>主页</b>：抖音填 sec_user_id 或主页链接，快手填 user_id，小红书填 user_id，微博填 uid。
       </el-alert>
 
@@ -164,6 +165,11 @@
           style="width: 300px" clearable
         />
         <el-input v-model="targetForm.target_name" placeholder="备注名（可选）" style="width: 160px" clearable />
+        <el-input
+          v-if="targetForm.target_type === 'poi' && ARCHIVE_CHANNELS.includes(targetForm.channel)"
+          v-model="targetForm.target_url" placeholder="景区主页链接（可选，不填自动生成）"
+          style="width: 300px" clearable
+        />
         <el-button type="primary" :loading="savingTarget" @click="saveTarget">添加</el-button>
       </div>
 
@@ -182,6 +188,17 @@
         </el-table-column>
         <el-table-column prop="target_id" label="目标ID" min-width="200" class-name="mono" />
         <el-table-column prop="target_name" label="备注名" width="150" />
+        <el-table-column label="景区主页" min-width="220">
+          <template #default="{ row }">
+            <template v-if="isPoiHomepageTarget(row)">
+              <a v-if="row.target_url" :href="row.target_url" target="_blank" rel="noopener" class="mono">
+                {{ row.target_url }}
+              </a>
+              <span v-else class="muted">未指定，按 POI ID 自动生成</span>
+            </template>
+            <span v-else class="muted">-</span>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
@@ -189,8 +206,11 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="90" align="center">
+        <el-table-column label="操作" width="130" align="center">
           <template #default="{ row }">
+            <el-button v-if="isPoiHomepageTarget(row)" link type="primary" @click="editTargetUrl(row)">
+              改主页
+            </el-button>
             <el-button link type="danger" @click="removeTarget(row.id)">删除</el-button>
           </template>
         </el-table-column>
@@ -259,7 +279,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   archiveApi, scenicApi, type ArchiveItem, type ChannelOption,
   type FilterWord, type Keyword, type Target,
@@ -377,13 +397,14 @@ function onArchivePick(value: string) {
 
 const targetForm = reactive({
   channel: 'ctrip', target_type: 'poi' as 'poi' | 'creator',
-  target_id: '', target_name: '',
+  target_id: '', target_name: '', target_url: '',
 })
 
 const targetPlaceholder = computed(() => {
   if (targetForm.target_type === 'creator') return '用户ID 或主页链接'
   return targetForm.channel === 'ctrip' ? '携程 POI_ID，如 32289'
     : targetForm.channel === 'tongcheng' ? '同程 sid，如 32289'
+    : targetForm.channel === 'qunar' ? '去哪儿 POI ID'
     : '该平台没有 POI，请选「用户主页」'
 })
 
@@ -478,15 +499,58 @@ async function saveTarget() {
       target_type: targetForm.target_type,
       target_id: targetForm.target_id.trim(),
       target_name: targetForm.target_name || null,
+      target_url: isPoiHomepageTarget(targetForm) ? targetForm.target_url.trim() || null : null,
       enabled: 1,
     })
     ElMessage.success('已添加')
     targetForm.target_id = ''
     targetForm.target_name = ''
+    targetForm.target_url = ''
     await loadAll()
   } finally {
     savingTarget.value = false
   }
+}
+
+/**
+ * 携程/同程/去哪儿的 POI 目标可以指定景区主页：采集时原样写进作品表的 work_url，
+ * 不填才按 POI ID 自动拼。其它平台/用户主页类目标没有这个概念。
+ */
+function isPoiHomepageTarget(t: { channel: string; target_type: string }) {
+  return t.target_type === 'poi' && ARCHIVE_CHANNELS.includes(t.channel)
+}
+
+/** 已有目标改主页：后端按 景区+平台+类型+ID upsert，其它字段要原样带回去，不然会被清掉。 */
+async function editTargetUrl(row: Target) {
+  let value: string
+  try {
+    const result = await ElMessageBox.prompt(
+      '留空 = 按 POI ID 自动生成。下次采集时写进作品链接（work_url）。',
+      `景区主页 · ${row.target_name || row.target_id}`,
+      {
+        inputValue: row.target_url || '',
+        inputPlaceholder: 'https://…',
+        inputValidator: (v: string) =>
+          !v.trim() || /^https?:\/\//i.test(v.trim()) || '要以 http:// 或 https:// 开头',
+        confirmButtonText: '保存',
+        cancelButtonText: '取消',
+      },
+    ) as { value: string }
+    value = result.value
+  } catch {
+    return // 取消
+  }
+  await scenicApi.saveTarget(props.scenicId, {
+    channel: row.channel,
+    target_type: row.target_type,
+    target_id: row.target_id,
+    target_name: row.target_name ?? null,
+    target_url: value.trim() || null,
+    extra: row.extra,
+    enabled: row.enabled,
+  })
+  ElMessage.success('已保存，下次采集生效')
+  await loadAll()
 }
 
 async function removeTarget(id: number) {

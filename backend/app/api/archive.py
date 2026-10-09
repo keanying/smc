@@ -207,7 +207,7 @@ async def import_archive(payload: Dict[str, Any] = Body(...),
             "scenic_id": scenic_id, "channel": channel, "target_type": "poi",
             "target_id": poi_id, "target_name": row.get("poi_name") or poi_id,
             "target_url": row.get("source_url") or "", "extra": "", "enabled": 1,
-        })
+        }, keep_url=True)
         await store.link_scenic(channel, poi_id, scenic_id)
         if existed:
             updated += 1
@@ -246,7 +246,7 @@ async def attach(payload: Dict[str, Any] = Body(...),
         "scenic_id": scenic_id, "channel": channel, "target_type": "poi",
         "target_id": poi_id, "target_name": row.get("poi_name") or poi_id,
         "target_url": row.get("source_url") or "", "extra": "", "enabled": 1,
-    })
+    }, keep_url=True)
     # 档案的 scenic_id 只在**还没关联**时写：一条档案可能先被建成过景区，
     # 再挂到别的景区上；直接覆盖会把第一次的关联悄悄改掉。
     if not (row.get("scenic_id") or "").strip():

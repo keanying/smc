@@ -145,7 +145,7 @@ async def import_pois(payload: Dict[str, Any] = Body(...),
             "target_id": poi_id, "target_name": row.get("poi_name") or poi_name,
             "target_url": f"{catalog.base_url}/{poi_id}",
             "extra": "", "enabled": 1,
-        })
+        }, keep_url=True)
         await catalog.save_poi_info(row, scenic_id=scenic_id)
         if existed:
             updated += 1

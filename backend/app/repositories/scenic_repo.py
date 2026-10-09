@@ -320,14 +320,26 @@ class ScenicRepository:
             row["extra"] = json.loads(row["extra"]) if row.get("extra") else {}
         return rows
 
-    async def upsert_target(self, data: Dict[str, Any]) -> None:
+    async def upsert_target(self, data: Dict[str, Any], *, keep_url: bool = False) -> None:
+        """新增或更新采集目标。
+
+        keep_url=True 给**自动导入**用（档案导入/挂接、去哪儿导入）：那边带的
+        链接是按 POI ID 拼出来的，不能把用户在页面上手工填的景区主页盖掉——
+        已有非空 target_url 时保持不动。页面上手工保存走默认的 False，
+        填什么存什么，清空也算数。
+        """
+        url_update = (
+            "target_url = IF(target_url IS NULL OR target_url = '', "
+            "VALUES(target_url), target_url)"
+            if keep_url else "target_url = VALUES(target_url)"
+        )
         await self.db.execute(
-            """
+            f"""
             INSERT INTO `src_opinion_scenic_platform_target`
                 (scenic_id, channel, target_type, target_id, target_name, target_url, extra, enabled)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
-                target_name = VALUES(target_name), target_url = VALUES(target_url),
+                target_name = VALUES(target_name), {url_update},
                 extra = VALUES(extra), enabled = VALUES(enabled)
             """,
             [

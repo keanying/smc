@@ -152,15 +152,29 @@ def test_03_import_scenics_from_csv(client):
     assert {"西湖风景区", "灵隐寺", "千岛湖"} <= names
 
 
+# 手工指定的景区主页：采集后要原样落到作品表的 work_url（见 test_11）
+XIHU_HOMEPAGE = "https://you.ctrip.com/sight/hangzhou14/49894.html"
+
+
 def test_04_configure_ctrip_poi(client):
     _data(client.post("/api/scenics/SC001/targets", json={
         "channel": "ctrip", "target_type": "poi",
         "target_id": "32289", "target_name": "西湖",
+        "target_url": XIHU_HOMEPAGE,
     }))
     targets = _data(client.get("/api/scenics/SC001/targets"))
     assert len(targets) == 1
     assert targets[0]["channel"] == "ctrip"
     assert targets[0]["target_id"] == "32289"
+    assert targets[0]["target_url"] == XIHU_HOMEPAGE
+
+
+def test_04b_target_url_must_be_a_link(client):
+    response = client.post("/api/scenics/SC001/targets", json={
+        "channel": "ctrip", "target_type": "poi",
+        "target_id": "32289", "target_url": "you.ctrip.com/sight/1.html",
+    })
+    assert response.status_code in (400, 422)
 
 
 def test_05_reject_task_without_poi(client):
@@ -271,6 +285,8 @@ def test_11_works_and_comment_tree(client):
     work = works["items"][0]
     assert work["work_id"] == "32289"
     assert work["scenic_name"] == "西湖风景区"
+    # 采集目标里指定了景区主页，就用它，而不是按 POI ID 拼的默认链接
+    assert work["work_url"] == XIHU_HOMEPAGE
     # 列表接口不再返回 extra_content（那是几十 KB 的原始 JSON，见
     # data_repo.WORK_LIST_COLUMNS），"是不是合成作品"由 SQL 直接算成布尔
     assert work["is_synthetic"] is True

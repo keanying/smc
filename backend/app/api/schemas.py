@@ -81,6 +81,20 @@ class TargetIn(BaseModel):
             raise ValueError("target_type 只能是 poi 或 creator")
         return value
 
+    @field_validator("target_url")
+    @classmethod
+    def _valid_url(cls, value: Optional[str]) -> Optional[str]:
+        """POI 型目标的 target_url 会原样写进作品表的 work_url，
+        所以在入口处就把明显填错的挡住，别等数据落库了才发现。"""
+        value = (value or "").strip()
+        if not value:
+            return None
+        if not value.lower().startswith(("http://", "https://")):
+            raise ValueError("景区主页链接要以 http:// 或 https:// 开头")
+        if len(value) > 600:
+            raise ValueError("景区主页链接太长（上限 600 字符）")
+        return value
+
 
 class AccountIn(BaseModel):
     channel: str

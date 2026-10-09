@@ -101,7 +101,7 @@ class QunarCollector(BaseCollector):
         return self.new_work(
             ctx,
             work_id=poi_id,
-            work_url=f"{self.base_url}/{poi_id}",
+            work_url=self.poi_homepage(target, f"{self.base_url}/{poi_id}"),
             author_id="qunar",
             author_name="去哪儿",
             title=f"{target.name or ctx.scenic_name} · 去哪儿点评",
