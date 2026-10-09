@@ -1,11 +1,11 @@
 <template>
   <div class="comment-tree">
     <div class="comment-tree-bar">
-      <span>
+      <span class="comment-tree-count">
         共 <b>{{ total }}</b> 条一级评论
-        <span v-if="comments.length" class="muted">（已加载 {{ comments.length }} 条）</span>
+        <span v-if="comments.length" class="muted">· 已加载 {{ comments.length }}</span>
+        <InfoTip content="窗口内滚动到底自动加载更多" />
       </span>
-      <span class="muted comment-tree-hint">窗口内滚动到底自动加载更多</span>
     </div>
 
     <!-- 固定高度的评论窗口：内部滚动，不把外层表格撑长 -->
@@ -105,26 +105,35 @@ defineExpose({ reload: () => load(true) })
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 13px;
-  padding: 0 2px 6px;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  padding: 0 2px 8px;
 }
 
-.comment-tree-hint {
-  font-size: 12px;
+.comment-tree-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.comment-tree-count b {
+  font-weight: 600;
+  color: var(--smc-text);
 }
 
 .comment-tree-window {
   overflow-y: auto;
   overflow-x: hidden;
-  border: 1px solid #ebeef5;
-  border-radius: 6px;
-  background: #fff;
-  padding: 4px 12px;
+  border: 1px solid var(--smc-border);
+  border-radius: var(--smc-radius-sm);
+  background: var(--smc-card-bg);
+  padding: 0 14px;
 }
 
 .comment-tree-foot {
   text-align: center;
   padding: 10px 0;
   font-size: 12px;
+  color: var(--smc-text-secondary);
 }
 </style>

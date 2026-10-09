@@ -2,13 +2,7 @@
   <el-tabs v-model="tab">
     <!-- 主关键字 -->
     <el-tab-pane name="keywords">
-      <template #label>主关键字 <el-badge :value="keywords.length" :max="999" type="primary" /></template>
-
-      <el-alert type="info" :closable="false" style="margin-bottom: 12px">
-        <b>主关键字拿去平台上搜</b>，决定「搜到什么」。
-        搜回来的内容还要过两道：先看<b>附关键字</b>决定留不留，再看<b>过滤关键字</b>决定丢不丢。
-        <span class="muted">（这三道只对抖音 / 快手 / 小红书 / 微博生效；携程、同程是按 POI 拉点评的，用不上关键字）</span>
-      </el-alert>
+      <template #label>主关键字<span class="tab-count">{{ keywords.length }}</span></template>
 
       <div class="toolbar">
         <el-input
@@ -16,9 +10,12 @@
           style="width: 420px" clearable @keyup.enter="addKeywords"
         />
         <el-button type="primary" :loading="savingKeyword" @click="addKeywords">添加</el-button>
-        <span class="muted" style="font-size: 12px">
-          新建任务时默认最多带入 100 个启用的关键字
-        </span>
+        <InfoTip :width="360">
+          <b>拿去平台上搜</b>，决定搜到什么；搜回的内容再过两道：<b>附关键字</b>定留不留，<b>过滤关键字</b>定丢不丢。<br />
+          只对抖音 / 快手 / 小红书 / 微博生效，携程、同程按 POI 拉点评，用不上关键字。<br />
+          新建任务时默认最多带入 100 个启用的关键字。<br />
+          点标签切换启用 / 停用，点 × 删除。
+        </InfoTip>
       </div>
 
       <div v-if="keywords.length" class="keyword-list">
@@ -32,35 +29,26 @@
           {{ item.keyword }}
           <span v-if="!item.enabled" class="muted">（已停用）</span>
         </el-tag>
-        <div class="muted" style="font-size: 12px; margin-top: 4px">
-          点击标签可切换启用/停用，点 × 删除
-        </div>
       </div>
-      <el-empty v-else description="还没有关键字" :image-size="70" />
+      <el-empty v-else description="还没有关键字" :image-size="64" />
     </el-tab-pane>
 
     <!-- 附关键字 -->
     <el-tab-pane name="aux">
-      <template #label>附关键字 <el-badge :value="auxWords.length" :max="999" type="success" /></template>
-
-      <el-alert type="success" :closable="false" style="margin-bottom: 12px">
-        <b>命中就留存</b>：搜回来的内容，标题/正文/标签里含<b>主关键字或任意一个附关键字</b>就存下来，
-        都不含就丢弃。
-        <div class="muted" style="margin-top: 4px">
-          用来兜住"别名"。实测搜「盘山风景区」，20 条笔记里只有 1 条写了完整名字，
-          其余都只写「盘山」——不配附关键字的话，那 19 条会被当成不相关全丢掉。
-        </div>
-      </el-alert>
+      <template #label>附关键字<span class="tab-count">{{ auxWords.length }}</span></template>
 
       <div class="toolbar">
         <el-input
           v-model="auxInput" placeholder="输入附关键字，回车添加；支持逗号/换行批量粘贴"
           style="width: 420px" clearable @keyup.enter="addAux"
         />
-        <el-button type="success" :loading="savingAux" @click="addAux">添加</el-button>
-        <span class="muted" style="font-size: 12px">
-          最多 {{ MAX_AUX }} 个（当前 {{ auxWords.length }}）
-        </span>
+        <el-button type="primary" :loading="savingAux" @click="addAux">添加</el-button>
+        <span class="word-quota">{{ auxWords.length }} / {{ MAX_AUX }}</span>
+        <InfoTip :width="360">
+          <b>命中就留存</b>：标题 / 正文 / 标签含主关键字或任一附关键字就存下，都不含则丢弃。<br />
+          用来兜住别名：搜「盘山风景区」，多数笔记只写「盘山」，不配附关键字会被当成不相关丢掉。<br />
+          不配则只按主关键字判定。点标签切换启用 / 停用，点 × 删除。
+        </InfoTip>
       </div>
 
       <div v-if="auxWords.length" class="keyword-list">
@@ -73,34 +61,26 @@
           {{ item.word }}
           <span v-if="!item.enabled" class="muted">（已停用）</span>
         </el-tag>
-        <div class="muted" style="font-size: 12px; margin-top: 4px">
-          点击标签可切换启用/停用，点 × 删除
-        </div>
       </div>
-      <el-empty v-else description="还没有附关键字（不配的话只按主关键字判定留存）" :image-size="70" />
+      <el-empty v-else description="还没有附关键字" :image-size="64" />
     </el-tab-pane>
 
     <!-- 过滤关键字 -->
     <el-tab-pane name="exclude">
-      <template #label>过滤关键字 <el-badge :value="excludeWords.length" :max="999" type="danger" /></template>
-
-      <el-alert type="warning" :closable="false" style="margin-bottom: 12px">
-        <b>命中就丢，一票否决</b>：上面两道都过了的内容，只要标题/正文/标签里出现任意一个过滤关键字，照样丢弃。
-        <div class="muted" style="margin-top: 4px">
-          用来挡广告和蹭热度的，比如「代运营」「加微信」「涨粉」。
-          <b>不配就完全不起作用</b>，不会因为列表是空的就把内容拦下来。
-        </div>
-      </el-alert>
+      <template #label>过滤关键字<span class="tab-count">{{ excludeWords.length }}</span></template>
 
       <div class="toolbar">
         <el-input
           v-model="excludeInput" placeholder="输入过滤关键字，回车添加；支持逗号/换行批量粘贴"
           style="width: 420px" clearable @keyup.enter="addExclude"
         />
-        <el-button type="danger" :loading="savingExclude" @click="addExclude">添加</el-button>
-        <span class="muted" style="font-size: 12px">
-          最多 {{ MAX_EXCLUDE }} 个（当前 {{ excludeWords.length }}）
-        </span>
+        <el-button type="primary" :loading="savingExclude" @click="addExclude">添加</el-button>
+        <span class="word-quota">{{ excludeWords.length }} / {{ MAX_EXCLUDE }}</span>
+        <InfoTip :width="360">
+          <b>命中就丢，一票否决</b>：前两道都通过的内容，标题 / 正文 / 标签出现任一过滤关键字照样丢弃。<br />
+          用来挡广告和蹭热度，如「代运营」「加微信」「涨粉」。不配则完全不起作用。<br />
+          点标签切换启用 / 停用，点 × 删除。
+        </InfoTip>
       </div>
 
       <div v-if="excludeWords.length" class="keyword-list">
@@ -113,22 +93,13 @@
           {{ item.word }}
           <span v-if="!item.enabled" class="muted">（已停用）</span>
         </el-tag>
-        <div class="muted" style="font-size: 12px; margin-top: 4px">
-          点击标签可切换启用/停用，点 × 删除
-        </div>
       </div>
-      <el-empty v-else description="还没有过滤关键字（不配则不生效）" :image-size="70" />
+      <el-empty v-else description="还没有过滤关键字" :image-size="64" />
     </el-tab-pane>
 
     <!-- 采集目标 -->
     <el-tab-pane name="targets">
-      <template #label>采集目标 <el-badge :value="targets.length" :max="999" type="primary" /></template>
-
-      <el-alert type="info" :closable="false" style="margin-bottom: 12px">
-        <b>POI</b>：携程填 POI_ID，同程填 sid，去哪儿填 POI ID —— 这三个平台只有景区点评，没有作品。
-        可另填<b>景区主页链接</b>，采集时写进作品链接（work_url）；不填则按 POI ID 自动生成。<br />
-        <b>主页</b>：抖音填 sec_user_id 或主页链接，快手填 user_id，小红书填 user_id，微博填 uid。
-      </el-alert>
+      <template #label>采集目标<span class="tab-count">{{ targets.length }}</span></template>
 
       <div class="toolbar">
         <el-select v-model="targetForm.channel" placeholder="平台" style="width: 120px">
@@ -156,7 +127,7 @@
           />
           <template #empty>
             <div class="archive-empty">
-              档案里没搜到——去<b>景区档案</b>采一次，或者直接把 POI ID 打进来
+              档案里没搜到：可直接填 POI ID，或先去「景区档案」采集
             </div>
           </template>
         </el-select>
@@ -167,10 +138,15 @@
         <el-input v-model="targetForm.target_name" placeholder="备注名（可选）" style="width: 160px" clearable />
         <el-input
           v-if="targetForm.target_type === 'poi' && ARCHIVE_CHANNELS.includes(targetForm.channel)"
-          v-model="targetForm.target_url" placeholder="景区主页链接（可选，不填自动生成）"
+          v-model="targetForm.target_url" placeholder="景区主页链接（可选）"
           style="width: 300px" clearable
         />
         <el-button type="primary" :loading="savingTarget" @click="saveTarget">添加</el-button>
+        <InfoTip :width="380">
+          <b>POI 点评</b>：携程填 POI_ID，同程填 sid，去哪儿填 POI ID；这三个平台只有景区点评，没有作品。
+          可另填景区主页链接，采集时写进作品链接（work_url），不填则按 POI ID 自动生成。<br />
+          <b>用户主页</b>：抖音填 sec_user_id 或主页链接，快手 / 小红书填 user_id，微博填 uid。
+        </InfoTip>
       </div>
 
       <el-table :data="targets" size="small" border>
@@ -189,12 +165,15 @@
         <el-table-column prop="target_id" label="目标ID" min-width="200" class-name="mono" />
         <el-table-column prop="target_name" label="备注名" width="150" />
         <el-table-column label="景区主页" min-width="220">
+          <template #header>
+            景区主页<InfoTip content="仅携程 / 同程 / 去哪儿的 POI 目标。采集时写进作品链接（work_url），未指定则按 POI ID 自动生成。" />
+          </template>
           <template #default="{ row }">
             <template v-if="isPoiHomepageTarget(row)">
-              <a v-if="row.target_url" :href="row.target_url" target="_blank" rel="noopener" class="mono">
+              <a v-if="row.target_url" :href="row.target_url" target="_blank" rel="noopener" class="home-link mono">
                 {{ row.target_url }}
               </a>
-              <span v-else class="muted">未指定，按 POI ID 自动生成</span>
+              <span v-else class="muted">自动生成</span>
             </template>
             <span v-else class="muted">-</span>
           </template>
@@ -206,29 +185,29 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="130" align="center">
+        <el-table-column label="操作" width="90" align="center">
           <template #default="{ row }">
-            <el-button v-if="isPoiHomepageTarget(row)" link type="primary" @click="editTargetUrl(row)">
-              改主页
-            </el-button>
-            <el-button link type="danger" @click="removeTarget(row.id)">删除</el-button>
+            <div class="row-actions">
+              <IconAction v-if="isPoiHomepageTarget(row)" icon="edit" tip="改主页" @click="editTargetUrl(row)" />
+              <IconAction icon="delete" tip="删除" @click="removeTarget(row.id)" />
+            </div>
           </template>
         </el-table-column>
-        <template #empty><el-empty description="还没有采集目标" :image-size="60" /></template>
+        <template #empty><el-empty description="还没有采集目标" :image-size="56" /></template>
       </el-table>
     </el-tab-pane>
 
     <!-- 景区档案：这个景区在同程/携程/去哪儿上各自的资料 -->
     <el-tab-pane v-if="hasPoiTarget" name="archive">
-      <template #label>
-        景区档案 <el-badge :value="archives.length" :max="9" type="primary" />
-      </template>
+      <template #label>景区档案<span class="tab-count">{{ archives.length }}</span></template>
 
-      <el-alert type="info" :closable="false" style="margin-bottom: 12px">
-        档案是<b>平台页面上的景区资料</b>，不是采集到的点评，不参与标注。<br />
-        这里只显示<b>已经关联到本景区</b>的那几条；要新增关联，去左侧的
-        <b>景区档案</b>板块里搜到之后「挂到景区」。
-      </el-alert>
+      <div class="section-title">
+        已关联的平台档案
+        <InfoTip>
+          档案是平台页面上的景区资料，不是采集到的点评，不参与标注。<br />
+          这里只显示已关联到本景区的档案；新增关联请到「景区档案」页搜到后「挂到景区」。
+        </InfoTip>
+      </div>
 
       <el-table v-if="archives.length" :data="archives" size="small" border>
         <el-table-column label="平台" width="90">
@@ -258,21 +237,16 @@
             <el-tag v-else size="small">待采</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="110" align="center">
+        <el-table-column label="操作" width="70" align="center">
           <template #default="{ row }">
-            <el-button
-              link type="primary" :disabled="row.detail_status === 'unsupported'"
+            <IconAction
+              icon="query" tip="重新采集" :disabled="row.detail_status === 'unsupported'"
               :loading="refreshing === row.poi_id" @click="refreshArchive(row)"
-            >
-              重新采集
-            </el-button>
+            />
           </template>
         </el-table-column>
       </el-table>
-      <el-empty
-        v-else :image-size="70"
-        description="这个景区还没关联任何平台档案——去左侧「景区档案」搜到之后挂过来"
-      />
+      <el-empty v-else :image-size="56" description="还没关联平台档案" />
     </el-tab-pane>
   </el-tabs>
 </template>
@@ -566,9 +540,24 @@ watch(() => props.scenicId, loadAll, { immediate: true })
 
 <style scoped>
 .keyword-list { padding: 4px 0; }
+/* 标签页上的数量：中性灰小字，替代原来红/绿/蓝的徽标 */
+.tab-count {
+  margin-left: 6px;
+  min-width: 18px;
+  padding: 0 6px;
+  line-height: 18px;
+  border-radius: 9px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--smc-text-secondary);
+  background: var(--el-fill-color-light);
+}
+.word-quota { font-size: 12px; color: var(--smc-text-secondary); font-variant-numeric: tabular-nums; }
+.home-link { color: var(--smc-primary); text-decoration: none; font-size: 12px; word-break: break-all; }
+.home-link:hover { text-decoration: underline; }
+.row-actions { display: inline-flex; align-items: center; gap: 2px; }
 /* 开放时间、优待政策、服务设施在去哪儿页面上本来就是分行的，
    不保留换行会糊成一坨长句子，看不出"成人/儿童/老人"是三条。 */
 .pre { white-space: pre-wrap; word-break: break-word; }
-.toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .archive-empty { padding: 10px 14px; color: var(--el-text-color-secondary); font-size: 12px; }
 </style>

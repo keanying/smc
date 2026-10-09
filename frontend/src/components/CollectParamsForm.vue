@@ -1,7 +1,14 @@
 <template>
   <div class="collect-params">
-    <el-form :model="model" label-width="120px" label-position="left" size="default">
-      <el-form-item label="设置方式">
+    <el-form :model="model" label-width="132px" label-position="left" size="default">
+      <el-form-item>
+        <template #label>
+          设置方式<InfoTip>
+            统一：所有平台用同一组参数。<br>
+            分别设置：每个平台单独填，没填的项沿用统一值。<br>
+            数量填 0 表示不限制；评论量大时建议先设个上限试跑一轮。
+          </InfoTip>
+        </template>
         <el-radio-group v-model="perChannel" size="small">
           <el-radio-button :value="false">所有平台统一</el-radio-button>
           <el-radio-button :value="true">按平台分别设置</el-radio-button>
@@ -10,48 +17,56 @@
 
       <!-- ============ 统一模式 ============ -->
       <template v-if="!perChannel">
-        <el-divider content-position="left">采集数量</el-divider>
+        <div class="form-section">采集数量</div>
 
-        <el-form-item v-if="workChannels.length" label="每关键字作品数">
+        <el-form-item v-if="workChannels.length">
+          <template #label>
+            每关键字作品数<InfoTip content="抖音 / 快手 / 小红书 / 微博" />
+          </template>
           <el-input-number v-model="model.max_works" :min="0" :max="10000" style="width: 130px" />
-          <span class="muted hint">抖音/快手/小红书/微博</span>
         </el-form-item>
         <el-form-item v-if="workChannels.length" label="每作品评论数">
           <el-input-number v-model="model.max_comments_per_work" :min="0" :max="100000" style="width: 130px" />
         </el-form-item>
-        <el-form-item v-if="poiChannels.length" label="景区点评数">
+        <el-form-item v-if="poiChannels.length">
+          <template #label>
+            景区点评数<InfoTip content="携程/同程没有作品，只有点评" />
+          </template>
           <el-input-number v-model="model.max_comments" :min="0" :max="100000" style="width: 130px" />
-          <span class="muted hint">携程/同程没有作品，只有点评</span>
         </el-form-item>
-        <el-form-item v-if="poiChannels.length" label="最多翻几页">
+        <el-form-item v-if="poiChannels.length">
+          <template #label>
+            最多翻几页<InfoTip content="0 = 一直翻到没有数据（首次全量拉取用这个）" />
+          </template>
           <el-input-number v-model="model.max_pages" :min="0" :max="5000" style="width: 130px" />
-          <span class="muted hint">0 = 一直翻到没有数据（首次全量拉取用这个）</span>
         </el-form-item>
 
-        <template v-if="engineChannels.length">
-          <el-divider content-position="left">采集模式</el-divider>
-          <el-form-item label="采集模式">
+        <template v-if="engineChannels.length || workChannels.length">
+          <div class="form-section">采集模式与筛选</div>
+
+          <el-form-item v-if="engineChannels.length">
+            <template #label>
+              采集模式<InfoTip :width="360">
+                <div v-for="item in COLLECT_ENGINES" :key="item.value"><b>{{ item.label }}</b>：{{ item.hint }}</div>
+                <div style="margin-top: 4px">
+                  仅对 {{ engineChannels.map(channelLabel).join('/') }} 有效；微博/携程/同程只有接口一条路。
+                </div>
+              </InfoTip>
+            </template>
             <el-radio-group v-model="model.collect_engine" size="small">
               <el-radio-button v-for="item in COLLECT_ENGINES" :key="item.value" :value="item.value">
                 {{ item.label }}
               </el-radio-button>
             </el-radio-group>
-            <div class="muted hint-block">{{ engineHint(model.collect_engine) }}</div>
-            <div class="muted hint-block">
-              仅对 {{ engineChannels.map(channelLabel).join('/') }} 有效；
-              微博/携程/同程只有接口一条路。
-            </div>
           </el-form-item>
-        </template>
 
-        <template v-if="workChannels.length">
-          <el-divider content-position="left">搜索筛选</el-divider>
           <!--
             这里不能写 v-model="model"：model 是 reactive() 出来的常量，
             v-model 生成的更新逻辑是「整个赋值一遍」，对 reactive 常量是无效的，
             表现就是下拉框选了没反应。改成显式 Object.assign 合并。
           -->
           <FilterFields
+            v-if="workChannels.length"
             :model-value="model" :channels="workChannels" :options-map="optionsMap"
             @update:model-value="(v: Params) => Object.assign(model, v)"
           />
@@ -67,9 +82,7 @@
             <el-tag size="small" :color="CHANNEL_COLORS[channel]" style="color: #fff; border: none">
               {{ channelLabel(channel) }}
             </el-tag>
-            <span class="muted">
-              {{ POI_CHANNELS.includes(channel) ? '只有景区点评一层' : '作品 + 作品下的评论两层' }}
-            </span>
+            <InfoTip :content="POI_CHANNELS.includes(channel) ? '只有景区点评一层' : '作品 + 作品下的评论两层'" />
           </div>
 
           <template v-if="!POI_CHANNELS.includes(channel)">
@@ -93,7 +106,12 @@
               />
             </el-form-item>
 
-            <el-form-item v-if="BROWSER_ENGINE_CHANNELS.includes(channel)" label="采集模式">
+            <el-form-item v-if="BROWSER_ENGINE_CHANNELS.includes(channel)">
+              <template #label>
+                采集模式<InfoTip :width="360">
+                  <div v-for="item in COLLECT_ENGINES" :key="item.value"><b>{{ item.label }}</b>：{{ item.hint }}</div>
+                </InfoTip>
+              </template>
               <el-radio-group
                 :model-value="valueOf(channel, 'collect_engine')" size="small"
                 @update:model-value="(v: any) => setValue(channel, 'collect_engine', v)"
@@ -102,7 +120,6 @@
                   {{ item.label }}
                 </el-radio-button>
               </el-radio-group>
-              <div class="muted hint-block">{{ engineHint(valueOf(channel, 'collect_engine')) }}</div>
             </el-form-item>
 
             <FilterFields
@@ -118,50 +135,44 @@
                 style="width: 130px" @update:model-value="(v: number) => setValue(channel, 'max_comments', v)"
               />
             </el-form-item>
-            <el-form-item label="最多翻几页">
+            <el-form-item>
+              <template #label>
+                最多翻几页<InfoTip content="0 = 不限" />
+              </template>
               <el-input-number
                 :model-value="valueOf(channel, 'max_pages')" :min="0" :max="5000"
                 style="width: 130px" @update:model-value="(v: number) => setValue(channel, 'max_pages', v)"
               />
-              <span class="muted hint">0 = 不限</span>
             </el-form-item>
           </template>
         </div>
       </template>
 
-      <!-- 内容过滤是任务级的（不分平台），所以放在两种设置方式之外 -->
-      <template v-if="workChannels.length">
-        <el-divider content-position="left">内容过滤</el-divider>
-        <el-form-item label="内容过滤">
-          <el-switch v-model="model.content_filter_enabled" />
-          <span class="muted hint">
-            {{ model.content_filter_enabled ? '只存相关内容' : '搜到什么存什么' }}
-          </span>
-          <div class="muted hint-block">
-            平台搜索结果里夹着推荐和广告——搜「八大处」能搜出「点斑祛斑」。
-            关掉就全部存下来，评论也照采。
-          </div>
-        </el-form-item>
-        <el-form-item v-if="model.content_filter_enabled" label="词表在哪配">
-          <div class="muted hint-block" style="margin-top: 0">
-            <b>附关键字</b>（命中就留存）和<b>过滤关键字</b>（命中就丢弃）现在配在
-            <b>景区管理 → 选中景区 → 附关键字 / 过滤关键字</b> 里，一个景区配一次、所有任务共用。
-            <div style="margin-top: 4px">
-              以前每建一个任务都要重填一遍：同一个景区跑十个任务就填十遍，
-              改一次要改十处，漏改一处两个任务采出来的东西就不一样了。
-            </div>
-            <div style="margin-top: 4px">
-              判定顺序：<b>主关键字</b>拿去搜 → <b>附关键字</b>决定留不留 → <b>过滤关键字</b>决定丢不丢。
-            </div>
-          </div>
-        </el-form-item>
-      </template>
+      <div class="form-section">通用</div>
 
-      <el-divider content-position="left">通用</el-divider>
+      <!-- 内容过滤是任务级的（不分平台），所以放在两种设置方式之外。
+           词表（附关键字/过滤关键字）配在景区上而不是任务上：以前每建一个任务都要重填一遍，
+           同一个景区跑十个任务就填十遍，改一次要改十处，漏改一处两个任务采出来的东西就不一样了。 -->
+      <el-form-item v-if="workChannels.length">
+        <template #label>
+          内容过滤<InfoTip :width="380">
+            平台搜索结果里夹着推荐和广告（搜「八大处」能搜出「点斑祛斑」）。关掉就全部存下来，评论也照采。<br>
+            <b>附关键字</b>（命中就留存）和<b>过滤关键字</b>（命中就丢弃）在
+            <b>景区管理 → 选中景区</b> 里配，一个景区配一次、所有任务共用。<br>
+            判定顺序：<b>主关键字</b>拿去搜 → <b>附关键字</b>决定留不留 → <b>过滤关键字</b>决定丢不丢。
+          </InfoTip>
+        </template>
+        <el-switch v-model="model.content_filter_enabled" />
+        <span class="muted hint">
+          {{ model.content_filter_enabled ? '只存相关内容' : '搜到什么存什么' }}
+        </span>
+      </el-form-item>
 
-      <el-form-item v-if="!perChannel" label="采集评论">
+      <el-form-item v-if="!perChannel">
+        <template #label>
+          采集评论<InfoTip content="携程/同程不受此项影响" />
+        </template>
         <el-switch v-model="model.collect_comments" />
-        <span class="muted hint">携程/同程不受此项影响</span>
       </el-form-item>
       <el-form-item label="采集子评论">
         <el-switch v-model="model.enable_sub_comments" />
@@ -172,14 +183,10 @@
           style="width: 130px" :disabled="!model.enable_sub_comments"
         />
       </el-form-item>
-      <el-form-item label="指定账号">
+      <el-form-item label="指定账号" class="last-item">
         <el-input v-model="model.account_name" placeholder="留空自动轮换" style="width: 220px" />
       </el-form-item>
     </el-form>
-
-    <div class="muted" style="font-size: 12px">
-      数量填 0 表示不限制。评论量大时建议先设个上限试跑一轮。
-    </div>
   </div>
 </template>
 
@@ -236,11 +243,6 @@ const poiChannels = computed(() => props.channels.filter((c) => POI_CHANNELS.inc
 const engineChannels = computed(() =>
   props.channels.filter((c) => BROWSER_ENGINE_CHANNELS.includes(c)),
 )
-
-function engineHint(value: unknown): string {
-  const engine = normalizeEngine(value)
-  return COLLECT_ENGINES.find((item) => item.value === engine)?.hint || ''
-}
 
 /** 平台值没设时显示顶层默认，用户一眼能看出「不改就是这个数」 */
 function valueOf(channel: string, key: string): any {
@@ -351,31 +353,35 @@ defineExpose({ load, build })
 </script>
 
 <style scoped>
+/* 标签里的说明图标：label 是 flex 容器，图标默认会顶到上沿，这里让它和文字居中对齐 */
+:deep(.el-form-item__label .info-tip) { align-self: center; }
 .hint {
   font-size: 12px;
   margin-left: 8px;
 }
 
-/* 选项下面的说明单独占一行，跟在 radio 后面会被挤成两截 */
-.hint-block {
-  font-size: 12px;
-  line-height: 1.6;
-  width: 100%;
+.form-section {
+  margin: 4px 0 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--smc-border);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--smc-text);
 }
 
 .channel-block {
-  border: 1px solid #ebeef5;
-  border-radius: 6px;
+  border: 1px solid var(--smc-border);
+  border-radius: var(--smc-radius-sm);
   padding: 12px 14px 0;
-  margin-bottom: 12px;
-  background: #fafafa;
+  margin: 16px 0 12px;
 }
 
 .channel-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  margin-bottom: 10px;
+  gap: 4px;
+  margin-bottom: 12px;
 }
+
+.last-item { margin-bottom: 0; }
 </style>

@@ -1,10 +1,10 @@
 <template>
   <div>
     <div class="page-header">
-      <div>
-        <h2 class="page-title">新建采集任务</h2>
-        <p class="page-subtitle">选景区 → 选平台 → 带入关键字或 POI → 设定执行方式</p>
-      </div>
+      <h2 class="page-title">
+        新建采集任务
+        <InfoTip content="选景区 → 选平台 → 带入关键字或 POI → 设定执行方式" />
+      </h2>
       <el-button @click="$router.back()">返回</el-button>
     </div>
 
@@ -16,7 +16,10 @@
               <el-input v-model="form.task_name" placeholder="如：西湖-全平台-每日采集" />
             </el-form-item>
 
-            <el-form-item label="所属景区" required>
+            <el-form-item required>
+              <template #label>
+                所属景区<InfoTip content="采到的每条数据都会带上该景区的 ID 和名称" />
+              </template>
               <el-select
                 v-model="form.scenic_id" filterable placeholder="选择景区"
                 style="width: 100%" @change="onScenicChange"
@@ -26,12 +29,12 @@
                   :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id"
                 />
               </el-select>
-              <div class="muted" style="font-size: 12px; margin-top: 4px">
-                采到的每一条数据都会带上这个景区的 ID 和名称
-              </div>
             </el-form-item>
 
-            <el-form-item label="采集平台" required>
+            <el-form-item required>
+              <template #label>
+                采集平台<InfoTip content="一个任务一个平台。采多个平台就建多个任务，互不影响、可分别重跑。" />
+              </template>
               <!-- 一个任务只跑一个平台：不同平台的采集方式、账号占用、
                    排队规则都不一样，混在一个任务里没法单独重跑，也说不清是哪个平台失败 -->
               <el-radio-group v-model="channel" @change="onChannelsChange">
@@ -40,23 +43,23 @@
                   <span v-if="POI_CHANNELS.includes(c.value)" class="muted">（点评）</span>
                 </el-radio-button>
               </el-radio-group>
-              <div class="muted" style="font-size: 12px; margin-top: 4px">
-                一个任务一个平台。要采多个平台就建多个任务，互不影响、可以分别重跑。
-              </div>
             </el-form-item>
 
-            <el-form-item label="采集方式">
+            <el-form-item>
+              <template #label>
+                采集方式<InfoTip v-if="hasPoiChannel" content="携程/同程固定走景区 POI 点评采集，不受此项影响" />
+              </template>
               <el-radio-group v-model="form.collect_type">
                 <el-radio-button value="keyword">关键字搜索</el-radio-button>
                 <el-radio-button value="creator">指定用户主页</el-radio-button>
               </el-radio-group>
-              <div v-if="hasPoiChannel" class="muted" style="font-size: 12px; margin-top: 6px">
-                已选携程/同程：这两个平台固定走景区 POI 点评采集，不受此项影响
-              </div>
             </el-form-item>
 
             <!-- 关键字 -->
-            <el-form-item v-if="form.collect_type === 'keyword'" label="搜索关键字">
+            <el-form-item v-if="form.collect_type === 'keyword'">
+              <template #label>
+                搜索关键字<InfoTip content="留空则执行时自动带入该景区所有启用的关键字" />
+              </template>
               <div style="width: 100%">
                 <div class="toolbar" style="margin-bottom: 8px">
                   <el-button
@@ -66,12 +69,12 @@
                   >
                     从景区带入（最多 {{ keywordLimit }} 个）
                   </el-button>
-                  <el-button v-if="form.keywords.length" link type="danger" @click="form.keywords = []">
-                    清空
-                  </el-button>
                   <span class="muted" style="font-size: 12px">
                     已选 {{ form.keywords.length }} 个
                   </span>
+                  <el-button v-if="form.keywords.length" link type="danger" @click="form.keywords = []">
+                    清空
+                  </el-button>
                 </div>
                 <el-select
                   v-model="form.keywords" multiple filterable allow-create
@@ -80,19 +83,18 @@
                 >
                   <el-option v-for="k in scenicKeywords" :key="k" :label="k" :value="k" />
                 </el-select>
-                <div v-if="!form.keywords.length" class="muted" style="font-size: 12px; margin-top: 4px">
-                  留空的话，任务执行时会自动带入该景区所有启用的关键字
-                </div>
               </div>
             </el-form-item>
 
             <!-- 主页目标 -->
-            <el-form-item v-if="form.collect_type === 'creator'" label="主页目标">
+            <el-form-item v-if="form.collect_type === 'creator'">
+              <template #label>
+                主页目标<InfoTip content="执行时自动使用该景区配置的主页目标，无需在此选择" />
+              </template>
               <div style="width: 100%">
-                <el-alert
-                  v-if="!creatorTargets.length" type="warning" :closable="false"
-                  title="该景区还没配置用户主页目标，请先到「景区管理 → 采集目标」里添加"
-                />
+                <div v-if="!creatorTargets.length" class="form-warn">
+                  该景区还没配置主页目标，请先到「景区管理 → 采集目标」添加
+                </div>
                 <el-table v-else :data="creatorTargets" size="small" border>
                   <el-table-column label="平台" width="90">
                     <template #default="{ row }">{{ channelLabel(row.channel) }}</template>
@@ -100,9 +102,6 @@
                   <el-table-column prop="target_id" label="用户ID" min-width="200" class-name="mono" />
                   <el-table-column prop="target_name" label="备注" width="140" />
                 </el-table>
-                <div class="muted" style="font-size: 12px; margin-top: 4px">
-                  任务执行时会自动使用上面这些目标，无需在此重复选择
-                </div>
               </div>
             </el-form-item>
 
@@ -116,15 +115,19 @@
                   <el-table-column prop="target_id" label="POI_ID / sid" min-width="160" class-name="mono" />
                   <el-table-column prop="target_name" label="备注" width="140" />
                 </el-table>
-                <el-alert
-                  v-else type="error" :closable="false"
-                  title="选了携程/同程但该景区没配 POI_ID / sid，任务会被拒绝创建"
-                  description="请先到「景区管理 → 采集目标」里添加"
-                />
+                <div v-else class="form-error">
+                  该景区没配 POI_ID / sid，任务会被拒绝创建。请先到「景区管理 → 采集目标」添加
+                </div>
               </div>
             </el-form-item>
 
-            <el-form-item label="账号分组">
+            <el-form-item>
+              <template #label>
+                账号分组<InfoTip>
+                  多账号轮换采集：选了分组只用该组账号；不选则在该平台全部可用账号里轮换。<br>
+                  分组在「账号管理」里维护。
+                </InfoTip>
+              </template>
               <el-select
                 v-model="form.account_group" clearable filterable
                 placeholder="不选 = 该平台全部可用账号轮换" style="width: 240px"
@@ -136,13 +139,9 @@
                   </span>
                 </el-option>
               </el-select>
-              <div class="muted" style="font-size: 12px; margin-top: 4px">
-                多账号轮换采集：选了分组就只用该组的账号；不选则在平台全部可用账号里轮换。
-                账号在「账号管理」里维护分组。
-              </div>
             </el-form-item>
 
-            <el-divider content-position="left">执行方式</el-divider>
+            <div class="form-section">执行方式</div>
 
             <el-form-item label="调度模式">
               <el-radio-group v-model="form.schedule_type" @change="previewSchedule">
@@ -172,7 +171,13 @@
             </el-form-item>
 
             <template v-if="form.schedule_type === 'cron'">
-              <el-form-item label="cron 表达式">
+              <el-form-item>
+                <template #label>
+                  cron 表达式<InfoTip>
+                    5 段 = 分 时 日 月 周<br>
+                    6 段 = 秒 分 时 日 月 周（Quartz 风格，秒在最前）
+                  </InfoTip>
+                </template>
                 <el-input
                   v-model="form.cron_expression" placeholder="0 2 * * *"
                   class="mono" style="width: 260px" @input="previewSchedule"
@@ -183,15 +188,12 @@
                 >
                   <el-option v-for="p in CRON_PRESETS" :key="p.value" :label="p.label" :value="p.value" />
                 </el-select>
-                <div class="muted" style="font-size: 12px; margin-top: 4px">
-                  5 段 = 分 时 日 月 周；6 段 = 秒 分 时 日 月 周（Quartz 风格，秒在最前）
-                </div>
               </el-form-item>
             </template>
 
             <el-form-item v-if="nextRuns.length" label="下次执行">
               <div>
-                <el-tag v-for="(t, i) in nextRuns" :key="i" type="success" style="margin-right: 6px">
+                <el-tag v-for="(t, i) in nextRuns" :key="i" type="info" effect="plain" class="mono" style="margin: 0 6px 4px 0">
                   {{ t }}
                 </el-tag>
               </div>
@@ -204,7 +206,7 @@
       </el-col>
 
       <el-col :span="9">
-        <el-card shadow="never" header="采集数量">
+        <el-card shadow="never" header="采集参数">
           <CollectParamsForm v-model="params" :channels="form.channels" />
         </el-card>
 
@@ -409,3 +411,26 @@ onMounted(async () => {
   previewSchedule()
 })
 </script>
+
+
+<style scoped>
+/* 标签里的说明图标：label 是 flex 容器，图标默认会顶到上沿，这里让它和文字居中对齐 */
+:deep(.el-form-item__label .info-tip) { align-self: center; }
+.form-section {
+  margin: 8px 0 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--smc-border);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--smc-text);
+}
+.form-warn,
+.form-error {
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 8px 12px;
+  border-radius: var(--smc-radius-sm);
+}
+.form-warn { color: #a86a0c; background: #fdf6ec; }
+.form-error { color: #c4403b; background: #fef0f0; }
+</style>

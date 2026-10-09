@@ -70,7 +70,7 @@
       <el-alert
         v-else-if="playFailed" type="warning" :closable="false" show-icon
         title="这个视频在网页里播不了"
-        description="平台的视频地址通常校验来源，直接在网页里引用会被拒。用下面的链接在新标签页打开即可。"
+        description="平台视频地址会校验来源，请用下方链接在新标签页打开。"
       />
 
       <template #footer>
@@ -172,8 +172,8 @@ function onPlayerClosed() {
 .media-item {
   border-radius: 6px;
   overflow: hidden;
-  background: #f5f7fa;
-  border: 1px solid #ebeef5;
+  background: var(--smc-bg);
+  border: 1px solid var(--smc-border);
   flex: 0 0 auto;
 }
 
@@ -188,14 +188,16 @@ function onPlayerClosed() {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #909399;
+  color: var(--smc-text-secondary);
   font-size: 13px;
+  font-weight: 500;
   user-select: none;
+  transition: color 0.15s, border-color 0.15s;
 }
 
 .media-more:hover {
-  color: #409eff;
-  border-color: #c6e2ff;
+  color: var(--smc-primary);
+  border-color: var(--smc-border-strong);
 }
 
 .media-video img {
@@ -213,13 +215,13 @@ function onPlayerClosed() {
   align-items: center;
   justify-content: center;
   gap: 3px;
-  color: #b1b3b8;
-  background: #f0f2f5;
+  color: var(--smc-text-tertiary);
+  background: var(--smc-bg);
   font-size: 11px;
 }
 
 .media-broken {
-  color: #c0c4cc;
+  color: var(--smc-text-tertiary);
 }
 
 .media-play {
@@ -229,12 +231,12 @@ function onPlayerClosed() {
   align-items: center;
   justify-content: center;
   color: #fff;
-  background: rgba(0, 0, 0, 0.3);
-  transition: background 0.2s;
+  background: rgba(16, 20, 28, 0.28);
+  transition: background 0.15s;
 }
 
 .media-video:hover .media-play {
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(16, 20, 28, 0.45);
 }
 
 .media-badge {
@@ -245,7 +247,7 @@ function onPlayerClosed() {
   font-size: 11px;
   line-height: 17px;
   color: #fff;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(16, 20, 28, 0.6);
   border-radius: 3px;
 }
 </style>

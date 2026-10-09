@@ -3,11 +3,11 @@
     v-model="visible" title="编辑任务" width="760px" destroy-on-close
     :close-on-click-modal="false" @open="onOpen"
   >
+    <!-- 本轮已经开始的平台仍用启动时的配置，改动从下一轮开始生效——不需要重新建任务 -->
     <el-alert
       v-if="task?.is_running" type="warning" :closable="false" show-icon
-      style="margin-bottom: 12px"
-      title="任务正在运行"
-      description="本轮已经开始的平台仍用启动时的配置，改动从下一轮开始生效——不需要重新建任务。"
+      style="margin-bottom: 16px"
+      title="任务运行中，改动从下一轮开始生效"
     />
 
     <el-form :model="form" label-width="110px">
@@ -23,13 +23,13 @@
             <span v-if="POI_CHANNELS.includes(c.value)" class="muted">（点评）</span>
           </el-radio-button>
         </el-radio-group>
-        <div v-if="form.channels.length > 1" class="muted" style="font-size: 12px; margin-top: 4px">
-          这个任务是改版前建的，原本选了 {{ form.channels.length }} 个平台；
-          保存后只会保留上面选中的那一个。
+        <!-- 改版前建的老任务可能选了多个平台，保存后只保留选中的那一个 -->
+        <div v-if="form.channels.length > 1" class="legacy-warn">
+          原任务选了 {{ form.channels.length }} 个平台，保存后只保留选中的一个
         </div>
       </el-form-item>
 
-      <el-divider content-position="left">运行模式</el-divider>
+      <div class="form-section">运行模式</div>
 
       <el-form-item label="调度模式">
         <el-radio-group v-model="form.schedule_type" @change="previewSchedule">
@@ -56,7 +56,13 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item v-if="form.schedule_type === 'cron'" label="cron 表达式">
+      <el-form-item v-if="form.schedule_type === 'cron'">
+        <template #label>
+          cron 表达式<InfoTip>
+            5 段 = 分 时 日 月 周<br>
+            6 段 = 秒 分 时 日 月 周（Quartz 风格，秒在最前）
+          </InfoTip>
+        </template>
         <el-input
           v-model="form.cron_expression" placeholder="0 2 * * *"
           class="mono" style="width: 240px" @input="previewSchedule"
@@ -69,15 +75,15 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item v-if="form.schedule_type !== 'once'" label="启用定时">
+      <el-form-item v-if="form.schedule_type !== 'once'">
+        <template #label>
+          启用定时<InfoTip content="关掉后任务保留，但不再自动触发" />
+        </template>
         <el-switch v-model="form.schedule_enabled" />
-        <span class="muted" style="font-size: 12px; margin-left: 8px">
-          关掉后任务保留，但不再自动触发
-        </span>
       </el-form-item>
 
       <el-form-item v-if="nextRuns.length" label="下次执行">
-        <el-tag v-for="(t, i) in nextRuns" :key="i" type="success" style="margin-right: 6px">
+        <el-tag v-for="(t, i) in nextRuns" :key="i" type="info" effect="plain" class="mono" style="margin: 0 6px 4px 0">
           {{ t }}
         </el-tag>
       </el-form-item>
@@ -86,7 +92,7 @@
       </el-form-item>
     </el-form>
 
-    <el-divider content-position="left">采集数量</el-divider>
+    <div class="form-section">采集参数</div>
     <CollectParamsForm
       ref="paramsForm" v-model="params"
       :channels="form.channels" :initial="task?.params || null"
@@ -227,3 +233,22 @@ async function save() {
   }
 }
 </script>
+
+<style scoped>
+/* 标签里的说明图标：label 是 flex 容器，图标默认会顶到上沿，这里让它和文字居中对齐 */
+:deep(.el-form-item__label .info-tip) { align-self: center; }
+.form-section {
+  margin: 4px 0 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--smc-border);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--smc-text);
+}
+.legacy-warn {
+  width: 100%;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #a86a0c;
+}
+</style>

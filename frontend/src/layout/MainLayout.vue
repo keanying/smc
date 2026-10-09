@@ -44,7 +44,11 @@
     </el-aside>
     <el-container>
       <el-header height="56px" class="app-header">
-        <div class="header-title">{{ route.meta.title || '' }}</div>
+        <div class="header-title">
+          <span class="crumb-root">景区社媒采集</span>
+          <span class="crumb-sep">/</span>
+          <span>{{ route.meta.title || '' }}</span>
+        </div>
         <div class="header-right">
           <span v-if="health" class="header-meta">
             <span class="meta-item">
@@ -179,115 +183,99 @@ onUnmounted(() => window.clearInterval(timer))
 .app-shell { height: 100vh; }
 
 .aside-menu {
-  background: linear-gradient(180deg, #1c2333 0%, #151a26 100%);
+  background: var(--smc-sidebar-bg);
   display: flex;
   flex-direction: column;
-  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
   z-index: 10;
 }
 
 .logo {
-  height: 64px;
+  height: 60px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 0 18px;
 }
 .logo-mark {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #4f6ef7, #7c9bff);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--smc-primary);
   color: #fff;
   font-weight: 700;
-  font-size: 18px;
+  font-size: 15px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(79, 110, 247, 0.35);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-.logo-mark:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(79, 110, 247, 0.45);
 }
 .logo-title {
-  color: #fff;
+  color: #f3f5f9;
   font-weight: 600;
   font-size: 14px;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
   line-height: 1.3;
 }
 .logo-sub {
-  color: #6b7690;
+  color: #5d6678;
   font-size: 10px;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
 }
 
 .side-menu {
   border-right: none;
   flex: 1;
-  padding: 10px 8px;
+  padding: 8px 10px;
 }
 .side-menu :deep(.el-menu-item) {
-  height: 44px;
-  line-height: 44px;
-  margin: 4px 0;
-  border-radius: 10px;
+  height: 40px;
+  line-height: 40px;
+  margin: 2px 0;
+  border-radius: 8px;
   font-size: 13.5px;
-  transition: all 0.2s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
+.side-menu :deep(.el-menu-item .el-icon) { font-size: 16px; margin-right: 10px; }
 .side-menu :deep(.el-menu-item:hover) {
-  background: rgba(255, 255, 255, 0.08);
-  color: #d5dcee;
-  transform: translateX(4px);
+  background: rgba(255, 255, 255, 0.05);
+  color: #dfe4ee;
 }
 .side-menu :deep(.el-menu-item.is-active) {
-  background: linear-gradient(90deg, rgba(79, 110, 247, 0.9), rgba(79, 110, 247, 0.55));
+  background: rgba(255, 255, 255, 0.09);
   color: #fff;
   font-weight: 500;
-  box-shadow: 0 4px 12px rgba(79, 110, 247, 0.35);
+  position: relative;
+}
+.side-menu :deep(.el-menu-item.is-active)::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 11px;
+  bottom: 11px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--smc-primary);
 }
 
-.aside-footer { padding: 14px; text-align: center; }
-.health-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 16px;
-  border-radius: 20px;
-  font-size: 12px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #9aa5bd;
-  transition: all 0.2s ease;
-}
-.health-pill:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-.health-pill.is-ok .health-dot { background: #34d399; box-shadow: 0 0 8px #34d399; }
-.health-pill.is-bad { color: #fca5a5; }
-.health-pill.is-bad .health-dot { background: #f87171; box-shadow: 0 0 8px #f87171; }
 .health-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   display: inline-block;
 }
-.health-dot.sm { width: 7px; height: 7px; }
-.health-dot.ok { background: #34d399; }
-.health-dot.bad { background: #f87171; }
+.health-dot.sm { width: 6px; height: 6px; }
+.health-dot.ok { background: #22c55e; }
+.health-dot.bad { background: #ef4444; }
 
 /* 系统健康齿轮：绿色转=正常，红色转=有问题 */
 .health-gear {
-  font-size: 18px;
+  font-size: 16px;
   cursor: pointer;
   animation: gear-spin 3.2s linear infinite;
   transform-origin: center;
 }
-.health-gear.is-ok { color: #16a34a; }
-.health-gear.is-bad { color: #dc2626; animation-duration: 1.1s; }
+.health-gear.is-ok { color: #22c55e; }
+.health-gear.is-bad { color: #ef4444; animation-duration: 1.1s; }
 @keyframes gear-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -300,29 +288,30 @@ onUnmounted(() => window.clearInterval(timer))
 
 .app-header {
   background: #fff;
-  border-bottom: 1px solid #e8ecf3;
+  border-bottom: 1px solid var(--smc-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  padding: 0 28px;
 }
-.header-title { font-size: 16px; font-weight: 600; }
-.header-right { display: flex; align-items: center; gap: 10px; }
+.header-title { font-size: 13px; color: var(--smc-text); display: flex; align-items: center; gap: 8px; }
+.crumb-root { color: var(--smc-text-secondary); }
+.crumb-sep { color: var(--smc-text-tertiary); }
+.header-right { display: flex; align-items: center; gap: 12px; }
 .header-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   font-size: 12px;
-  color: #7a8699;
+  color: var(--smc-text-secondary);
 }
-.meta-item { display: inline-flex; align-items: center; gap: 5px; }
-.meta-sep { width: 1px; height: 12px; background: #e3e8f0; }
-.meta-item.is-warn { color: #d97706; font-weight: 600; }
+.meta-item { display: inline-flex; align-items: center; gap: 6px; }
+.meta-sep { width: 1px; height: 12px; background: var(--smc-border); }
+.meta-item.is-warn { color: #d97706; font-weight: 500; }
 
 .app-main {
-  background-color: #f4f6fb;
-  padding: 24px;
+  background-color: var(--smc-bg);
+  padding: 24px 28px;
   overflow-y: auto;
 }
 </style>

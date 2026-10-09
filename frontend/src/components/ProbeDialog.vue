@@ -4,15 +4,14 @@
     :close-on-click-modal="false" @open="onOpen"
   >
     <template #header>
-      <span>试搜一下 — {{ channelLabel(channel) }}{{ accountName ? ` / ${accountName}` : '' }}</span>
+      <span class="el-dialog__title">试搜</span>
+      <InfoTip
+        content="用真实的采集链路（同一套登录态、代理、签名）跑一个关键字，只取一条就停，不写库。平台经常「不报错但也不给数据」，这里能看到请求到底发生了什么。"
+      />
+      <span class="dialog-sub">{{ channelLabel(channel) }}{{ accountName ? ` / ${accountName}` : '' }}</span>
     </template>
 
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px">
-      用真实的采集链路（同一套登录态、代理、签名）跑一个关键字，只取一条就停，不写库。
-      平台经常「不报错但也不给数据」，这里能看到请求到底发生了什么。
-    </el-alert>
-
-    <div class="toolbar" style="margin-bottom: 12px">
+    <div class="toolbar">
       <el-input
         v-model="keyword" placeholder="输入一个关键字，如：天山天池"
         style="width: 240px" clearable @keyup.enter="run"
@@ -26,9 +25,7 @@
       </el-button>
     </div>
 
-    <div v-if="!report && !running" class="muted" style="padding: 20px 0; text-align: center">
-      还没跑过。填个关键字点「开始试搜」。
-    </div>
+    <el-empty v-if="!report && !running" description="填个关键字，点「开始试搜」" :image-size="60" />
 
     <template v-if="report">
       <el-result
@@ -37,7 +34,7 @@
           ? `通了，拿到 ${report.found} 条`
           : `没拿到数据（卡在：${report.stage}）`"
         :sub-title="`用时 ${report.elapsed_seconds}s`"
-        style="padding: 10px 0"
+        class="probe-result"
       />
 
       <el-alert
@@ -65,9 +62,9 @@
         </el-descriptions-item>
       </el-descriptions>
 
-      <el-card v-if="report.sample" shadow="never" style="margin-bottom: 12px">
-        <template #header><span>取到的第一条</span></template>
-        <el-descriptions :column="1" size="small">
+      <template v-if="report.sample">
+        <div class="section-title">取到的第一条</div>
+        <el-descriptions :column="1" size="small" border style="margin-bottom: 16px">
           <el-descriptions-item label="ID">
             <span class="mono">{{ report.sample.work_id }}</span>
           </el-descriptions-item>
@@ -75,19 +72,17 @@
           <el-descriptions-item label="作者">{{ report.sample.author }}</el-descriptions-item>
           <el-descriptions-item label="发布时间">{{ report.sample.publish_time }}</el-descriptions-item>
         </el-descriptions>
-      </el-card>
+      </template>
 
-      <el-card shadow="never" style="margin-bottom: 12px">
-        <template #header><span>过程日志</span></template>
-        <div class="probe-logs">
-          <div v-for="(line, i) in report.logs" :key="i" :class="`log-${line.level}`">
-            {{ line.message }}
-          </div>
-          <div v-if="!report.logs.length" class="muted">（没有日志）</div>
+      <div class="section-title">过程日志</div>
+      <div class="probe-logs">
+        <div v-for="(line, i) in report.logs" :key="i" :class="`log-${line.level}`">
+          {{ line.message }}
         </div>
-      </el-card>
+        <div v-if="!report.logs.length" class="muted">（没有日志）</div>
+      </div>
 
-      <el-collapse v-if="report.http?.snippet">
+      <el-collapse v-if="report.http?.snippet" class="probe-raw-collapse">
         <el-collapse-item title="原始响应片段（前 600 字符）">
           <pre class="probe-raw">{{ report.http.snippet }}</pre>
           <div class="muted" style="font-size: 12px">
@@ -167,11 +162,25 @@ async function copyReport() {
 </script>
 
 <style scoped>
+.dialog-sub {
+  margin-left: 10px;
+  font-size: 13px;
+  color: var(--smc-text-secondary);
+}
+.probe-result { padding: 4px 0 12px; }
+.probe-result :deep(.el-result__icon svg) { width: 40px; height: 40px; }
+.probe-result :deep(.el-result__title) { margin-top: 10px; }
+.probe-result :deep(.el-result__title p) { font-size: 16px; font-weight: 600; }
+.probe-raw-collapse { margin-top: 16px; }
 /* 这里是白底卡片，不能复用日志终端那套深色配色 */
 .probe-logs :deep(.log-warn) { color: #e6a23c; }
 .probe-logs :deep(.log-error) { color: #f56c6c; }
 
 .probe-logs {
+  padding: 10px 12px;
+  border: 1px solid var(--smc-border);
+  border-radius: var(--smc-radius-sm);
+  background: #fafbfc;
   max-height: 220px;
   overflow-y: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -182,9 +191,9 @@ async function copyReport() {
 .probe-raw {
   max-height: 240px;
   overflow: auto;
-  background: #f5f7fa;
-  padding: 10px;
-  border-radius: 4px;
+  background: #fafbfc;
+  padding: 10px 12px;
+  border-radius: var(--smc-radius-sm);
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-all;

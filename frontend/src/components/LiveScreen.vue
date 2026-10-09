@@ -3,8 +3,14 @@
     <template #header>
       <div class="live-header">
         <div class="live-title">
-          <el-icon><Monitor /></el-icon>
-          <span>实时画面</span>
+          <el-icon class="live-title-icon"><Monitor /></el-icon>
+          <span class="live-title-text">
+            实时画面
+            <InfoTip :width="340">
+              只读预览：这里的点击<b>不会</b>传给采集浏览器，采集器按自己的节奏走流程。<br>
+              只有出现<b>拖动验证/验证码</b>这类必须人工处理的情况才点「接管操作」，处理完立刻退出。
+            </InfoTip>
+          </span>
           <el-tag v-if="active" size="small" :type="hasPicture ? 'success' : 'warning'">
             {{ statusLabel }}
           </el-tag>
@@ -36,12 +42,13 @@
     </template>
 
     <div v-if="!active" class="live-empty">
-      <el-icon :size="26"><VideoCamera /></el-icon>
-      <div class="live-empty-title">这条任务现在没有打开着的浏览器</div>
-      <div class="muted live-empty-tip">
-        实时画面只在<b>拟人模式</b>（以及快手接口模式）采集期间可用——
-        只有这些情况下浏览器才是常驻的。接口模式下浏览器只在刷 Cookie 时开一下就关，
-        没有画面可看。任务跑起来之后这里会自动出现。
+      <el-icon :size="24" class="live-empty-icon"><VideoCamera /></el-icon>
+      <div class="live-empty-title">
+        这条任务现在没有打开着的浏览器
+        <InfoTip :width="340">
+          实时画面只在<b>拟人模式</b>（以及快手接口模式）采集期间可用，只有这时浏览器才常驻。
+          接口模式下浏览器只在刷 Cookie 时开一下就关。任务跑起来后这里会自动出现。
+        </InfoTip>
       </div>
     </div>
 
@@ -71,10 +78,10 @@
       </div>
       <div v-if="takeover" class="live-takeover-bar">
         <el-icon><Warning /></el-icon>
+        <!-- 接管中的提醒必须常显：采集器还在这个页面上跑流程，忘了退出会干扰它 -->
         <span>
-          <b>已接管</b>：你的鼠标现在直接作用在采集页面上。
-          拖动验证请<b>按住滑块慢慢拖过去</b>——轨迹会原样传过去，别用瞬移。
-          处理完<b>务必点「退出接管」</b>，采集器还在这个页面上跑流程。
+          <b>已接管</b>：鼠标直接作用在采集页面上，处理完<b>务必点「退出接管」</b>。
+          <InfoTip content="拖动验证请按住滑块慢慢拖过去——轨迹会原样传过去，别用瞬移。" />
         </span>
         <span v-if="info?.injected" class="muted">本轮已注入 {{ info.injected }} 个事件</span>
       </div>
@@ -90,21 +97,12 @@
         <el-button size="small" @click="sendKey('Backspace')">退格</el-button>
         <el-button size="small" @click="sendKey('Tab')">Tab</el-button>
         <el-button size="small" @click="sendKey('Escape')">Esc</el-button>
-        <span class="muted" style="font-size: 12px">
-          点一下画面再敲键盘也可以直接输入（中文输入法只能用左边的输入框）
-        </span>
+        <InfoTip content="点一下画面再敲键盘也可以直接输入；中文输入法只能用左边的输入框。" />
       </div>
-      <div class="muted live-foot">
-        <template v-if="!takeover">
-          只读预览：这里的点击<b>不会</b>传给采集浏览器。
-          采集器正按自己的节奏走流程，插一脚会让它的下一步落空。
-          <b>只有出现拖动验证/验证码这类必须人工处理的情况</b>才点「接管操作」，
-          处理完立刻退出。
-        </template>
-        <template v-if="info">
-          当前：{{ channelLabel(info.channel) }} · 账号 {{ info.account_name }} ·
-          景区 {{ info.scenic_name }} · 已跑 {{ Math.round(info.running_seconds / 60) }} 分钟。
-        </template>
+      <!-- 只读预览的说明收进了标题旁的 ⓘ：采集器正按自己的节奏走流程，插一脚会让它的下一步落空 -->
+      <div v-if="info" class="muted live-foot">
+        {{ channelLabel(info.channel) }} · 账号 {{ info.account_name }} ·
+        景区 {{ info.scenic_name }} · 已跑 {{ Math.round(info.running_seconds / 60) }} 分钟
       </div>
     </template>
   </el-card>
@@ -421,24 +419,29 @@ onBeforeUnmount(() => {
 .live-card { margin-bottom: 16px; }
 .live-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .live-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.live-title-icon { color: var(--smc-text-secondary); }
+.live-title-text { display: inline-flex; align-items: center; }
 .live-actions { display: flex; align-items: center; gap: 8px; }
+.live-actions .el-button + .el-button { margin-left: 0; }
 .live-meta { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
-.live-step { font-weight: 600; }
+.live-step { font-weight: 600; font-size: 13px; color: var(--smc-text); }
 .live-url { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .live-stage {
-  background: #1f1f1f; border-radius: 6px; overflow: hidden;
+  background: #14181f; border-radius: var(--smc-radius-sm); overflow: hidden;
   display: flex; align-items: center; justify-content: center; min-height: 240px;
 }
 .live-screen { width: 100%; display: block; }
-.live-placeholder { color: #bbb; text-align: center; padding: 40px 0; }
-.live-empty { text-align: center; padding: 28px 12px; }
-.live-empty-title { margin-top: 8px; font-weight: 600; }
-.live-empty-tip { font-size: 12px; margin-top: 6px; line-height: 1.7; }
+.live-placeholder { color: #8a93a3; text-align: center; padding: 40px 0; font-size: 13px; }
+.live-empty { text-align: center; padding: 32px 12px; color: var(--smc-text-secondary); }
+.live-empty-icon { color: var(--smc-text-tertiary); }
+.live-empty-title {
+  margin-top: 8px; font-size: 13px; color: var(--el-text-color-regular);
+  display: inline-flex; align-items: center; width: 100%; justify-content: center;
+}
 .live-foot { font-size: 12px; margin-top: 8px; line-height: 1.7; }
 .live-stage.is-takeover {
-  outline: 2px solid #f56c6c;
+  outline: 2px solid var(--el-color-danger);
   outline-offset: 2px;
-  border-radius: 6px;
 }
 .live-screen.is-live { cursor: crosshair; }
 .live-takeover-bar {
@@ -447,14 +450,14 @@ onBeforeUnmount(() => {
   gap: 8px;
   margin-top: 10px;
   padding: 8px 12px;
-  border-radius: 8px;
-  background: #fef0f0;
-  border: 1px solid #fbc4c4;
-  color: #c45656;
-  font-size: 12.5px;
+  border-radius: var(--smc-radius-sm);
+  background: #fef3f2;
+  border: 1px solid #fcd9d6;
+  color: #b42318;
+  font-size: 12px;
   line-height: 1.6;
 }
-.live-stage:focus { outline: 2px solid #f56c6c; outline-offset: 2px; }
+.live-stage:focus { outline: 2px solid var(--el-color-danger); outline-offset: 2px; }
 .live-keys {
   display: flex;
   align-items: center;
@@ -462,4 +465,5 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   margin-top: 8px;
 }
+.live-keys .el-button + .el-button { margin-left: 0; }
 </style>

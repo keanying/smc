@@ -1,10 +1,22 @@
 <template>
   <el-dialog
-    :model-value="visible" :title="`登录 ${channelLabel(channel)} · ${accountName}`"
+    :model-value="visible"
     width="1000px" top="4vh" :close-on-click-modal="false" :close-on-press-escape="false"
     @update:model-value="close"
   >
-    <el-alert :type="statusType" :closable="false" style="margin-bottom: 12px">
+    <template #header>
+      <span class="el-dialog__title">登录 {{ channelLabel(channel) }}</span>
+      <InfoTip :width="380">
+        画面是服务端浏览器的实时推流，鼠标点击和滚轮会同步回放到服务端；扫码登录直接用手机扫画面里的二维码即可。<br>
+        <b>登录成功后点「我已登录，保存」</b>——系统也会自动识别，但以你看到的画面为准；保存之后采集任务会静默复用，不再弹这个窗口。
+        <template v-if="channel === 'weibo'">
+          <br>微博 PC 端的登录是弹窗，弹窗打开后画面会自动切过去。
+        </template>
+      </InfoTip>
+      <span class="dialog-sub">{{ accountName }}</span>
+    </template>
+
+    <el-alert :type="statusType" :closable="false" class="login-status">
       <div style="display: flex; align-items: center; gap: 10px">
         <el-icon v-if="loading" class="is-loading"><Loading /></el-icon>
         <span>{{ status.message || '正在连接…' }}</span>
@@ -21,31 +33,19 @@
       <div v-else class="browser-placeholder">
         <el-icon class="is-loading" :size="30"><Loading /></el-icon>
         <div style="margin-top: 10px">正在启动服务端浏览器…</div>
-        <div class="muted" style="font-size: 12px; margin-top: 4px">
-          首次启动需要十几秒
-        </div>
+        <div class="muted" style="font-size: 12px; margin-top: 4px">首次启动约十几秒</div>
       </div>
     </div>
 
     <div class="keyboard-bar">
       <el-input
-        v-model="typeText" placeholder="需要输入文字时，在这里打字后点「发送到页面」"
+        v-model="typeText" placeholder="输入文字后点「发送到页面」"
         style="flex: 1" clearable @keyup.enter="sendText"
       />
       <el-button @click="sendText">发送到页面</el-button>
       <el-button @click="sendKey('Enter')">回车</el-button>
       <el-button @click="sendKey('Backspace')">退格</el-button>
       <el-button :icon="RefreshRight" @click="reload">刷新页面</el-button>
-    </div>
-
-    <div class="muted" style="font-size: 12px; margin-top: 8px">
-      画面是服务端浏览器的实时推流，鼠标点击和滚轮会同步回放到服务端。
-      扫码登录直接用手机扫画面里的二维码即可。
-      <b>登录成功后点「我已登录，保存」</b>——系统也会自动识别，
-      但以你看到的画面为准；保存之后采集任务会静默复用，不再弹这个窗口。
-      <template v-if="channel === 'weibo'">
-        微博 PC 端的登录是弹窗，弹窗打开后画面会自动切过去。
-      </template>
     </div>
 
     <template #footer>
@@ -198,11 +198,17 @@ watch(() => props.visible, (value) => {
 </script>
 
 <style scoped>
+.dialog-sub {
+  margin-left: 10px;
+  font-size: 13px;
+  color: var(--smc-text-secondary);
+}
+.login-status { margin-bottom: 12px; }
 .browser-stage {
   margin: 0 auto;
-  background: #f5f7fa;
-  border: 1px solid #dcdfe6;
-  border-radius: 6px;
+  background: #fafbfc;
+  border: 1px solid var(--smc-border);
+  border-radius: var(--smc-radius-sm);
   overflow: hidden;
   min-height: 420px;
   display: flex;
@@ -216,7 +222,7 @@ watch(() => props.visible, (value) => {
 }
 .browser-placeholder {
   text-align: center;
-  color: #909399;
+  color: var(--smc-text-secondary);
   padding: 60px 0;
 }
 .keyboard-bar {
