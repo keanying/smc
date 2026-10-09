@@ -352,23 +352,18 @@ class LabelingManager:
             asyncio.create_task(self._resume_quietly("配置变更"))
 
     # ------------------------------------------------------------------ 重启续标
-    #: 内存队列重启即丢，按库里补回"最近这么久采到、从没标过"的评论。
-    #: 更早的算历史数据，交给「一键补标」——别让一次重启悄悄花掉一大笔模型费
-    RESUME_WINDOW_HOURS = 24
-    RESUME_MAX_ROWS = 5000
-
     async def resume_pending(self) -> str:
-        """服务启动 / 改完 AI 标注配置后调用：队列里还有没标完的，立刻接着标。
+        """启动标注（服务启动 / 打开边采边标 / 改完 AI 标注配置）时调用。
+
+        顺序是客户定的：**先把队列里剩下的标完，再从数据库拉没标过的进队列。**
+        实现上就是起一个补标任务——补标本身就是「先等队列排空 → 再分批从库里捞」
+        （见 _run_backfill 开头）。上次被关机打断的补标有断点，按断点的范围接着补。
 
         ⚠️ 以前引擎是"懒启动"的——只有新的采集推数据进来才会拉起来。
-        于是重启之后 Redis 队列里剩下的评论**一直躺着**，直到下一次有采集任务；
-        没有定时任务的话就永远不标。
+        于是重启之后 Redis 队列里剩下的评论**一直躺着**，没有采集任务就永远不标。
 
-          - redis 队列：内容和在途租约都在 Redis 里（在途的超时会被引擎回收），
-            把引擎拉起来，worker 自己就会接着消费，**不用再补投**（补了会重复标、重复花钱）
-          - memory 队列：重启就没了。按库里「最近 RESUME_WINDOW_HOURS 小时采到、
-            标注状态还是 0（从没处理过）」的评论补投回去
-        失败过的（5）不在这里重试：它们在失败池里，走「重标」那条路。
+        从库里捞的只是「从没处理过」的（标注状态 0 / 空）。失败过的（5）
+        在失败池里走「重标」，不在这里反复重试——模型挂了的时候那样会死循环。
         """
         if not self.enabled:
             return ""
@@ -376,25 +371,17 @@ class LabelingManager:
             msg = f"边采边标已开启，但引擎没能启动，队列暂不处理：{self._start_error}"
             logger.warning("[标注] %s", msg)
             return msg
-        resumed_backfill = await self._resume_backfill()
-        backend = str(getattr(self._engine.cfg.queue, "backend", "memory"))
-        if backend == "redis":
-            backlog = self._queue_backlog()
-            msg = (f"Redis 队列里还有 {backlog} 条待标注，已接着处理" if backlog
-                   else "队列为空，引擎已就绪")
-            msg += resumed_backfill
-            logger.info("[标注] %s", msg)
-            return msg
-        if resumed_backfill:
-            # 补标捞的是全部未标注，最近没标过的也在里面，不用再按窗口补投一遍
-            logger.info("[标注] %s", resumed_backfill.strip("；"))
-            return resumed_backfill.strip("；")
-        rows = await asyncio.to_thread(self._fetch_recent_pending)
-        if not rows:
-            return "队列为空，引擎已就绪"
-        submitted = await asyncio.to_thread(self._engine.submit_many, rows)
-        msg = (f"内存队列重启后已清空，按库补回最近 {self.RESUME_WINDOW_HOURS} 小时"
-               f"没标过的 {submitted} 条重新入队")
+        backlog = self._queue_backlog()
+        head = (f"队列里还有 {backlog} 条，先标完" if backlog else "队列为空")
+        if any(j.status == "running" for j in self._jobs.values()):
+            msg = f"{head}；补标任务已经在跑"
+        else:
+            resumed = await self._resume_backfill()
+            if resumed:
+                msg = head + resumed
+            else:
+                job = await self.start_backfill()
+                msg = f"{head}；再从库里拉没标过的评论（补标任务 {job.job_id}）"
         logger.info("[标注] %s", msg)
         return msg
 
@@ -418,23 +405,6 @@ class LabelingManager:
         except Exception as exc:            # noqa: BLE001
             # 续标是锦上添花，出错不能把启动/保存设置带崩
             logger.warning("[标注] %s后续标失败（不影响其它功能）：%s", why, exc)
-
-    def _fetch_recent_pending(self) -> List[Dict[str, Any]]:
-        return self._engine.repository.fetch_unlabeled(
-            limit=self.RESUME_MAX_ROWS,
-            extra_where=self._recent_pending_where(self._engine.cfg.storage))
-
-    def _recent_pending_where(self, storage: Any) -> str:
-        """「最近采到、从没处理过」的条件，拼给引擎 fetch_unlabeled 的 extra_where。"""
-        since = datetime.now() - timedelta(hours=self.RESUME_WINDOW_HOURS)
-        conds = [f"`crawl_time` >= {_quote(since.strftime('%Y-%m-%d %H:%M:%S'))}"]
-        review_col = str(getattr(storage, "review_column", "") or "")
-        if review_col:
-            pending = [int(f) for f in (getattr(storage, "pending_flags", None) or [0])]
-            flags = ", ".join(str(f) for f in pending)
-            null_ok = f"`{review_col}` IS NULL OR " if 0 in pending else ""
-            conds.append(f"({null_ok}`{review_col}` IN ({flags}))")
-        return " AND ".join(conds)
 
     # ------------------------------------------------------------------ 边采边标
     async def submit_comments(self, rows: List[Dict[str, Any]]) -> int:
@@ -760,6 +730,15 @@ class LabelingManager:
 
     def _where(self, job: BackfillJob) -> str:
         conds = []
+        # 只捞「从没处理过」的（标注状态在 pending_flags 里，默认 0，或为空）。
+        # ⚠️ 不加这条的话，失败过的（5）标签也是空的，会被一批一批反复捞回来：
+        #    模型一挂，补标就在同一批失败的评论上无限循环。失败的走失败池「重标」。
+        storage = getattr(getattr(getattr(self, "_engine", None), "cfg", None), "storage", None)
+        review_col = str(getattr(storage, "review_column", "") or "")
+        if review_col:
+            pending = [int(f) for f in (getattr(storage, "pending_flags", None) or [0])]
+            null_ok = f"`{review_col}` IS NULL OR " if 0 in pending else ""
+            conds.append(f"({null_ok}`{review_col}` IN ({', '.join(str(f) for f in pending)}))")
         if job.scenic_id:
             conds.append(f"scenic_id = {_quote(job.scenic_id)}")
         if job.channel:
