@@ -9,6 +9,7 @@
         </p>
       </div>
       <div style="display: flex; gap: 10px">
+        <el-button :icon="Setting" @click="openQuotaDialog">配额与轮换</el-button>
         <el-button :icon="Odometer" :loading="probingAll" @click="probeAllVisible = true">
           全平台体检
         </el-button>
@@ -95,6 +96,12 @@
         </template>
       </el-table-column>
       <el-table-column label="今日用量" width="130" align="center">
+        <template #header>
+          今日用量
+          <el-tooltip content="设置每天上限、冷却、轮换时间">
+            <el-button link type="primary" :icon="Setting" style="margin-left: 2px" @click="openQuotaDialog" />
+          </el-tooltip>
+        </template>
         <template #default="{ row }">
           <template v-if="cooling(row)">
             <el-tooltip :content="row.cooldown_reason || '配额用满，正在冷却'">
@@ -252,6 +259,75 @@
       :visible="loginVisible" :channel="loginTarget.channel" :account-name="loginTarget.accountName"
       @close="onLoginClosed"
     />
+    <!-- 配额与轮换：原来只能去「系统设置」里改全局值，单平台的上限根本没地方改 -->
+    <el-dialog v-model="quotaDialog" title="配额与轮换" width="720px">
+      <el-form label-width="110px">
+        <el-form-item label="启用配额">
+          <el-switch v-model="quotaForm.enabled" />
+          <span class="muted" style="margin-left: 8px; font-size: 12px">
+            超过任一上限，账号自动冷却，到期自动恢复
+          </span>
+        </el-form-item>
+      </el-form>
+      <el-table :data="quotaRows" size="small" border>
+        <el-table-column label="平台" width="90">
+          <template #default="{ row }">
+            <el-tag size="small" :color="CHANNEL_COLORS[row.channel]" style="color: #fff; border: none">
+              {{ channelLabel(row.channel) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="每天最多采（条）">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.daily_works" :min="1" :step="50" :value-on-clear="null"
+              :placeholder="`默认 ${row.defaults.daily_works}`" controls-position="right"
+              :disabled="!quotaForm.enabled" style="width: 140px"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="单次连续工作（分钟）">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.session_minutes" :min="1" :step="15" :value-on-clear="null"
+              :placeholder="`默认 ${row.defaults.session_minutes || '不限'}`" controls-position="right"
+              :disabled="!quotaForm.enabled" style="width: 140px"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="触发后冷却（分钟）">
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.cooldown_minutes" :min="1" :step="30" :value-on-clear="null"
+              :placeholder="`默认 ${row.defaults.cooldown_minutes}`" controls-position="right"
+              :disabled="!quotaForm.enabled" style="width: 140px"
+            />
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="muted" style="font-size: 12px; margin: 6px 0 16px">
+        留空 = 用默认值（灰字）。默认值来自「系统设置 → 采集参数」里的全局配额，没填全局就是平台出厂值。
+      </div>
+      <el-form label-width="110px">
+        <el-form-item label="账号轮换锁">
+          <el-switch v-model="quotaForm.rotate_lock_enabled" />
+          <el-input-number
+            v-model="quotaForm.rotate_lock_hours" :min="1" :max="336" :step="6"
+            :disabled="!quotaForm.rotate_lock_enabled" style="width: 130px; margin-left: 12px"
+          />
+          <span class="muted" style="margin-left: 8px">小时</span>
+          <div class="muted" style="font-size: 12px; margin-top: 4px; line-height: 1.6">
+            一个号采过之后，这段时间内先让同组的其他号上；只有一个号时照用不误。
+            单个号想用别的时长，在那一行「编辑」里单独填（优先于这里）。
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="quotaDialog = false">取消</el-button>
+        <el-button type="primary" :loading="savingQuota" @click="saveQuota">保存</el-button>
+      </template>
+    </el-dialog>
+
     <CookieDialog
       v-model="cookieVisible" :channel="cookieTarget.channel"
       :account-name="cookieTarget.accountName" @changed="load"
@@ -266,8 +342,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowRight, FolderOpened, Monitor, Odometer, Plus, Refresh, Search } from '@element-plus/icons-vue'
-import { accountApi, type Account, type AccountQuotaInfo, type AccountGroup, type ChannelOption, type ProbeReport } from '../api'
+import { ArrowRight, FolderOpened, Monitor, Odometer, Plus, Refresh, Search, Setting } from '@element-plus/icons-vue'
+import {
+  accountApi, settingsApi, type Account, type AccountQuotaInfo, type AccountQuotaLimits,
+  type AccountGroup, type ChannelOption, type ProbeReport,
+} from '../api'
 import {
   ACCOUNT_STATUS_LABELS, ACCOUNT_STATUS_TYPES, CHANNEL_COLORS,
   channelLabel, formatTime,
@@ -391,6 +470,78 @@ function lockedFor(row: Account): string {
   //    用户刚在设置里填了 12，页面上立刻显示 11，只会让人以为哪儿没生效。
   if (left >= 3600) return `${Math.ceil(left / 3600)} 小时`
   return `${Math.max(1, Math.ceil(left / 60))} 分钟`
+}
+
+/**
+ * 「配额与轮换」对话框。
+ *
+ * 存的地方和「系统设置 → 采集参数」是同一份（crawl.account_quota），
+ * 单平台的值写进 per_channel——后端一直支持，只是以前页面上没入口。
+ * 输入框留空（null）= 用默认值，存成 0：后端 _apply 把 0 当"没填"，不是"不限"。
+ */
+type QuotaKey = keyof AccountQuotaLimits
+const QUOTA_KEYS: QuotaKey[] = ['daily_works', 'session_minutes', 'cooldown_minutes']
+interface QuotaRow {
+  channel: string
+  daily_works: number | null
+  session_minutes: number | null
+  cooldown_minutes: number | null
+  defaults: AccountQuotaLimits
+}
+const quotaDialog = ref(false)
+const savingQuota = ref(false)
+const quotaRows = ref<QuotaRow[]>([])
+const quotaForm = reactive({ enabled: true, rotate_lock_enabled: true, rotate_lock_hours: 12 })
+
+async function openQuotaDialog() {
+  const [settings, info] = await Promise.all([settingsApi.get(), accountApi.quota({ days: 1 })])
+  quotaInfo.value = info
+  const cfg = settings.config?.crawl?.account_quota || {}
+  const perChannel: Record<string, Partial<AccountQuotaLimits>> = cfg.per_channel || {}
+  quotaForm.enabled = cfg.enabled !== false
+  quotaForm.rotate_lock_enabled = cfg.rotate_lock_enabled !== false
+  quotaForm.rotate_lock_hours = info.rotation?.default_hours || 12
+  quotaRows.value = Object.keys(info.limits || {}).map((channel) => {
+    const own = perChannel[channel] || {}
+    const row: QuotaRow = {
+      channel,
+      daily_works: null, session_minutes: null, cooldown_minutes: null,
+      defaults: info.defaults?.[channel] || info.limits[channel],
+    }
+    for (const key of QUOTA_KEYS) {
+      const v = Number(own[key] || 0)
+      row[key] = v > 0 ? v : null
+    }
+    return row
+  })
+  quotaDialog.value = true
+}
+
+async function saveQuota() {
+  savingQuota.value = true
+  try {
+    const perChannel: Record<string, AccountQuotaLimits> = {}
+    for (const row of quotaRows.value) {
+      perChannel[row.channel] = {
+        daily_works: row.daily_works || 0,
+        session_minutes: row.session_minutes || 0,
+        cooldown_minutes: row.cooldown_minutes || 0,
+      }
+    }
+    await settingsApi.save('crawl', {
+      account_quota: {
+        enabled: quotaForm.enabled,
+        rotate_lock_enabled: quotaForm.rotate_lock_enabled,
+        rotate_lock_hours: quotaForm.rotate_lock_hours,
+        per_channel: perChannel,
+      },
+    })
+    ElMessage.success('已保存，下次挑号/采集时生效')
+    quotaDialog.value = false
+    await loadQuota()
+  } finally {
+    savingQuota.value = false
+  }
 }
 
 async function unlockRotation(row: Account) {

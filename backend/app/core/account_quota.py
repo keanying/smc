@@ -107,13 +107,21 @@ class AccountQuota:
         叠加顺序：出厂默认 → 渠道出厂默认 → 用户全局配置 → 用户渠道配置。
         后面的盖前面的。
         """
-        merged = dict(DEFAULT_LIMITS)
-        merged.update(CHANNEL_DEFAULTS.get(channel, {}))
-        cfg = self._raw_config()
-        _apply(merged, cfg)
-        per_channel = cfg.get("per_channel")
+        merged = self.base_limits_for(channel)
+        per_channel = self._raw_config().get("per_channel")
         if isinstance(per_channel, dict):
             _apply(merged, per_channel.get(channel))
+        return merged
+
+    def base_limits_for(self, channel: str) -> Dict[str, int]:
+        """不算「单平台配置」时的上限：出厂默认 → 渠道出厂默认 → 用户全局配置。
+
+        账号管理页的「配额与轮换」里，单平台那一格留空时就是这个值，
+        拿来当输入框的占位提示（"默认 150"），用户才知道不填等于多少。
+        """
+        merged = dict(DEFAULT_LIMITS)
+        merged.update(CHANNEL_DEFAULTS.get(channel, {}))
+        _apply(merged, self._raw_config())
         return merged
 
     # ---------------- 计数 ----------------

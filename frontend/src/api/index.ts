@@ -521,6 +521,8 @@ export interface AccountRotationInfo {
 export interface AccountQuotaInfo {
   enabled: boolean
   limits: Record<string, AccountQuotaLimits>
+  /** 不算单平台配置时的上限，页面上单平台留空就是它 */
+  defaults?: Record<string, AccountQuotaLimits>
   usage: AccountQuotaUsage[]
   rotation?: AccountRotationInfo
 }
