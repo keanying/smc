@@ -24,6 +24,7 @@ import asyncio
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from ..core.config import Config
@@ -342,6 +343,74 @@ class LabelingManager:
             self._degraded = False
             self._start_error = ""
         logger.info("[标注] 配置已变更，引擎将按新配置重启")
+        # 队列里压着的不能等"下一次采集"才动：按新配置立刻拉起来接着标
+        if self.enabled:
+            asyncio.create_task(self._resume_quietly("配置变更"))
+
+    # ------------------------------------------------------------------ 重启续标
+    #: 内存队列重启即丢，按库里补回"最近这么久采到、从没标过"的评论。
+    #: 更早的算历史数据，交给「一键补标」——别让一次重启悄悄花掉一大笔模型费
+    RESUME_WINDOW_HOURS = 24
+    RESUME_MAX_ROWS = 5000
+
+    async def resume_pending(self) -> str:
+        """服务启动 / 改完 AI 标注配置后调用：队列里还有没标完的，立刻接着标。
+
+        ⚠️ 以前引擎是"懒启动"的——只有新的采集推数据进来才会拉起来。
+        于是重启之后 Redis 队列里剩下的评论**一直躺着**，直到下一次有采集任务；
+        没有定时任务的话就永远不标。
+
+          - redis 队列：内容和在途租约都在 Redis 里（在途的超时会被引擎回收），
+            把引擎拉起来，worker 自己就会接着消费，**不用再补投**（补了会重复标、重复花钱）
+          - memory 队列：重启就没了。按库里「最近 RESUME_WINDOW_HOURS 小时采到、
+            标注状态还是 0（从没处理过）」的评论补投回去
+        失败过的（5）不在这里重试：它们在失败池里，走「重标」那条路。
+        """
+        if not self.enabled:
+            return ""
+        if not await self.ensure_started():
+            msg = f"边采边标已开启，但引擎没能启动，队列暂不处理：{self._start_error}"
+            logger.warning("[标注] %s", msg)
+            return msg
+        backend = str(getattr(self._engine.cfg.queue, "backend", "memory"))
+        if backend == "redis":
+            backlog = self._queue_backlog()
+            msg = (f"Redis 队列里还有 {backlog} 条待标注，已接着处理" if backlog
+                   else "队列为空，引擎已就绪")
+            logger.info("[标注] %s", msg)
+            return msg
+        rows = await asyncio.to_thread(self._fetch_recent_pending)
+        if not rows:
+            return "队列为空，引擎已就绪"
+        submitted = await asyncio.to_thread(self._engine.submit_many, rows)
+        msg = (f"内存队列重启后已清空，按库补回最近 {self.RESUME_WINDOW_HOURS} 小时"
+               f"没标过的 {submitted} 条重新入队")
+        logger.info("[标注] %s", msg)
+        return msg
+
+    async def _resume_quietly(self, why: str) -> None:
+        try:
+            await self.resume_pending()
+        except Exception as exc:            # noqa: BLE001
+            # 续标是锦上添花，出错不能把启动/保存设置带崩
+            logger.warning("[标注] %s后续标失败（不影响其它功能）：%s", why, exc)
+
+    def _fetch_recent_pending(self) -> List[Dict[str, Any]]:
+        return self._engine.repository.fetch_unlabeled(
+            limit=self.RESUME_MAX_ROWS,
+            extra_where=self._recent_pending_where(self._engine.cfg.storage))
+
+    def _recent_pending_where(self, storage: Any) -> str:
+        """「最近采到、从没处理过」的条件，拼给引擎 fetch_unlabeled 的 extra_where。"""
+        since = datetime.now() - timedelta(hours=self.RESUME_WINDOW_HOURS)
+        conds = [f"`crawl_time` >= {_quote(since.strftime('%Y-%m-%d %H:%M:%S'))}"]
+        review_col = str(getattr(storage, "review_column", "") or "")
+        if review_col:
+            pending = [int(f) for f in (getattr(storage, "pending_flags", None) or [0])]
+            flags = ", ".join(str(f) for f in pending)
+            null_ok = f"`{review_col}` IS NULL OR " if 0 in pending else ""
+            conds.append(f"({null_ok}`{review_col}` IN ({flags}))")
+        return " AND ".join(conds)
 
     # ------------------------------------------------------------------ 边采边标
     async def submit_comments(self, rows: List[Dict[str, Any]]) -> int:
@@ -789,6 +858,9 @@ class _DisabledManager:
 
     async def reset(self) -> None:
         return None
+
+    async def resume_pending(self) -> str:
+        return ""
 
     async def status(self):
         return {"enabled": False, "running": False,
