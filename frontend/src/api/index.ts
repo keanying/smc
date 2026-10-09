@@ -732,6 +732,21 @@ export interface QunarProvince {
   cities: { city_id: string; city_name: string }[]
 }
 
+/** 去哪儿城市索引里的一项（vendor/qunar_crawler/models.py 的 City） */
+export interface QunarCity {
+  city_id: string
+  city_name: string
+  city_url: string
+}
+
+/** 城市景区列表里的一项（vendor/qunar_crawler/models.py 的 PoiSummary） */
+export interface QunarPoi {
+  poi_id: string
+  poi_name: string
+  address: string
+  scenic_level: string
+}
+
 export const qunarApi = {
   /**
    * 去哪儿的行政区划同步。
@@ -743,4 +758,20 @@ export const qunarApi = {
   provinces: () => api.get<QunarProvince[]>('/api/qunar/provinces'),
   syncRegions: () => api.post<{ total: number; matched: number; saved: number }>(
     '/api/qunar/regions/sync', {}),
+
+  // 下面四个给 QunarImportDialog 用（按城市浏览去哪儿景区、勾选导入），
+  // 对应后端 app/api/qunar.py 里仍在的 /cities /pois /saved /import
+  cities: () => api.get<QunarCity[]>('/api/qunar/cities'),
+  pois: (city: string, page = 1) =>
+    api.get<{ city_id: string; city_name: string; page: number; total_pages: number;
+      items: QunarPoi[] }>('/api/qunar/pois', { city, page }),
+  saved: (params: { city?: string; scenic_id?: string; keyword?: string;
+    page?: number; page_size?: number } = {}) =>
+    api.get<{ total: number; page: number; page_size: number;
+      items: { poi_id: string; poi_name?: string; scenic_id?: string }[] }>(
+      '/api/qunar/saved', params),
+  importPois: (payload: { items: QunarPoi[]; city_id: string; city_name: string;
+    with_detail?: boolean; scenic_prefix?: string }) =>
+    api.post<{ created: number; updated: number; failed: unknown[] }>(
+      '/api/qunar/import', payload),
 }
