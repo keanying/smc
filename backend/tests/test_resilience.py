@@ -470,3 +470,80 @@ async def test_force_cancelled_task_is_marked_not_left_running():
         "应该是「已取消」——不然任务永远挂在运行中"
     )
     assert "取消" in (marked.get("error") or "")
+
+
+# ---------------------------------------------------------------------------
+# 账号配额：登录型平台 + 有账号时，每条新作品都要记一笔
+# ---------------------------------------------------------------------------
+
+class _LoginCollector(_Stub):
+    """需要登录的平台（抖音/快手/小红书/微博都是），一个关键字出 12 条作品。"""
+
+    channel = "xiaohongshu"
+    supports_works = True
+    needs_login = True
+
+    async def collect_by_keyword(self, ctx, keyword) -> AsyncIterator[WorkItem]:
+        for i in range(12):
+            yield self.new_work(ctx, work_id=f"N{i}", title=f"武夷山文旅 第{i}篇",
+                                publish_time=datetime(2026, 8, 20))
+
+
+class _Quota:
+    def __init__(self, ok_until: int = 10**9):
+        self.records: List[tuple] = []
+        self.checks: List[tuple] = []
+        self._ok_until = ok_until
+
+    async def record_works(self, channel, account, n):
+        self.records.append((channel, account, n))
+
+    async def check(self, channel, account):
+        from types import SimpleNamespace
+        self.checks.append((channel, account))
+        ok = len(self.records) < self._ok_until
+        return SimpleNamespace(ok=ok, reason="" if ok else "今日采集量已达上限")
+
+
+def _login_ctx():
+    ctx = _ctx()
+    ctx.account_name = "acc1"
+    return ctx
+
+
+@pytest.mark.asyncio
+async def test_quota_is_recorded_under_the_collectors_channel():
+    """线上原样：「关键字 [武夷山文旅] 重试 3 次仍失败，跳过：name 'channel' is not defined」。
+
+    配额那几行用了个不存在的变量 channel（该用 collector.channel），
+    登录型平台带账号采到第一条新作品就 NameError，整个关键字重试 3 次后跳过——
+    抖音/快手/小红书/微博一条都采不进来。
+    """
+    runner = _runner()
+    runner.quota = _Quota()
+    repo = _Repo()
+    buffer = _Buffer(repo, _Log())
+
+    await runner._collect_one_keyword(
+        _LoginCollector(), _login_ctx(), "武夷山文旅", buffer, _Log())
+    await buffer.flush()
+
+    assert len(repo.works) == 12
+    assert runner.quota.records == [("xiaohongshu", "acc1", 1)] * 12
+    # 每 10 条复查一次
+    assert runner.quota.checks == [("xiaohongshu", "acc1")]
+
+
+@pytest.mark.asyncio
+async def test_quota_exhausted_stops_the_keyword_and_says_which_platform():
+    runner = _runner()
+    runner.quota = _Quota(ok_until=10)        # 第 10 条之后的复查判超额
+    repo, log = _Repo(), _Log()
+    buffer = _Buffer(repo, log)
+
+    await runner._collect_one_keyword(
+        _LoginCollector(), _login_ctx(), "武夷山文旅", buffer, log)
+    await buffer.flush()
+
+    assert len(repo.works) == 10, "超额后这个关键字就该停了"
+    assert any("本轮 xiaohongshu 到此为止" in line for line in log.lines)

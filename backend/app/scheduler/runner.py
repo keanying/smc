@@ -939,13 +939,13 @@ class TaskRunner:
             quota = getattr(self, "quota", None)
             if quota is not None and fresh and collector.needs_login \
                     and ctx.account_name:
-                await quota.record_works(channel, ctx.account_name, 1)
+                await quota.record_works(collector.channel, ctx.account_name, 1)
                 # 每 10 条复查一次。每条都查等于每条一次 SELECT，
                 # 而配额本来就是个粗粒度的闸门，差十条无所谓。
                 if count % 10 == 0:
-                    verdict = await quota.check(channel, ctx.account_name)
+                    verdict = await quota.check(collector.channel, ctx.account_name)
                     if not verdict.ok:
-                        log.warn(f"⏸ {verdict.reason}。本轮 {channel} 到此为止")
+                        log.warn(f"⏸ {verdict.reason}。本轮 {collector.channel} 到此为止")
                         break
             # ⚠️ 每条都说清"它到底怎么了"。以前这里四个分支一声不吭，
             # 只在关键字循环结束时报几个总数，于是用户看到的是
