@@ -84,6 +84,22 @@ class MySQLPool:
                 with self._lock:
                     self._created -= 1
             return
+        # ⚠️ 还回池子之前必须结束事务。连接是 autocommit=False，InnoDB 默认
+        #    REPEATABLE READ：一个连接上第一次 SELECT 就定下快照，之后只要不
+        #    commit/rollback，这个连接**永远**读那份旧快照。写路径都显式 commit 了，
+        #    但纯读（补标的 count / fetch_unlabeled）用完就原样放回——下一个借到它的
+        #    人读到的是很久以前的数据：刚标完的评论在它眼里还是"未标注"，
+        #    补标就把同一批评论一遍遍重新提交，重复标、重复花钱。
+        #    rollback 对已经 commit 的写没有影响，只是把读快照释放掉。
+        try:
+            conn.rollback()
+        except Exception:                   # noqa: BLE001
+            try:
+                conn.close()
+            finally:
+                with self._lock:
+                    self._created -= 1
+            return
         try:
             self._pool.put_nowait(conn)
         except _stdqueue.Full:              # pragma: no cover

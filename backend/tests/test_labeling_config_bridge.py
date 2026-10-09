@@ -5,7 +5,7 @@
     输出被 max_output_tokens=1024 截断（已用 1025 tokens），提到 2048 后重试；
     长期方案是调大 llm.max_output_tokens
 
-引擎自己配的是 4096（注释写明推理模型的思考过程也吃这份额度），
+引擎自己配的是 9096（注释写明推理模型的思考过程也吃这份额度），
 而 smc 这边在 config_bridge 里手抄了一份、写成 1024——等于把引擎调小了
 4 倍，每条还要多花一次重试的钱。同时被抄丢的还有 8 个键。
 
@@ -46,7 +46,7 @@ def test_engine_tuning_is_passed_through(engine_yaml):
     """引擎配的输出预算必须原样到达引擎，不能被 smc 改小。"""
     built = _build()
     assert built["llm"]["max_output_tokens"] == engine_yaml["llm"]["max_output_tokens"]
-    assert built["llm"]["max_output_tokens"] == 4096, "1024 那个老毛病回来了"
+    assert built["llm"]["max_output_tokens"] == 9096, "1024 那个老毛病回来了"
     assert built["llm"]["max_output_tokens_cap"] == engine_yaml["llm"]["max_output_tokens_cap"]
 
 
@@ -100,7 +100,7 @@ def test_stale_db_setting_cannot_override_engine():
 
     built = config_bridge.build_engine_config(cfg)
 
-    assert built["llm"]["max_output_tokens"] == 4096, "库里的 1024 又把引擎压下去了"
+    assert built["llm"]["max_output_tokens"] == 9096, "库里的 1024 又把引擎压下去了"
     assert built["llm"]["temperature"] == 0.01
     assert built["llm"]["max_retries"] == 3
     assert built["llm"]["read_timeout"] == 60

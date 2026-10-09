@@ -348,7 +348,9 @@ async def logout(channel: str, account_name: str, state: AppState = Depends(get_
 
 @router.post("/{channel}/{account_name}/login-session")
 async def create_login_session(
-    channel: str, account_name: str, state: AppState = Depends(get_state)
+    channel: str, account_name: str,
+    mode: str = Query("login", description="login=登录；browse=已登录的号直接打开浏览器，不跳登录页"),
+    state: AppState = Depends(get_state),
 ):
     """创建一个实时流登录会话，返回 session_id。
 
@@ -361,7 +363,7 @@ async def create_login_session(
     if not account:
         raise not_found(f"账号不存在：{channel}/{account_name}")
 
-    session = LiveBrowserSession(state.browser_manager, channel, account_name)
+    session = LiveBrowserSession(state.browser_manager, channel, account_name, mode=mode)
     register(session)
     return ok(
         {"session_id": session.session_id, "ws_path": f"/ws/browser/{session.session_id}"},

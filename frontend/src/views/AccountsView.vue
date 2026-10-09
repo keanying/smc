@@ -49,7 +49,7 @@
       <span class="filter-count muted">共 {{ accounts.length }} 个账号</span>
     </div>
 
-    <el-table :data="accounts" v-loading="loading">
+    <el-table :data="accounts" v-loading="loading" class="data-table" max-height="calc(100vh - 330px)">
       <el-table-column label="平台" width="96">
         <template #default="{ row }">
           <span class="channel-badge" :style="{ background: CHANNEL_COLORS[row.channel] }">
@@ -136,7 +136,12 @@
       <el-table-column label="操作" width="250" align="center" fixed="right">
         <template #default="{ row }">
           <div class="row-actions">
-            <IconAction icon="online" tip="打开浏览器登录" @click="openLogin(row)" />
+            <!-- 已登录的号：直接打开浏览器（带登录态），不进登录流程；没登录/失效的才走登录 -->
+            <IconAction
+              v-if="row.status === 'active'" icon="browser" tip="打开浏览器（已登录）"
+              @click="openLogin(row, 'browse')"
+            />
+            <IconAction v-else icon="online" tip="登录" @click="openLogin(row)" />
             <IconAction
               icon="publish" tip="采集 Cookie"
               :loading="checkingKey === rowKey(row)" @click="check(row)"
@@ -269,6 +274,7 @@
 
     <LoginBrowser
       :visible="loginVisible" :channel="loginTarget.channel" :account-name="loginTarget.accountName"
+      :mode="loginTarget.mode"
       @close="onLoginClosed"
     />
     <!-- 配额与轮换：原来只能去「系统设置」里改全局值，单平台的上限根本没地方改 -->
@@ -382,7 +388,7 @@ const checkingAll = ref(false)
 const checkingKey = ref('')
 const addDialog = ref(false)
 const loginVisible = ref(false)
-const loginTarget = reactive({ channel: '', accountName: '' })
+const loginTarget = reactive({ channel: '', accountName: '', mode: 'login' as 'login' | 'browse' })
 const cookieVisible = ref(false)
 const cookieTarget = reactive({ channel: '', accountName: '' })
 const probeVisible = ref(false)
@@ -655,9 +661,10 @@ function openProbe(row: Account) {
   probeVisible.value = true
 }
 
-function openLogin(row: Account) {
+function openLogin(row: Account, mode: 'login' | 'browse' = 'login') {
   loginTarget.channel = row.channel
   loginTarget.accountName = row.account_name
+  loginTarget.mode = mode
   loginVisible.value = true
 }
 

@@ -54,8 +54,13 @@ POLL_INTERVAL_SECONDS = 2
 
 
 class LiveBrowserSession:
-    def __init__(self, manager, channel: str, account_name: str):
+    def __init__(self, manager, channel: str, account_name: str, mode: str = "login"):
         self.session_id = uuid.uuid4().hex
+        #: login = 登录（没登录就跳到登录页）；browse = 已登录的号直接打开浏览器看，
+        #: **不跳登录页**。账号页对已登录的号走 browse：以前一律当登录处理，
+        #: 登录检测偶尔误判（微博的登录页无论登没登录都渲染登录框）就把人带去登录页，
+        #: 用户以为登录态丢了又扫一次码。
+        self.mode = "browse" if mode == "browse" else "login"
         self.manager = manager
         self.channel = channel
         self.account_name = account_name
@@ -110,7 +115,13 @@ class LiveBrowserSession:
         self._watch_task = asyncio.create_task(self._watch_login())
         # 打开时就已经登录着的话直接说清楚，别让用户以为还得再扫一次——
         # 这正是"每次打开都要登录"那个错觉的来源
-        if self._opened_logged_in:
+        if self.mode == "browse":
+            await on_status(
+                "streaming",
+                "已用这个账号的登录态打开" if self._opened_logged_in
+                else "已打开浏览器。画面里如果显示未登录，关掉窗口后点「登录」重新登录",
+            )
+        elif self._opened_logged_in:
             await on_status(
                 "streaming", "这个账号还登录着，不用重新扫码。要换号就先退出再登录"
             )
@@ -170,7 +181,8 @@ class LiveBrowserSession:
             already = await self.manager._is_logged_in(self._context, self.spec)
         except Exception:  # noqa: BLE001
             pass
-        if not already and self.spec.login_url and self.spec.login_url != self.spec.home_url:
+        if (not already and self.mode != "browse"
+                and self.spec.login_url and self.spec.login_url != self.spec.home_url):
             try:
                 await self._page.goto(
                     self.spec.login_url, wait_until="domcontentloaded", timeout=60_000
@@ -215,7 +227,8 @@ class LiveBrowserSession:
             already = await self.manager._is_logged_in(self._context, self.spec)
         except Exception:  # noqa: BLE001
             pass
-        if not already and self.spec.login_url and self.spec.login_url != self.spec.home_url:
+        if (not already and self.mode != "browse"
+                and self.spec.login_url and self.spec.login_url != self.spec.home_url):
             try:
                 await self._page.goto(
                     self.spec.login_url, wait_until="domcontentloaded", timeout=60_000

@@ -29,7 +29,7 @@
       <el-switch v-model="autoRefresh" active-text="自动刷新" style="margin-left: auto" />
     </div>
 
-    <el-table :data="tasks" v-loading="loading" border>
+    <el-table :data="tasks" v-loading="loading" class="data-table" max-height="calc(100vh - 290px)">
       <el-table-column prop="task_name" label="任务名称" min-width="180">
         <template #default="{ row }">
           <el-link type="primary" @click="$router.push(`/tasks/${row.task_id}`)">
@@ -126,12 +126,12 @@
         <template #default="{ row }">
           <div class="row-actions">
             <IconAction icon="view" tip="详情" @click="$router.push(`/tasks/${row.task_id}`)" />
-            <IconAction v-if="row.status !== 'running'" icon="publish" tip="立即执行" @click="run(row)" />
+            <IconAction v-if="row.status !== 'running'" icon="play" tip="立即执行" @click="run(row)" />
             <IconAction v-else icon="revoke" tip="取消执行" @click="cancel(row)" />
             <IconAction icon="edit" tip="编辑" @click="edit(row)" />
             <IconAction
               v-if="row.schedule_type !== 'once'"
-              :icon="row.schedule_enabled ? 'offline' : 'online'"
+              :icon="row.schedule_enabled ? 'pause' : 'online'"
               :tip="row.schedule_enabled ? '暂停定时' : '启用定时'"
               @click="toggleSchedule(row)"
             />

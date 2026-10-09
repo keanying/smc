@@ -204,6 +204,11 @@ def _enabled_mgr(engine=None, start_ok=True):
         return start_ok
 
     mgr.ensure_started = _start
+    # 断点文件别读到真实 data/ 目录下的（本机跑过服务就可能有一份）
+    import tempfile
+    from pathlib import Path
+    marker = Path(tempfile.mkdtemp()) / "backfill.json"
+    mgr._backfill_marker = lambda: marker
     return mgr
 
 
@@ -212,25 +217,35 @@ def test_resume_does_nothing_when_labeling_is_off():
     assert asyncio.run(mgr.resume_pending()) == ""
 
 
-def test_resume_starts_engine_for_redis_backlog_without_resubmitting():
-    """客户用的是 redis 队列：重启后剩下的评论还在 Redis 里，拉起引擎就会接着消费。
-    再从库里补投一遍会重复标、重复花钱。"""
+def _spy_backfill(mgr):
+    started = []
+
+    async def _start_backfill(**kw):
+        started.append(kw)
+        return BackfillJob(job_id="bf-new")
+    mgr.start_backfill = _start_backfill
+    return started
+
+
+def test_resume_drains_queue_then_pulls_db():
+    """客户定的顺序：先把队列里剩下的标完，再从库里拉没标过的。
+    补标任务本身就是「先等队列排空 → 再从库里捞」，所以启动标注 = 起一个补标。"""
     engine = _Engine("redis", backlog=37)
-    msg = asyncio.run(_enabled_mgr(engine).resume_pending())
-    assert "37" in msg
-    assert engine.submitted == [], "redis 队列不该补投"
-    assert engine.repository.where is None
+    mgr = _enabled_mgr(engine)
+    started = _spy_backfill(mgr)
+    msg = asyncio.run(mgr.resume_pending())
+    assert started == [{}], "要从库里拉未标注的"
+    assert "37" in msg and "先标完" in msg
+    assert engine.submitted == [], "队列里的不能再补投一遍（重复标、重复花钱）"
 
 
-def test_resume_refills_memory_queue_from_recent_unlabeled_rows():
-    rows = [{"comment_id": "c1"}, {"comment_id": "c2"}]
-    engine = _Engine("memory", rows=rows)
-    msg = asyncio.run(_enabled_mgr(engine).resume_pending())
-    assert engine.submitted == rows and "2" in msg
-    where = engine.repository.where
-    assert "`crawl_time` >=" in where, "只补最近的，不把全部历史都标一遍"
-    assert "`label_review_flag` IN (0)" in where, "失败过的(5)走重标，不在这里重试"
-    assert engine.repository.limit == LabelingManager.RESUME_MAX_ROWS
+def test_resume_does_not_start_a_second_backfill():
+    engine = _Engine("redis", backlog=0)
+    mgr = _enabled_mgr(engine)
+    started = _spy_backfill(mgr)
+    mgr._jobs = {"bf": BackfillJob(job_id="bf", status="running")}
+    asyncio.run(mgr.resume_pending())
+    assert started == []
 
 
 def test_resume_reports_instead_of_crashing_when_engine_cannot_start():
@@ -250,6 +265,7 @@ def test_reset_kicks_off_resume_when_enabled():
         return await orig()
 
     mgr.resume_pending = _spy
+    _spy_backfill(mgr)
 
     async def _go():
         await mgr.reset()
@@ -265,13 +281,14 @@ def test_startup_resumes_labeling():
     assert '_resume_quietly("服务启动")' in text
 
 
-def test_recent_pending_where_is_valid_sql():
-    """extra_where 是拼出来的字符串，必须在真库上能跑。"""
+def test_backfill_where_skips_failed_rows_and_is_valid_sql():
+    """补标只捞从没处理过的（0/空）。失败过的(5)标签也是空的，
+    不排掉的话模型一挂，补标就在同一批失败的评论上无限循环。"""
     import pymysql
 
     mgr = LabelingManager(SimpleNamespace(get=lambda *a, **k: {}))
-    where = mgr._recent_pending_where(SimpleNamespace(
-        review_column="label_review_flag", pending_flags=[0]))
+    mgr._engine = _Engine("redis")
+    where = mgr._where(BackfillJob(job_id="j", scenic_id="S1"))
     try:
         conn = pymysql.connect(host=os.environ.get("SMC_MYSQL_HOST", "127.0.0.1"),
                                user=os.environ.get("SMC_MYSQL_USER", "root"),
@@ -282,13 +299,13 @@ def test_recent_pending_where_is_valid_sql():
     with conn.cursor() as cur:
         cur.execute("CREATE DATABASE IF NOT EXISTS smc_where_check")
         cur.execute("USE smc_where_check")
-        cur.execute("CREATE TABLE IF NOT EXISTS t (crawl_time DATETIME, "
+        cur.execute("CREATE TABLE IF NOT EXISTS t (scenic_id VARCHAR(20), "
                     "label_review_flag TINYINT NULL, sentiment_label VARCHAR(20))")
         cur.execute("DELETE FROM t")
-        cur.execute("INSERT INTO t VALUES (NOW(), 0, NULL), (NOW(), NULL, NULL), "
-                    "(NOW(), 5, NULL), (NOW() - INTERVAL 3 DAY, 0, NULL)")
+        cur.execute("INSERT INTO t VALUES ('S1', 0, NULL), ('S1', NULL, NULL), "
+                    "('S1', 5, NULL), ('S2', 0, NULL)")
         cur.execute(f"SELECT COUNT(*) FROM t WHERE {where}")
-        assert cur.fetchone()[0] == 2, "只要最近的、0 或 NULL 的"
+        assert cur.fetchone()[0] == 2, "只要 S1 的、0 或 NULL 的；失败(5)不捞"
         cur.execute("DROP DATABASE smc_where_check")
     conn.close()
 

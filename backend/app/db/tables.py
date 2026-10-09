@@ -124,6 +124,10 @@ EXTRA_COLUMNS = [
     # 不需要清理），这里只存"这个号要锁多久"。0 = 跟随系统设置里的全局值。
     (ACCOUNT, "rotate_lock_hours",
      "INT NOT NULL DEFAULT 0 COMMENT '轮换锁时长（小时），0=用系统设置里的全局值'"),
+    # 任务第一次进「等待账号恢复」队列的时间。恢复后按它先来先跑；
+    # 恢复时又撞上冷却、再排一次，也保留最初的位置，不会被后来的任务插队。
+    (TASK, "queued_at",
+     "DATETIME NULL DEFAULT NULL COMMENT '进入等待队列的时间（先来先跑），跑完清空'"),
 ]
 
 #: 后加的索引：(表名, 索引名, 索引定义)
