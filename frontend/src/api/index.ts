@@ -393,7 +393,7 @@ export interface BackfillJob {
   total: number
   /** 累计喂进队列的条数（可能大于 done：喂进去不等于标完了） */
   submitted: number
-  /** 已经标完写回库的条数——进度以它为准 */
+  /** 已处理的条数（标上的 + 这一轮仍失败的）——进度以它为准 */
   done: number
   /** 已经喂了几批 */
   batches: number
@@ -406,6 +406,8 @@ export interface BackfillJob {
   eta_seconds: number | null
   updated_at: number
   cancel_requested: boolean
+  /** 处理过但仍没标上（模型失败）的条数，下次补标再试 */
+  failed?: number
 }
 
 export const labelingApi = {

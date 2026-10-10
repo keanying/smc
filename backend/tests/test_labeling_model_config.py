@@ -281,33 +281,89 @@ def test_startup_resumes_labeling():
     assert '_resume_quietly("服务启动")' in text
 
 
-def test_backfill_where_skips_failed_rows_and_is_valid_sql():
-    """补标只捞从没处理过的（0/空）。失败过的(5)标签也是空的，
-    不排掉的话模型一挂，补标就在同一批失败的评论上无限循环。"""
-    import pymysql
+# ---------------------------------------------------------------- 补标 = 没标签的都补
+# 客户：「一键补标历史一定是要再标未标注的，复核的这个是 AI/人工意见」。
+# 以前补标按 label_review_flag 排掉了 5（AI 标注错误）——线上 546 条未标注全是 5，
+# 点补标「瞬间完成、共标了 0 条」，单条「AI 再标」却可以。
+# 防死循环改成按 id 翻页：每条一轮只送一次。
 
-    mgr = LabelingManager(SimpleNamespace(get=lambda *a, **k: {}))
-    mgr._engine = _Engine("redis")
-    where = mgr._where(BackfillJob(job_id="j", scenic_id="S1"))
+def _db_or_skip():
+    import pymysql
     try:
-        conn = pymysql.connect(host=os.environ.get("SMC_MYSQL_HOST", "127.0.0.1"),
+        return pymysql.connect(host=os.environ.get("SMC_MYSQL_HOST", "127.0.0.1"),
                                user=os.environ.get("SMC_MYSQL_USER", "root"),
-                               password=os.environ.get("SMC_MYSQL_PASSWORD", ""))
+                               password=os.environ.get("SMC_MYSQL_PASSWORD", ""),
+                               autocommit=True)
     except Exception as exc:  # noqa: BLE001
         import pytest
         pytest.skip(f"没有 MySQL：{exc}")
+
+
+class _FailingEngine:
+    """真库上的假引擎：送进来的评论一条都标不上（模型挂了），只记送了谁。"""
+
+    def __init__(self, conn):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _connection():
+            yield conn
+        self._pool = SimpleNamespace(connection=_connection)
+        self.cfg = SimpleNamespace(
+            queue=SimpleNamespace(backend="redis"),
+            storage=SimpleNamespace(table="t", columns={"sentiment_label": "sentiment_label"}))
+        self.queue = _Queue(0)
+        self.sent = []
+
+    def submit_many(self, rows):
+        self.sent.extend(r["comment_id"] for r in rows)
+        return len(rows)
+
+    def wait_idle(self, timeout, poll=0.5):
+        return True
+
+
+def test_backfill_takes_every_unlabeled_row_once_even_when_the_model_fails(tmp_path):
+    conn = _db_or_skip()
     with conn.cursor() as cur:
-        cur.execute("CREATE DATABASE IF NOT EXISTS smc_where_check")
-        cur.execute("USE smc_where_check")
-        cur.execute("CREATE TABLE IF NOT EXISTS t (scenic_id VARCHAR(20), "
-                    "label_review_flag TINYINT NULL, sentiment_label VARCHAR(20))")
-        cur.execute("DELETE FROM t")
-        cur.execute("INSERT INTO t VALUES ('S1', 0, NULL), ('S1', NULL, NULL), "
-                    "('S1', 5, NULL), ('S2', 0, NULL)")
-        cur.execute(f"SELECT COUNT(*) FROM t WHERE {where}")
-        assert cur.fetchone()[0] == 2, "只要 S1 的、0 或 NULL 的；失败(5)不捞"
-        cur.execute("DROP DATABASE smc_where_check")
-    conn.close()
+        cur.execute("CREATE DATABASE IF NOT EXISTS smc_backfill_check")
+        cur.execute("USE smc_backfill_check")
+        cur.execute("DROP TABLE IF EXISTS t")
+        cur.execute("CREATE TABLE t (id INT PRIMARY KEY, scenic_id VARCHAR(20), "
+                    "scenic_name VARCHAR(20), channel VARCHAR(20), work_id VARCHAR(20), "
+                    "comment_id VARCHAR(20), commenter_id VARCHAR(20), content TEXT, likes INT, "
+                    "extra_content TEXT, publish_time DATETIME, label_review_flag TINYINT NULL, "
+                    "sentiment_label VARCHAR(20))")
+        cur.executemany(
+            "INSERT INTO t (id, scenic_id, comment_id, label_review_flag, sentiment_label)"
+            " VALUES (%s, %s, %s, %s, %s)",
+            [(1, "S1", "c1", 0, None), (2, "S1", "c2", None, None),
+             (3, "S1", "c3", 5, None),          # AI 标注错误、没标签 → 要补
+             (4, "S1", "c4", 5, ""),
+             (5, "S1", "c5", 4, "正向"),         # 标过的不动
+             (6, "S1", "c6", 5, "中性"),         # 有标签就算标过（5 只是意见）
+             (7, "S2", "c7", 5, None)])         # 别的景区
+    mgr = _mgr_with_marker(tmp_path)
+    mgr._engine = _FailingEngine(conn)
+    mgr.BACKFILL_BATCH = 2                      # 多翻几页
+    job = BackfillJob(job_id="bf", scenic_id="S1")
+    try:
+        asyncio.run(mgr._run_backfill(job, 0))
+        assert mgr._engine.sent == ["c1", "c2", "c3", "c4"], "没标签的都要送，每条只送一次"
+        assert job.status == "finished" and job.total == 4
+        assert job.done == 4 and job.failed == 4 and job.percent == 100.0
+        assert job.batches == 2, "又失败的不能被捞回来再送（死循环）"
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DROP DATABASE smc_backfill_check")
+        conn.close()
+
+
+def test_backfill_where_ignores_review_flag():
+    where = LabelingManager.__new__(LabelingManager)._where(
+        BackfillJob(job_id="j", scenic_id="S1", channel="douyin"))
+    assert "label_review_flag" not in where
+    assert "S1" in where and "douyin" in where
 
 
 # ---------------------------------------------------------------- 补标被关机打断
