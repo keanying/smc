@@ -100,6 +100,13 @@ class LabelRepository:
         if not cfg.review_column:
             return ""
         where = " AND ".join(f"`{c}` = %s" for c in cfg.key_columns)
+        # ⚠️ 只标**还没有标签**的行。同一条评论在队列里有两份时（重复采集再推一次、
+        #    补标和边采边标撞上、重启前留下的重试副本），成功的那份攒批写回了标签和 4，
+        #    另一份晚些失败、立刻写 5，就把成功盖成了「AI 标注错误」——标签明明在。
+        #    有标签就说明它已经标好了（或者人工复核过），失败不该改它的状态。
+        label_col = cfg.columns.get("sentiment_label")
+        if label_col:
+            where += f" AND (`{label_col}` IS NULL OR `{label_col}` = '')"
         return f"UPDATE `{cfg.table}` SET `{cfg.review_column}` = %s WHERE {where}"
 
     def _params(self, record: CommentRecord, result: LabelResult,
@@ -330,8 +337,8 @@ class LabelRepository:
             missed=max(0, len(records) - matched),
             elapsed_ms=int((time.monotonic() - started) * 1000),
         )
-        logger.info("标记标注失败 %d 条（%s=%d）",
-                    report.matched, self._cfg.review_column, flag)
+        logger.info("标记标注失败 %d 条（%s=%d）；已有标签的 %d 条不改",
+                    report.matched, self._cfg.review_column, flag, report.missed)
         return report
 
     # ------------------------------------------------------------------ 自检

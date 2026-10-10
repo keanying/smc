@@ -326,6 +326,12 @@ class LabelingManager:
         # 让它自己 setup 会把 smc 的 root logger handler 顶掉
         engine = LabelingEngine.from_config(str(path), enable_db=True, setup_log=False)
         engine.start(check_schema=True)
+        try:
+            fixed = _fix_labeled_but_failed(engine)
+            if fixed:
+                logger.info("[标注] %d 条评论有标签却标着「AI 标注错误」，已更正为「AI 标注成功」", fixed)
+        except Exception as exc:            # noqa: BLE001
+            logger.warning("[标注] 更正「有标签却标着 AI 标注错误」的评论失败（不影响标注）：%s", exc)
         return engine
 
     async def stop(self) -> None:
@@ -833,6 +839,30 @@ class LabelingManager:
             except Exception as exc:        # noqa: BLE001
                 data["stats_error"] = str(exc)
         return data
+
+
+def _fix_labeled_but_failed(engine: Any) -> int:
+    """有标签、却标着 AI 标注错误(5) 的，改成 AI 标注成功(4)。返回改了几条。
+
+    以前失败写标记不看标签：同一条评论两份副本，成功的写了标签和 4，
+    晚到的失败又把它改成 5（引擎 repository 的 _build_flag_only_sql 已修）。
+    这里把修之前留下的历史数据纠正过来，幂等，每次启动引擎跑一次。
+    表里不存置信度，分不出低置信(6)，统一按 4：标签是模型正常给出的。
+    """
+    cfg = engine.cfg.storage
+    review_col = str(getattr(cfg, "review_column", "") or "")
+    if not review_col:
+        return 0
+    flags = cfg.review_flags
+    label_col = cfg.columns["sentiment_label"]
+    sql = (f"UPDATE `{cfg.table}` SET `{review_col}` = {int(flags.get('ai_success', 4))} "
+           f"WHERE `{review_col}` = {int(flags.get('ai_failed', 5))} "
+           f"AND `{label_col}` IS NOT NULL AND `{label_col}` <> ''")
+    with engine._pool.connection() as conn:
+        with conn.cursor() as cur:
+            changed = cur.execute(sql)
+        conn.commit()
+    return int(changed or 0)
 
 
 def _quote(value: str) -> str:
