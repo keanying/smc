@@ -71,6 +71,17 @@ class BackfillJob:
     cancel_requested: bool = False
     #: 被服务关闭 / 配置变更打断（不是人点的取消）：断点保留，重启后自动接着补
     interrupted: bool = False
+    #: 处理过、但标完还是没标签的（模型失败）。留在「AI 标注错误」里，下次补标再试
+    failed: int = 0
+    #: 按 id 往后翻页：last_id 是已经送过的最大 id，max_id 是开跑时未标注的最大 id。
+    #: 每条评论一轮只送一次——这一轮又失败的不会被再捞回来，模型挂着也不会死循环
+    last_id: int = 0
+    max_id: int = 0
+    #: 已经排干的批次累计条数，和当前这一批的 id 区间（算进度用）
+    processed: int = 0
+    batch_lo: int = 0
+    batch_hi: int = 0
+    batch_len: int = 0
 
     def touch(self) -> None:
         self.updated_at = time.time()
@@ -101,6 +112,7 @@ class BackfillJob:
             "eta_seconds": eta,
             "updated_at": self.updated_at,
             "cancel_requested": self.cancel_requested,
+            "failed": self.failed,
         }
 
 
@@ -362,8 +374,8 @@ class LabelingManager:
         ⚠️ 以前引擎是"懒启动"的——只有新的采集推数据进来才会拉起来。
         于是重启之后 Redis 队列里剩下的评论**一直躺着**，没有采集任务就永远不标。
 
-        从库里捞的只是「从没处理过」的（标注状态 0 / 空）。失败过的（5）
-        在失败池里走「重标」，不在这里反复重试——模型挂了的时候那样会死循环。
+        从库里捞的是所有没标签的，AI 标注错误(5) 的也在内；每条一轮只送一次，
+        模型挂着也只是这一轮失败，不会死循环。
         """
         if not self.enabled:
             return ""
@@ -513,6 +525,9 @@ class LabelingManager:
         库里剩几万条也只标这一批，用户得反复点——所以改成持续投喂。
 
         在后台任务里跑，接口立刻返回 job_id，前端轮询进度。
+
+        「未标注」只看有没有标签，**不看 label_review_flag**——那一列是 AI/人工的
+        复核意见。AI 标注错误(5) 的评论没有标签，也是未标注，一样要补。
         """
         if not await self.ensure_started():
             raise RuntimeError(self._start_error or "标注引擎不可用")
@@ -588,15 +603,15 @@ class LabelingManager:
     BACKFILL_BATCH = 200
 
     async def _run_backfill(self, job: BackfillJob, limit: int) -> None:
-        """分批捞、分批喂，直到库里没有未标注的为止。
+        """按 id 从小到大分批捞、分批喂，直到开跑时的未标注都送过一遍。
 
-        ⚠️ 每批之间必须**等队列排干**再捞下一批，这是正确性要求不是优化：
-        `fetch_unlabeled` 的条件是「sentiment_label 为空」+ LIMIT，
-        而"已提交但还没标完"的行**仍然满足这个条件**。不等排干就接着捞，
-        捞回来的还是刚才那批——同一条评论会被反复提交、反复调用模型、
-        反复花钱，而进度看着还在涨。
-        引擎的 is_idle() 覆盖了 pending / inflight / buffered 三样，
-        返回 True 时这批已经落库，条件自然不再命中，下一批就是新的。
+        ⚠️ 必须按 id 翻页，不能每次从头 LIMIT：标完还是失败的评论依旧没标签，
+        从头捞会把它们一遍遍捞回来——模型一挂，补标就在同一批上死循环、反复花钱。
+        翻页保证一轮里每条只送一次；失败的留着，下次补标再试。
+        上限是开跑时未标注的最大 id，之后新采的走边采边标的队列，不归这一轮。
+
+        每批之间等队列排干：一是这批标没标成要等落库才数得清（进度、失败数），
+        二是一次只压一批，取消能及时生效。
         """
         try:
             job.total = await asyncio.to_thread(self._count_unlabeled, job)
@@ -609,9 +624,8 @@ class LabelingManager:
             logger.info("[标注] 补标任务 %s 开始，共 %d 条待标注（每批 %d）",
                         job.job_id, job.total, self.BACKFILL_BATCH)
 
-            # ⚠️ 先等队列里**已有**的标完再捞。fetch_unlabeled 只看"有没有标签"，
-            #    还排在队列里的（边采边标推进来的、或重启前没跑完的）也满足条件——
-            #    不等的话同一条评论会被再提交一次，标两遍、花两遍钱。
+            # ⚠️ 先等队列里**已有**的标完再捞。还排在队列里的（边采边标推进来的、
+            #    或重启前没跑完的）也没标签，不等的话会被再提交一次，标两遍、花两遍钱。
             #    等不完也不算失败（比如被杀掉的进程留下的在途租约要等引擎回收），
             #    超时就照常往下走，最多是少数几条重复。
             backlog = self._queue_backlog()
@@ -635,13 +649,17 @@ class LabelingManager:
 
                 rows = await asyncio.to_thread(self._fetch_unlabeled, job, size)
                 if not rows:
-                    break                       # 捞完了，正常收工
+                    break                       # 都送过一遍了，正常收工
 
+                ids = [int(r.pop("id")) for r in rows if r.get("id") is not None]
+                job.batch_lo, job.batch_len = job.last_id, len(rows)
+                if ids:
+                    job.last_id = job.batch_hi = max(ids)
                 submitted = await asyncio.to_thread(self._engine.submit_many, rows)
                 job.submitted += submitted
                 job.batches += 1
                 if remaining_budget:
-                    remaining_budget -= submitted
+                    remaining_budget -= len(rows)
                 job.touch()
                 logger.info("[标注] 补标任务 %s 第 %d 批入队 %d 条（累计 %d/%d）",
                             job.job_id, job.batches, submitted,
@@ -657,14 +675,14 @@ class LabelingManager:
                                  f"看一眼 data/logs/labeling.log")
                     logger.error("[标注] 补标任务 %s %s", job.job_id, job.error)
                     return
+                await self._close_batch(job)
 
-            await self._refresh_progress(job)
             if job.status == "running":
                 job.status = "finished"
-            logger.info("[标注] 补标任务 %s %s：喂了 %d 条，完成 %d/%d",
+            logger.info("[标注] 补标任务 %s %s：喂了 %d 条，处理 %d/%d，仍失败 %d",
                         job.job_id,
                         "已取消" if job.status == "canceled" else "结束",
-                        job.submitted, job.done, job.total)
+                        job.submitted, job.done, job.total, job.failed)
         except Exception as exc:            # noqa: BLE001
             if job.interrupted or (job.cancel_requested and self._engine is None):
                 # stop()/reset() 抽走了引擎：预期内的中止，别报成失败
@@ -708,17 +726,33 @@ class LabelingManager:
         return False
 
     async def _refresh_progress(self, job: BackfillJob) -> None:
-        """进度以**库里还剩多少未标注**为准，不是以提交条数为准。
+        """进度 = 已排干批次的条数 + 当前这批里**已经有标签**的条数。
 
-        提交数只能说明"喂进去了"，喂进去之后失败的、被规则判成无效的，
-        都不该算完成。用回库数才经得起用户拿 SQL 对。
+        提交数只能说明"喂进去了"；以回库为准才经得起用户拿 SQL 对。
+        当前这批里又失败的要等这批排干才算进「已处理」（同时记一条失败）。
         """
         try:
-            left = await asyncio.to_thread(self._count_unlabeled, job)
-            job.done = max(0, job.total - left)
+            if job.batch_len:
+                left = await asyncio.to_thread(
+                    self._count_unlabeled, job, job.batch_lo, job.batch_hi)
+                job.done = job.processed + max(0, job.batch_len - left)
             job.queued = await asyncio.to_thread(self._queue_backlog)
         except Exception as exc:            # noqa: BLE001
             logger.debug("[标注] 刷新补标进度失败（忽略）：%s", exc)
+        job.touch()
+
+    async def _close_batch(self, job: BackfillJob) -> None:
+        """这批排干了：还没标签的就是这一轮标失败的，记下来，不再重试。"""
+        try:
+            left = await asyncio.to_thread(
+                self._count_unlabeled, job, job.batch_lo, job.batch_hi)
+        except Exception as exc:            # noqa: BLE001
+            logger.debug("[标注] 统计本批失败数失败（忽略）：%s", exc)
+            left = 0
+        job.failed += min(left, job.batch_len)
+        job.processed += job.batch_len
+        job.done = job.processed
+        job.batch_len = 0
         job.touch()
 
     def _queue_backlog(self) -> int:
@@ -729,50 +763,60 @@ class LabelingManager:
             return 0
 
     def _where(self, job: BackfillJob) -> str:
+        """景区/平台范围。⚠️ 不按 label_review_flag 过滤：那是 AI/人工的复核意见，
+        有没有标注只看标签——AI 标注错误(5) 的没标签，也要补。"""
         conds = []
-        # 只捞「从没处理过」的（标注状态在 pending_flags 里，默认 0，或为空）。
-        # ⚠️ 不加这条的话，失败过的（5）标签也是空的，会被一批一批反复捞回来：
-        #    模型一挂，补标就在同一批失败的评论上无限循环。失败的走失败池「重标」。
-        storage = getattr(getattr(getattr(self, "_engine", None), "cfg", None), "storage", None)
-        review_col = str(getattr(storage, "review_column", "") or "")
-        if review_col:
-            pending = [int(f) for f in (getattr(storage, "pending_flags", None) or [0])]
-            null_ok = f"`{review_col}` IS NULL OR " if 0 in pending else ""
-            conds.append(f"({null_ok}`{review_col}` IN ({', '.join(str(f) for f in pending)}))")
         if job.scenic_id:
             conds.append(f"scenic_id = {_quote(job.scenic_id)}")
         if job.channel:
             conds.append(f"channel = {_quote(job.channel)}")
         return " AND ".join(conds)
 
-    def _count_unlabeled(self, job: BackfillJob) -> int:
-        """还有多少条没标。
-
-        ⚠️ 条件必须和引擎的 fetch_unlabeled **完全一致**
-        （storage/repository.py：sentiment_label IS NULL OR = ''），
-        否则进度条会和实际捞到的行对不上——分母是一套口径、
-        分子是另一套，跑到最后卡在 97% 不动，看着像卡死了。
-        """
-        cfg = self._engine.cfg.storage
-        label_col = cfg.columns["sentiment_label"]
+    def _unlabeled_where(self, job: BackfillJob) -> str:
+        label_col = self._engine.cfg.storage.columns["sentiment_label"]
         where = f"(`{label_col}` IS NULL OR `{label_col}` = '')"
         extra = self._where(job)
-        if extra:
-            where += f" AND ({extra})"
-        sql = f"SELECT COUNT(*) AS c FROM `{cfg.table}` WHERE {where}"
+        return f"{where} AND ({extra})" if extra else where
+
+    def _count_unlabeled(self, job: BackfillJob, after_id: Optional[int] = None,
+                         upto_id: Optional[int] = None) -> int:
+        """还有多少条没标（可限定 id 区间 (after_id, upto_id]，算单批进度用）。
+
+        不带区间时是开跑那一下：顺手记下最大 id，作为这一轮翻页的上限。
+        """
+        table = self._engine.cfg.storage.table
+        where = self._unlabeled_where(job)
+        if after_id is not None and upto_id is not None:
+            where += f" AND `id` > {int(after_id)} AND `id` <= {int(upto_id)}"
+        sql = f"SELECT COUNT(*) AS c, COALESCE(MAX(`id`), 0) AS m FROM `{table}` WHERE {where}"
         with self._engine._pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql)
                 row = cur.fetchone()
-        if isinstance(row, dict):
-            return int(next(iter(row.values())) or 0)
-        return int((row or [0])[0] or 0)
+        count, max_id = ((row["c"], row["m"]) if isinstance(row, dict) else (row[0], row[1]))
+        if after_id is None:
+            job.max_id = int(max_id or 0)
+        return int(count or 0)
+
+    #: 送进引擎的字段，和引擎自己的 fetch_unlabeled 一致，多一个 id 用来翻页
+    _FETCH_COLUMNS = ("id", "scenic_id", "scenic_name", "channel", "work_id", "comment_id",
+                      "commenter_id", "content", "likes", "extra_content", "publish_time")
 
     def _fetch_unlabeled(self, job: BackfillJob, limit: int) -> List[Dict[str, Any]]:
-        """捞未标注的行。引擎的 fetch_unlabeled 支持 extra_where，
-        我们用它按景区/平台收口——补标通常是"先把这个景区补齐"。"""
-        return self._engine.repository.fetch_unlabeled(
-            limit=limit, extra_where=self._where(job))
+        """按 id 往后翻一页未标注的（id > last_id 且 ≤ 开跑时的 max_id）。"""
+        cols = ", ".join(f"`{c}`" for c in self._FETCH_COLUMNS)
+        where = self._unlabeled_where(job) + f" AND `id` > {int(job.last_id)}"
+        if job.max_id:
+            where += f" AND `id` <= {int(job.max_id)}"
+        sql = (f"SELECT {cols} FROM `{self._engine.cfg.storage.table}` "
+               f"WHERE {where} ORDER BY `id` LIMIT %s")
+        with self._engine._pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (int(limit),))
+                rows = cur.fetchall()
+        if rows and not isinstance(rows[0], dict):
+            rows = [dict(zip(self._FETCH_COLUMNS, r)) for r in rows]
+        return list(rows)
 
     # ------------------------------------------------------------------ 状态
     async def status(self) -> Dict[str, Any]:

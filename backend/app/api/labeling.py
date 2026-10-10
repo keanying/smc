@@ -197,13 +197,17 @@ async def start_backfill(payload: dict = Body(default={}),
 
     后台跑，立刻返回 job_id；前端轮询 /backfill/{job_id} 看进度。
     几千条要跑十几分钟，同步等会把请求打超时。
+
+    「未标注」只看有没有标签：AI 标注错误(5) 的没标签，也一起补。
+    不传 limit = 不设上限，一直标到没有为止（以前这里默认 1000，
+    页面以为是"全部"，实际标完 1000 条就停了）。
     """
     manager = get_manager(state.config)
     try:
         job = await manager.start_backfill(
             scenic_id=str(payload.get("scenic_id") or ""),
             channel=str(payload.get("channel") or ""),
-            limit=int(payload.get("limit") or 1000))
+            limit=int(payload.get("limit") or 0))
     except Exception as exc:  # noqa: BLE001
         raise bad_request(str(exc))
     return ok(job.to_dict(), f"补标任务已启动（{job.job_id}）")

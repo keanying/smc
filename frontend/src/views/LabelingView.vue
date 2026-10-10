@@ -29,7 +29,7 @@
             <template v-else-if="!status.enabled">
               采集时不会自动标注。到「系统设置 → 标注」里打开；历史数据用「一键补标」补。
             </template>
-            <template v-else>采集时自动标注；历史未标注的数据可用「一键补标」补。</template>
+            <template v-else>采集时自动标注；没有标签的（含 AI 标注错误）用「一键补标」补。</template>
           </InfoTip>
         </template>
       </h2>
@@ -151,7 +151,11 @@
         />
 
         <div class="job-nums">
-          <span><b>{{ job.done }}</b> / {{ job.total }} 已标完写回</span>
+          <span><b>{{ job.done }}</b> / {{ job.total }} 已处理</span>
+          <template v-if="job.failed">
+            <span class="sep">·</span>
+            <span class="job-failed">仍失败 <b>{{ job.failed }}</b> 条</span>
+          </template>
           <span class="sep">·</span>
           <span>已喂入队列 <b>{{ job.submitted }}</b> 条</span>
           <span class="sep">·</span>
@@ -412,8 +416,12 @@ let timer: number | undefined
 const jobTitle = computed(() => {
   if (!job.value) return ''
   const j = job.value
-  if (j.status === 'running') return `正在补标「${jobScope(j)}」的历史未标注评论`
-  if (j.status === 'finished') return `「${jobScope(j)}」补标完成，共标了 ${j.done} 条`
+  if (j.status === 'running') return `正在补标「${jobScope(j)}」的未标注评论`
+  if (j.status === 'finished') {
+    return j.failed
+      ? `「${jobScope(j)}」补标结束：处理 ${j.done} 条，${j.failed} 条仍失败（留在「AI标注错误」，下次补标再试）`
+      : `「${jobScope(j)}」补标完成，共标了 ${j.done} 条`
+  }
   if (j.status === 'canceled') return `已停止，这一轮标了 ${j.done} 条`
   if (j.status === 'failed') return '补标失败'
   return j.status
@@ -450,12 +458,14 @@ async function startBackfill() {
   const scope = query.scenic_id
     ? (scenics.value.find((s) => s.scenic_id === query.scenic_id)?.scenic_name || query.scenic_id)
     : '全部景区'
+  const unlabeled = stats.value?.unlabeled || 0
+  const failed = stats.value?.ai_failed || 0
   try {
     await ElMessageBox.confirm(
       `将对「${scope}」${query.channel ? `（${CHANNEL_LABELS[query.channel]}）` : ''}` +
-      `下的**全部**未标注评论调用大模型补标` +
-      (stats.value?.unlabeled ? `（当前未标注 ${stats.value.unlabeled} 条）` : '') +
-      `。每条一次调用，会产生费用；会一直标到没有为止，中途可以点「停止」。`,
+      `下没有标签的评论调用大模型补标` +
+      (unlabeled ? `（当前未标注 ${unlabeled} 条` + (failed ? `，AI 标注错误的也在内` : '') + '）' : '') +
+      `。每条一次调用，会产生费用；每条只送一次，仍失败的下次补标再试，中途可以点「停止」。`,
       '确认补标', { type: 'warning', confirmButtonText: '开始补标' },
     )
   } catch { return }
@@ -466,6 +476,7 @@ async function startBackfill() {
     job.value = await labelingApi.backfill({
       scenic_id: query.scenic_id, channel: query.channel,
     })
+    loadStats().catch(() => {})
     pollJob()
   } finally {
     backfilling.value = false
@@ -650,6 +661,7 @@ onUnmounted(() => window.clearInterval(timer))
 .header-actions { display: flex; gap: 8px; }
 .header-actions .el-button + .el-button { margin-left: 0; }
 .btn-icon { margin-right: 6px; }
+.job-failed { color: var(--el-color-danger); }
 .dialog-title { display: inline-flex; align-items: center; }
 
 .head-card :deep(.el-card__body) { padding: 16px 20px !important; }
