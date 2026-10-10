@@ -46,14 +46,14 @@ llm:
   #   extra_body: {"reasoning": {"effort": "minimal"}}
   extra_body: {}
   # 单次 HTTP 超时（连接秒, 读取秒）
-  connect_timeout: 5
-  read_timeout: 60
+  connect_timeout: 15
+  read_timeout: 300
   # 失败重试：仅对超时、5xx、429、以及输出无法解析的情况重试
   max_retries: 3
   retry_backoff_base: 1.0      # 指数退避基数（秒），第 n 次等待 base * 2^(n-1) + 抖动
   retry_backoff_max: 20.0
   # 全局限流：每秒最多发起多少次模型调用（令牌桶），0 表示不限流
-  rate_limit_qps: ${ARK_QPS:8}
+  rate_limit_qps: ${ARK_QPS:5}
   # 调用粒度：single = 一条评论一次请求（准确率优先）
   strategy: single
   # 是否在提示词中携带少样本示例。
