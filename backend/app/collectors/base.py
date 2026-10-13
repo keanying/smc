@@ -32,6 +32,28 @@ logger = get_logger(__name__)
 # 统一数据模型
 # ===================================================================
 
+#: hit_keywords / hit_aux_keywords 列宽
+HIT_WORDS_MAX_LEN = 1000
+
+
+def merge_words(*values: Any, max_len: int = HIT_WORDS_MAX_LEN) -> str:
+    """把几串逗号分隔的词合并去重（保持先后顺序），超长就丢掉后面的词而不是截半个词。"""
+    out: List[str] = []
+    for value in values:
+        items = value if isinstance(value, (list, tuple, set)) else str(value or "").split(",")
+        for word in items:
+            word = str(word or "").strip()
+            if word and word not in out:
+                out.append(word)
+    text = ""
+    for word in out:
+        candidate = f"{text},{word}" if text else word
+        if len(candidate) > max_len:
+            break
+        text = candidate
+    return text
+
+
 @dataclass
 class WorkItem:
     """社交媒体作品（作品/帖子/笔记）。字段与 src_opinion_social_work_di 表一一对应。"""
@@ -56,6 +78,10 @@ class WorkItem:
     crawl_time: Optional[datetime] = None
     extra_content: Optional[str] = None
     source_keyword: str = ""
+    #: 因为哪些关键字收录的（逗号分隔）：主关键字 = 搜到它的搜索词，
+    #: 附关键字 = 标题/描述/标签里出现的景区附关键字
+    hit_keywords: str = ""
+    hit_aux_keywords: str = ""
     task_id: str = ""
 
     def finalize(self) -> "WorkItem":
@@ -68,6 +94,8 @@ class WorkItem:
         self.scenic_name = nz.truncate(self.scenic_name, 100)
         self.location = nz.truncate(nz.clean_location(self.location), 50)
         self.source_keyword = nz.truncate(self.source_keyword, 200)
+        self.hit_keywords = merge_words(self.hit_keywords)
+        self.hit_aux_keywords = merge_words(self.hit_aux_keywords)
         self.task_id = nz.truncate(self.task_id, 64)
         self.crawl_time = self.crawl_time or datetime.now()
         return self

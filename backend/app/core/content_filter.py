@@ -161,6 +161,19 @@ class ContentFilter:
         lowered = (text or "").lower()
         return any(word.lower() in lowered for word in words)
 
+    def hits(self, text: str, search_keyword: str) -> "tuple[List[str], List[str]]":
+        """这条作品是因为哪些词收录的：(主关键字, 附关键字)。
+
+        主关键字就是搜到它的那个搜索词——就算正文里没出现（过滤关了、
+        或者是靠附关键字留下的），它也是"因为搜这个词才收录"的。
+        附关键字只记正文（标题/描述/标签）里真的出现了的。
+        """
+        main = [search_keyword] if search_keyword else []
+        lowered = (text or "").lower()
+        aux = [w for w in self.extra_keywords
+               if w and w != search_keyword and w.lower() in lowered]
+        return main, aux
+
     def blocked_by(self, text: str) -> str:
         """命中了哪个过滤关键字（返回那个词）；没命中返回空串。
 

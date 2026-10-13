@@ -26,6 +26,7 @@ from ..collectors.base import (
     LoginRequired,
     TaskCancelled,
     WorkItem,
+    merge_words,
 )
 from ..core.config import Config
 from ..core import collect_params, content_filter, search_filters
@@ -688,6 +689,13 @@ class TaskRunner:
                 (self.config.crawl or {}).get("refresh_existing_comments", False)
             ),
         )
+        if scenic_id:
+            try:
+                buffer.deleted = await self.data.deleted_work_keys(scenic_id, channel)
+                if buffer.deleted:
+                    log.info(f"数据中心里人工删除过的作品 {len(buffer.deleted)} 条，再搜到会直接跳过")
+            except Exception as exc:  # noqa: BLE001
+                log.warn(f"读取已删除作品失败（{exc}），本轮不跳过")
         try:
             collect_type = task.get("collect_type", "keyword")
             if channel in CHANNELS_POI_BASED or collect_type == "poi":
@@ -918,6 +926,7 @@ class TaskRunner:
         duplicated = 0
         keyword_missed = 0
         excluded = 0
+        deleted_skipped = 0
         collected_today = 0
         async for work in collector.collect_by_keyword(ctx, keyword):
             # 关键字匹配过滤：作品的标题/描述/标签里必须包含搜索关键字，
@@ -997,6 +1006,17 @@ class TaskRunner:
                 continue
 
             work.source_keyword = keyword
+            # 记下这条是因为哪些词收录的，数据中心里显示在标题右侧
+            rules = ctx.content_rules or content_filter.ContentFilter()
+            main_hits, aux_hits = rules.hits(_work_text(work), keyword)
+            work.hit_keywords = ",".join(main_hits)
+            work.hit_aux_keywords = ",".join(aux_hits)
+            # 人工删除过的（复核觉得不相关）不再收录
+            if buffer.is_deleted(work):
+                deleted_skipped += 1
+                if deleted_skipped <= 5:
+                    log.info(f"[已删除] 跳过《{(work.title or '')[:24]}》（数据中心里人工删除过）")
+                continue
             # ⚠️ 作品水印：命中就**整条跳过**，连评论都不翻。
             # 这是省时间的大头——一条作品的评论在拟人模式下要十几秒。
             # 用 claim_work（SETNX）而不是先查后写：两个任务同时跑同一个
@@ -1067,6 +1087,8 @@ class TaskRunner:
         if excluded:
             tail += (f"，{excluded} 条命中「过滤关键字」被丢弃"
                      f"（误伤了就去景区的「过滤关键字」里删词）")
+        if deleted_skipped:
+            tail += f"，{deleted_skipped} 条在数据中心里人工删除过，未再收录"
         if duplicated:
             tail += f"，{duplicated} 条与前面的关键字重复（未重复入库、也没重复采评论）"
         if collected_today:
@@ -1133,6 +1155,9 @@ class TaskRunner:
                 if filters.older_than_window(work.publish_time):
                     log.info("已翻过时间范围下界，该主页提前结束")
                     break
+                continue
+            if buffer.is_deleted(work):
+                log.info(f"[已删除] 跳过《{(work.title or '')[:24]}》（数据中心里人工删除过）")
                 continue
             fresh = await buffer.add_work(work)
             count += 1
@@ -1347,6 +1372,10 @@ class _Buffer:
         #: 本次任务已经处理过的 work_uk / comment_uk
         self.seen_works: set = set()
         self.seen_comments: set = set()
+        #: 数据中心里人工删除过的作品（work_uk），采到也不收录
+        self.deleted: set = set()
+        #: 本次任务里又被别的关键字搜到的作品：只合并命中关键字，不重写整行
+        self.hit_merges: List[WorkItem] = []
         #: 因为重复而跳过的条数，跑完在日志里报出来
         self.dup_works = 0
         self.dup_comments = 0
@@ -1361,11 +1390,25 @@ class _Buffer:
         key = work_uk(item.scenic_id, item.channel, item.work_id)
         if key in self.seen_works:
             self.dup_works += 1
+            # 第二个关键字也搜到了它：作品和评论都不重来，但「也是因为这个词收录的」要记上
+            if item.hit_keywords or item.hit_aux_keywords:
+                pending = next((w for w in self.works
+                                if work_uk(w.scenic_id, w.channel, w.work_id) == key), None)
+                if pending is not None:
+                    pending.hit_keywords = merge_words(pending.hit_keywords, item.hit_keywords)
+                    pending.hit_aux_keywords = merge_words(pending.hit_aux_keywords,
+                                                           item.hit_aux_keywords)
+                else:
+                    self.hit_merges.append(item)
             return False
         self.seen_works.add(key)
         self.works.append(item)
         await self._flush_if_due()
         return True
+
+    def is_deleted(self, work: WorkItem) -> bool:
+        return bool(self.deleted) and \
+            work_uk(work.scenic_id, work.channel, work.work_id) in self.deleted
 
     async def add_comment(self, comment: CommentItem) -> bool:
         """返回 False 表示这条评论本次任务里已经收过了。"""
@@ -1449,6 +1492,11 @@ class _Buffer:
             self.stats["new_works"] += new
             self.stats["updated_works"] += updated
             self.works.clear()
+        if self.hit_merges:
+            merged = await self.data.merge_work_hits(self.hit_merges)
+            if merged:
+                self.log.info(f"[存储] {merged} 条作品又被别的关键字搜到，已补记命中关键字")
+            self.hit_merges.clear()
         if self.comments:
             channels = sorted({c.channel for c in self.comments})
             by_work: Dict[str, int] = {}

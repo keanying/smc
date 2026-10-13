@@ -53,12 +53,15 @@ def _drop_test_db() -> None:
         import pymysql
         import yaml
 
-        cfg = yaml.safe_load((PROJECT_ROOT / "config" / "config.yaml")
-                             .read_text(encoding="utf-8"))
-        m = cfg["mysql"]
-        conn = pymysql.connect(host=m["host"], port=int(m["port"]),
-                               user=os.getenv("SMC_MYSQL_USER") or m["user"],
-                               password=os.getenv("SMC_MYSQL_PASSWORD") or m["password"])
+        # 没有 config.yaml（新检出、CI）时用环境变量，和服务本身取配置的顺序一致
+        cfg_path = PROJECT_ROOT / "config" / "config.yaml"
+        cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) if cfg_path.exists() else {}
+        m = (cfg or {}).get("mysql") or {}
+        conn = pymysql.connect(
+            host=os.getenv("SMC_MYSQL_HOST") or m.get("host") or "127.0.0.1",
+            port=int(os.getenv("SMC_MYSQL_PORT") or m.get("port") or 3306),
+            user=os.getenv("SMC_MYSQL_USER") or m.get("user") or "root",
+            password=os.getenv("SMC_MYSQL_PASSWORD") or m.get("password") or "")
         try:
             with conn.cursor() as cur:
                 cur.execute(f"DROP DATABASE IF EXISTS `{TEST_DB}`")
@@ -313,10 +316,9 @@ async def test_new_task_page_switches_to_per_channel_counts(server, page_factory
     # 微博是两层：作品数 + 每作品评论数
     assert "每关键字作品数" in weibo_panel, weibo_panel
     assert "每作品评论数" in weibo_panel, weibo_panel
-    assert "作品 + 作品下的评论两层" in weibo_panel, weibo_panel
-    # 携程只有一层
+    # 携程只有一层（说明文字收进了 ⓘ 图标的悬浮提示里，这里只看表单项）
     assert "采集点评数" in ctrip_panel, ctrip_panel
-    assert "只有景区点评一层" in ctrip_panel, ctrip_panel
+    assert "每作品评论数" not in ctrip_panel, ctrip_panel
 
 
 @pytest.mark.asyncio
@@ -555,7 +557,8 @@ async def test_account_cookie_dialog_imports_and_reports_state(server, page_fact
         await page.goto(f"{server}/#/accounts", wait_until="networkidle")
         await page.wait_for_timeout(900)
 
-        await page.get_by_role("button", name="Cookie", exact=True).first.click()
+        # 操作列是图标按钮，名字在 aria-label（就是鼠标悬停的提示）
+        await page.get_by_role("button", name="查看 / 导入 Cookie", exact=True).first.click()
         await page.wait_for_timeout(900)
 
         dialog = page.locator(".el-dialog")

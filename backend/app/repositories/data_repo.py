@@ -14,10 +14,11 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from ..collectors.base import AuthorItem, CommentItem, WorkItem
+from ..collectors.base import AuthorItem, CommentItem, WorkItem, merge_words
 from ..core.db import Database
 from ..core.constants import ALL_CHANNELS
 from ..core.logging import get_logger
+from ..utils import normalize as nz
 from ..db import tables
 
 logger = get_logger(__name__)
@@ -29,13 +30,15 @@ WORK_COLUMNS = [
     "author_id", "author_name", "title", "description", "label",
     "image_list", "video_list", "likes", "collection_cnt", "comment_cnt",
     "shares", "location", "publish_time", "crawl_time",
-    "extra_content", "source_keyword", "task_id",
+    "extra_content", "source_keyword", "hit_keywords", "hit_aux_keywords", "task_id",
 ]
-# 重复命中时要刷新的列：计数类和内容类会变，创建来源不覆盖
+# 重复命中时要刷新的列：计数类和内容类会变，创建来源不覆盖。
+# 命中关键字写的是**和库里已有的合并后**的值（见 save_works），不会被后来的关键字盖掉
 WORK_UPDATE_COLUMNS = [
     "scenic_name", "work_url", "author_id", "author_name", "title", "description",
     "label", "image_list", "video_list", "likes", "collection_cnt", "comment_cnt",
     "shares", "location", "publish_time", "crawl_time", "extra_content",
+    "hit_keywords", "hit_aux_keywords",
 ]
 
 COMMENT_COLUMNS = [
@@ -107,7 +110,8 @@ WORK_LIST_COLUMNS = (
     "id, scenic_id, scenic_name, channel, work_id, work_url, "
     "author_id, author_name, title, description, "
     "image_list, video_list, likes, collection_cnt, comment_cnt, shares, "
-    "location, publish_time, crawl_time, source_keyword, task_id, "
+    "location, publish_time, crawl_time, source_keyword, hit_keywords, hit_aux_keywords, "
+    "task_id, "
     "(channel IN ('ctrip', 'tongcheng')) AS is_synthetic"
 )
 
@@ -128,7 +132,12 @@ class DataRepository:
 
         for chunk in _chunks(items, BATCH_SIZE):
             keys = [work_uk(i.scenic_id, i.channel, i.work_id) for i in chunk]
-            existing = await self._existing_keys(tables.WORKS, "work_uk", keys)
+            existing = await self._existing_hits(keys)
+            for key, item in zip(keys, chunk):
+                if key in existing:
+                    old_main, old_aux = existing[key]
+                    item.hit_keywords = merge_words(old_main, item.hit_keywords)
+                    item.hit_aux_keywords = merge_words(old_aux, item.hit_aux_keywords)
             rows = [[getattr(item, column) for column in WORK_COLUMNS] for item in chunk]
             await self.db.execute_many(sql, rows)
             new_count = sum(1 for key in keys if key not in existing)
@@ -136,6 +145,83 @@ class DataRepository:
             total_updated += len(chunk) - new_count
 
         return total_new, total_updated
+
+    async def _existing_hits(self, keys: Sequence[str]) -> Dict[str, Tuple[str, str]]:
+        """库里已有的作品 → (主关键字, 附关键字)。不在库里的不出现在结果里。"""
+        if not keys:
+            return {}
+        placeholders = ", ".join(["%s"] * len(keys))
+        rows = await self.db.fetch_all(
+            f"SELECT work_uk, hit_keywords, hit_aux_keywords FROM `{tables.WORKS}` "
+            f"WHERE work_uk IN ({placeholders})", list(keys))
+        return {r["work_uk"]: (r.get("hit_keywords") or "", r.get("hit_aux_keywords") or "")
+                for r in rows}
+
+    async def merge_work_hits(self, items: Sequence[WorkItem]) -> int:
+        """只合并命中关键字，别的列不动。
+
+        同一次任务里第二个关键字又搜到了这条作品：作品不用再写一遍，
+        评论也不用再翻，但「它也是因为这个词收录的」要记上。
+        """
+        merged: Dict[str, Tuple[str, str]] = {}
+        for item in items:
+            key = work_uk(item.scenic_id, item.channel, item.work_id)
+            main, aux = merged.get(key, ("", ""))
+            merged[key] = (merge_words(main, item.hit_keywords),
+                           merge_words(aux, item.hit_aux_keywords))
+        existing = await self._existing_hits(list(merged))
+        rows = []
+        for key, (main, aux) in merged.items():
+            if key not in existing:
+                continue
+            old_main, old_aux = existing[key]
+            new_main, new_aux = merge_words(old_main, main), merge_words(old_aux, aux)
+            if (new_main, new_aux) != (old_main, old_aux):
+                rows.append((new_main, new_aux, key))
+        if rows:
+            await self.db.execute_many(
+                f"UPDATE `{tables.WORKS}` SET hit_keywords = %s, hit_aux_keywords = %s "
+                f"WHERE work_uk = %s", rows)
+        return len(rows)
+
+    # ---------------- 删除 ----------------
+    async def delete_work(self, work_pk: int) -> Optional[Dict[str, Any]]:
+        """删除一条作品和它下面的全部评论，并记进「已删除」表。
+
+        ⚠️ 必须记下来：不记的话下一轮采集又会搜到它、原样加回来，
+        人工复核删掉的东西等于白删。之后采集遇到它直接跳过。
+        返回被删作品的摘要（含删掉的评论数）；作品不存在返回 None。
+        """
+        work = await self.db.fetch_one(
+            f"SELECT id, scenic_id, channel, work_id, title, description, work_uk "
+            f"FROM `{tables.WORKS}` WHERE id = %s", [int(work_pk)])
+        if work is None:
+            return None
+        where = "scenic_id = %s AND channel = %s AND work_id = %s"
+        args = [work["scenic_id"], work["channel"], work["work_id"]]
+        async with self.db.transaction() as cur:
+            comments = await cur.execute(f"DELETE FROM `{tables.COMMENTS}` WHERE {where}", args)
+            await cur.execute(f"DELETE FROM `{tables.WORKS}` WHERE id = %s", [int(work_pk)])
+            await cur.execute(
+                f"INSERT INTO `{tables.DELETED_WORK}` "
+                f"(work_uk, scenic_id, channel, work_id, title, comment_cnt) "
+                f"VALUES (%s, %s, %s, %s, %s, %s) "
+                f"ON DUPLICATE KEY UPDATE title = VALUES(title), "
+                f"comment_cnt = VALUES(comment_cnt), deleted_at = NOW()",
+                [work["work_uk"], work["scenic_id"], work["channel"], work["work_id"],
+                 nz.truncate(work.get("title") or work.get("description") or "", 600),
+                 int(comments or 0)])
+        self._overview_cache = None
+        return {"id": int(work["id"]), "scenic_id": work["scenic_id"],
+                "channel": work["channel"], "work_id": work["work_id"],
+                "comments_deleted": int(comments or 0)}
+
+    async def deleted_work_keys(self, scenic_id: str, channel: str) -> set:
+        """这个景区 + 平台下人工删除过的作品（work_uk），采集时跳过。"""
+        rows = await self.db.fetch_all(
+            f"SELECT work_uk FROM `{tables.DELETED_WORK}` WHERE scenic_id = %s AND channel = %s",
+            [scenic_id, channel])
+        return {r["work_uk"] for r in rows}
 
     async def save_comments(
         self, items: Sequence[CommentItem], *, skip_existing: bool = True
