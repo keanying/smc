@@ -7,8 +7,9 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
-from .common import ok
+from .common import bad_request, not_found, ok
 from .deps import AppState, get_state
+from ..core.constants import CHANNELS_POI_BASED
 from ..db import tables
 
 router = APIRouter(prefix="/api/data", tags=["数据中心"])
@@ -52,6 +53,26 @@ async def list_works(
         include_synthetic=include_synthetic, page=page, page_size=page_size,
         order_by=order_by, order=order,
     ))
+
+
+@router.delete("/works/{work_pk}")
+async def delete_work(work_pk: int, state: AppState = Depends(get_state)):
+    """删除一条作品，连同它下面的全部评论。
+
+    复核觉得不相关就删。删掉的会记下来，之后的采集再搜到它直接跳过，
+    不会被下一轮又加回来。携程/同程/去哪儿的"作品"是景区点评的挂载点，
+    删它等于删掉整个景区的点评，不允许从这里删。
+    """
+    row = await state.db.fetch_one(
+        f"SELECT channel FROM `{tables.WORKS}` WHERE id = %s", [work_pk])
+    if row is None:
+        raise not_found("作品不存在（可能已经删过了）")
+    if row["channel"] in CHANNELS_POI_BASED:
+        raise bad_request("携程/同程/去哪儿的这一条是景区点评的集合，不能整条删除")
+    result = await state.data.delete_work(work_pk)
+    if result is None:
+        raise not_found("作品不存在（可能已经删过了）")
+    return ok(result, f"已删除作品及其 {result['comments_deleted']} 条评论")
 
 
 @router.get("/comments")

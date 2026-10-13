@@ -29,6 +29,18 @@ def event_loop():
     loop.close()
 
 
+@pytest.fixture(autouse=True)
+def _current_event_loop(event_loop):
+    """每条用例开始前把会话循环设回"当前循环"。
+
+    不少同步用例里直接 `asyncio.run(...)`——它跑完会把当前事件循环置空，
+    排在它后面的异步用例和 `asyncio.get_event_loop()` 就会报
+    「There is no current event loop」，跟用例本身对不对没关系。
+    """
+    asyncio.set_event_loop(event_loop)
+    yield
+
+
 @pytest.fixture()
 def config():
     from app.core.config import load_config

@@ -169,6 +169,10 @@ export interface Work {
   publish_time?: string | null
   crawl_time?: string | null
   source_keyword: string
+  /** 因为哪些主关键字收录的（搜到它的搜索词），逗号分隔 */
+  hit_keywords?: string
+  /** 标题/描述/标签里出现的附关键字，逗号分隔 */
+  hit_aux_keywords?: string
   /** 后端在 SQL 里算好的"是不是携程/同程的合成作品"。
    *  列表接口不再返回 extra_content（几十 KB 的原始 JSON），只给这个布尔。 */
   is_synthetic?: boolean
@@ -487,6 +491,9 @@ export const liveApi = {
 export const dataApi = {
   overview: () => api.get<OverviewRow[]>('/api/data/overview'),
   works: (params: Record<string, unknown>) => api.get<Paged<Work>>('/api/data/works', params),
+  /** 删除作品，连同它的全部评论；之后的采集不会再把它加回来 */
+  removeWork: (id: number) =>
+    api.del<{ comments_deleted: number }>(`/api/data/works/${id}`),
   comments: (params: Record<string, unknown>) => api.get<Paged<Comment>>('/api/data/comments', params),
   thread: (channel: string, workId: string, rootCommentId: string) =>
     api.get<Comment[]>('/api/data/comments/thread', {

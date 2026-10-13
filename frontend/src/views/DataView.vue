@@ -126,12 +126,35 @@
 
         <div class="work-main">
           <div class="work-title">
-            <span>{{ row.title || row.description || '（无标题）' }}</span>
+            <span class="work-title-text">{{ row.title || row.description || '（无标题）' }}</span>
             <el-tooltip v-if="row.work_url" content="打开原帖" placement="top" :show-after="200">
               <a class="work-link" :href="row.work_url" target="_blank" rel="noopener">
                 <AppIcon name="view" :size="15" />
               </a>
             </el-tooltip>
+            <div class="work-actions">
+              <div v-if="mainHits(row).length || auxHits(row).length" class="work-hits">
+                <span class="hit-label">关键字</span>
+                <el-tooltip v-for="w in mainHits(row)" :key="`m-${w}`"
+                            content="主关键字：搜这个词搜到的" placement="top" :show-after="300">
+                  <span class="hit hit-main">{{ w }}</span>
+                </el-tooltip>
+                <el-tooltip v-for="w in auxHits(row)" :key="`a-${w}`"
+                            content="附关键字：标题/描述/标签里出现了" placement="top" :show-after="300">
+                  <span class="hit hit-aux">{{ w }}</span>
+                </el-tooltip>
+              </div>
+              <el-popconfirm
+                v-if="canDelete(row)"
+                title="删除这条作品和已采到的评论？之后的采集不会再收录它。"
+                width="300" confirm-button-type="danger" confirm-button-text="删除"
+                @confirm="removeWork(row)"
+              >
+                <template #reference>
+                  <span><IconAction icon="delete" tip="删除作品（连同评论）" :loading="deletingId === row.id" /></span>
+                </template>
+              </el-popconfirm>
+            </div>
           </div>
 
           <div v-if="isSynthetic(row)" class="muted work-note">
@@ -148,7 +171,6 @@
             <span class="meta-author">{{ row.author_name || row.author_id || '未知作者' }}</span>
             <span>{{ formatTime(row.publish_time) }}</span>
             <span v-if="row.location">{{ row.location }}</span>
-            <span v-if="row.source_keyword" class="meta-kw">#{{ row.source_keyword }}</span>
           </div>
 
           <div class="work-stats">
@@ -191,6 +213,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ArrowDown, ArrowUp, Search } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import {
   dataApi, scenicApi,
   type ChannelOption, type OverviewRow, type ScenicOption, type Work,
@@ -281,6 +304,42 @@ function isSynthetic(row: Work): boolean {
   // 列表接口不再返回 extra_content —— 那是个几十 KB 的原始 JSON，
   // 为了一个布尔把它拉过来，整页要多几 MB。
   return row.is_synthetic === true
+}
+
+/** 逗号分隔的词 → 数组 */
+function splitWords(raw?: string | null): string[] {
+  return (raw || '').split(',').map((w) => w.trim()).filter(Boolean)
+}
+
+/** 主关键字。老数据没有 hit_keywords，退回到入库时记的那个搜索词 */
+function mainHits(row: Work): string[] {
+  const words = splitWords(row.hit_keywords)
+  return words.length ? words : splitWords(row.source_keyword)
+}
+
+function auxHits(row: Work): string[] {
+  const main = new Set(mainHits(row))
+  return splitWords(row.hit_aux_keywords).filter((w) => !main.has(w))
+}
+
+/** 携程/同程/去哪儿那一条是景区点评的挂载点，删它等于删整个景区的点评 */
+const POI_CHANNELS = new Set(['ctrip', 'tongcheng', 'qunar'])
+function canDelete(row: Work): boolean {
+  return !isSynthetic(row) && !POI_CHANNELS.has(row.channel)
+}
+
+const deletingId = ref<number | null>(null)
+async function removeWork(row: Work) {
+  deletingId.value = row.id
+  try {
+    const res = await dataApi.removeWork(row.id)
+    works.value = works.value.filter((w) => w.id !== row.id)
+    worksTotal.value = Math.max(0, worksTotal.value - 1)
+    ElMessage.success(`已删除作品及其 ${res?.comments_deleted ?? 0} 条评论`)
+    loadOverview().catch(() => {})
+  } finally {
+    deletingId.value = null
+  }
 }
 
 async function loadOverview() {
@@ -642,6 +701,54 @@ onMounted(async () => {
   word-break: break-word;
 }
 
+.work-title-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 命中关键字 + 删除：贴在标题最右侧 */
+.work-actions {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  max-width: 46%;
+}
+
+.work-hits {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  font-weight: 400;
+}
+
+.hit-label {
+  font-size: 12px;
+  color: var(--smc-text-secondary);
+}
+
+.hit {
+  font-size: 12px;
+  line-height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.hit-main {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+
+.hit-aux {
+  color: var(--el-text-color-regular);
+  background: var(--el-fill-color-light);
+}
+
 .work-link {
   flex: 0 0 auto;
   display: inline-flex;
@@ -695,9 +802,6 @@ onMounted(async () => {
   font-weight: 500;
 }
 
-.meta-kw {
-  color: var(--el-color-primary);
-}
 
 .work-stats {
   display: flex;

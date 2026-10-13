@@ -302,6 +302,8 @@ CREATE TABLE IF NOT EXISTS `src_opinion_social_work_di` (
   -- 以下为需求字段之外的工程补充列
   `extra_content`  LONGTEXT         NULL DEFAULT NULL COMMENT '平台特有字段，JSON（避免原始信息丢失）',
   `source_keyword` VARCHAR(200) NOT NULL DEFAULT ''   COMMENT '命中的搜索关键字，空=非关键字来源',
+  `hit_keywords`   VARCHAR(1000) NOT NULL DEFAULT ''  COMMENT '命中的主关键字（搜到它的搜索词），逗号分隔',
+  `hit_aux_keywords` VARCHAR(1000) NOT NULL DEFAULT '' COMMENT '命中的附关键字（标题/描述/标签里出现的），逗号分隔',
   `task_id`        VARCHAR(64)  NOT NULL DEFAULT ''   COMMENT '产生该条记录的任务',
   `create_time`    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time`    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -327,6 +329,20 @@ CREATE TABLE IF NOT EXISTS `src_opinion_social_work_di` (
   -- idx_works_scenic_channel 不含 author_id，要回表；带上它才是覆盖索引。
   KEY `idx_works_scenic_author` (`scenic_id`, `channel`, `author_id`(191))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='社媒平台作品';
+
+-- 人工删除过的作品。数据中心里删掉一条（复核觉得不相关），作品和评论一起删；
+-- 这里留一条记录，之后的采集再搜到它直接跳过，不会被下一轮又加回来。
+CREATE TABLE IF NOT EXISTS `src_opinion_social_work_deleted` (
+  `work_uk`     CHAR(32)     NOT NULL                COMMENT '与作品表 work_uk 同算法：MD5(scenic_id 0x1F channel 0x1F work_id)',
+  `scenic_id`   VARCHAR(100) NOT NULL DEFAULT ''     COMMENT '景区ID',
+  `channel`     VARCHAR(20)  NOT NULL DEFAULT ''     COMMENT '平台',
+  `work_id`     VARCHAR(600) NOT NULL DEFAULT ''     COMMENT '作品ID',
+  `title`       VARCHAR(600) NOT NULL DEFAULT ''     COMMENT '删除时的标题，方便追溯',
+  `comment_cnt` INT          NOT NULL DEFAULT 0      COMMENT '一起删掉的评论条数',
+  `deleted_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '删除时间',
+  PRIMARY KEY (`work_uk`),
+  KEY `idx_deleted_scenic_channel` (`scenic_id`, `channel`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='人工删除的作品（采集时跳过）';
 
 CREATE TABLE IF NOT EXISTS `src_opinion_social_work_comment_di` (
   `id`                BIGINT       NOT NULL AUTO_INCREMENT,

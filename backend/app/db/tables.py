@@ -60,6 +60,8 @@ AUTHORS = "src_opinion_social_authors"
 WORKS = "src_opinion_social_work_di"
 #: 社媒平台评论
 COMMENTS = "src_opinion_social_work_comment_di"
+#: 人工删除过的作品：之后再采到直接跳过，不会被下一轮采集加回来
+DELETED_WORK = "src_opinion_social_work_deleted"
 #: 系统设置
 SETTING = "src_opinion_sys_setting"
 #: 景区采集任务
@@ -128,6 +130,11 @@ EXTRA_COLUMNS = [
     # 恢复时又撞上冷却、再排一次，也保留最初的位置，不会被后来的任务插队。
     (TASK, "queued_at",
      "DATETIME NULL DEFAULT NULL COMMENT '进入等待队列的时间（先来先跑），跑完清空'"),
+    # 这条作品是因为哪些关键字收录的。多个关键字搜到同一条作品时合并，不覆盖
+    (WORKS, "hit_keywords",
+     "VARCHAR(1000) NOT NULL DEFAULT '' COMMENT '命中的主关键字（搜到它的搜索词），逗号分隔'"),
+    (WORKS, "hit_aux_keywords",
+     "VARCHAR(1000) NOT NULL DEFAULT '' COMMENT '命中的附关键字（标题/描述/标签里出现的），逗号分隔'"),
 ]
 
 #: 后加的索引：(表名, 索引名, 索引定义)

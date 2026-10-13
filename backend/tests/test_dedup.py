@@ -43,6 +43,10 @@ class _StubRepo:
     async def save_authors(self, items):
         return len(items)
 
+    async def merge_work_hits(self, items):
+        self.merged_hits = getattr(self, "merged_hits", []) + list(items)
+        return len(items)
+
     def invalidate_overview_cache(self):
         pass
 
