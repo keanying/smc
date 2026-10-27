@@ -22,6 +22,8 @@ OVERRIDABLE_SECTIONS = (
     "labeling",
     # 通知：飞书机器人地址、远程登录信息、开关
     "notify",
+    # 指标计算总开关（打开后菜单里出现「指标计算」页；其余配置在那个页面上维护）
+    "metrics",
 )
 
 

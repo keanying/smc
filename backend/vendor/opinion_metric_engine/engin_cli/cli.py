@@ -1,0 +1,914 @@
+# -*- coding: utf-8 -*-
+"""命令行入口（opinion_metric_engine · 舆情指标引擎）。
+
+  # 跑昨天（默认）
+  python -m engin_cli.cli run
+
+  # 跑指定一天 / 一段区间
+  python -m engin_cli.cli run --date 20260901
+  python -m engin_cli.cli run --start-date 20260801 --end-date 20260901
+
+  # 只算不写库（先看 CSV）
+  python -m engin_cli.cli run --date 20260901 --skip-db
+
+  # 只跑某几个景区
+  python -m engin_cli.cli run --date 20260901 --scenic PFTSCA01002434,PFT_S_00001
+
+  # 离线跑：直接喂两张源表的 CSV，不连库
+  python -m engin_cli.cli run --date 20260901 \
+      --comments-csv sample/comments.csv --works-csv sample/works.csv --skip-db
+
+  # 跑批后按规则文档打印一份看板取数结果（肉眼验收）
+  python -m engin_cli.cli report --scenic PFTSCA01002434 --date 20260901 --period week
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import sys
+import time
+from dataclasses import replace
+from typing import List, Optional
+
+import pandas as pd
+
+from .analytics import (dimension_trend, kpi_cards, negative_surge, overall_score,
+                        platform_distribution, top_dimensions, trend_stacked, wordcloud)
+from .db import MySQL
+from .loader import (TABLE_CONTENT, TABLE_CORE, TABLE_DIMENSION,
+                     TABLE_DRILL_ANALYSIS, TABLE_MACRO, TABLE_PLATFORM)
+from .pipeline import run as run_pipeline
+from .progress import push_progress_factory
+from .repair import (CORE_SCORE_FIELDS, DIM_SCORE_FIELDS, repair_core,
+                     repair_dimension)
+from .settings import load_settings
+from .source import fetch_comments_csv, fetch_scenic_keywords_csv, fetch_works_csv
+
+
+def _setup_log(level: str):
+    logging.basicConfig(
+        level=getattr(logging, str(level).upper(), logging.INFO),
+        format="%(asctime)s %(levelname)-7s %(name)s | %(message)s",
+        datefmt="%H:%M:%S")
+
+
+def _date_range(start: str, end: str) -> List[str]:
+    lo = pd.to_datetime(str(start), format="%Y%m%d")
+    hi = pd.to_datetime(str(end), format="%Y%m%d")
+    if lo > hi:
+        raise SystemExit(f"开始日期 {start} 晚于结束日期 {end}")
+    return [d.strftime("%Y%m%d") for d in pd.date_range(lo, hi, freq="D")]
+
+
+def _explicit_dates(args) -> Optional[List[str]]:
+    """命令行写了日期就返回日期清单，一个都没写返回 None。
+
+    下面几种写法等价，都是「只跑/只推这一天」：
+        --date 20260916
+        --start-date 20260916 --end-date 20260916
+        --start-date 20260916            （只写开始 = 只跑那一天）
+        --end-date 20260916              （只写结束 = 只跑那一天）
+    """
+    date = getattr(args, "date", None)
+    start = getattr(args, "start_date", None)
+    end = getattr(args, "end_date", None)
+    if date:
+        return _date_range(date, date)
+    if start or end:
+        return _date_range(start or end, end or start)
+    return None
+
+
+def _with_rerun(dates: List[str], rerun_days: int) -> List[str]:
+    """目标日期再往前加 rerun_days 天（settings.rerun_days）：前几天晚到的评论一起重算、重写库、重推。"""
+    n = int(rerun_days or 0)
+    if n <= 0 or not dates:
+        return list(dates)
+    first = (pd.to_datetime(min(dates), format="%Y%m%d") - pd.Timedelta(days=n)).strftime("%Y%m%d")
+    return sorted(set(dates) | set(_date_range(first, min(dates))))
+
+
+def _dates(args) -> List[str]:
+    """run 的目标日期。什么都不写 = 昨天（当天评论还在陆续产生，跑当天会偏低）。"""
+    return _explicit_dates(args) or [
+        (pd.Timestamp.now().normalize() - pd.Timedelta(days=1)).strftime("%Y%m%d")]
+
+
+def _parse_scenic(text: Optional[str]) -> Optional[List[str]]:
+    """--scenic "A,B" → ["A", "B"]（去空格、去重、保持顺序）；不写 / all → None（= 全部景区）。"""
+    text = (text or "").strip()
+    if not text or text.lower() == "all":
+        return None
+    out = []
+    for part in text.split(","):
+        part = part.strip()
+        if part and part not in out:
+            out.append(part)
+    return out or None
+
+
+def _print_pk_warning(r) -> None:
+    """pkId 有重复 / 空值：照常发送，但把提示和请求 JSON 打出来，方便拿去下游对照。"""
+    if not getattr(r, "warning", ""):
+        return
+    print(f"    ⚠ {r.warning}")
+    if r.pk_sample:
+        print("    其中一组 pkId 相同的行，请求 JSON 如下（可直接拿去推送复现）：")
+        print(f"    {r.pk_sample}")
+    if r.pk_dump:
+        print(f"    全部 pkId 有问题的行（同样的请求格式）已写到：{r.pk_dump}")
+
+
+def _parse_lookback(text: str):
+    """解析 --backfill-lookback。
+
+    "5"               → 5：所有周期统一往前找 5 天
+    "1:5,7:10,30:20"  → {1: 5, 7: 10, 30: 20}：按窗口分档，没写的档用 domain.BACKFILL_LOOKBACK
+    """
+    if str(text).strip().isdigit():
+        return int(str(text).strip())
+    out = {}
+    for part in str(text).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if ":" not in part:
+            raise SystemExit(f"--backfill-lookback 格式错误：{part!r}，应形如 5 或 7:10")
+        w, d = part.split(":", 1)
+        out[int(w)] = int(d)
+    return out
+
+
+def cmd_run(args) -> int:
+    """按景区逐个跑：每个景区算完、落库、推送，再跑下一个。
+
+    一个景区失败不影响其他景区（--fail-fast 除外），最后打印汇总。
+    CSV 写在 <output_dir>/<景区编码>/ 下，push 子命令按这个目录补推。
+    """
+    st = load_settings()
+    if args.lookback_days:
+        st.lookback_days = int(args.lookback_days)
+    if args.output_dir:
+        st.output_dir = args.output_dir
+    # 写不写库只看命令行：不加 --skip-db 就一定写库（客户要求），
+    # settings_local.py 里的 "write_db" 对 run 命令不起作用，免得配置里关了却以为写进去了。
+    st.write_db = not args.skip_db
+    st.write_csv = bool(st.write_csv) and not args.skip_csv
+    st.dry_run = bool(args.dry_run)
+    if args.no_backfill:
+        st.backfill_mode = "off"
+    if args.backfill_lookback:
+        st.backfill_lookback = _parse_lookback(args.backfill_lookback)
+    if args.no_drill_analysis:
+        st.enable_drill_analysis = False
+    if args.drill_keyword_filter:
+        st.drill_keyword_filter = True
+    if args.no_drill_keyword_filter:
+        st.drill_keyword_filter = False
+    if args.no_macro:
+        st.enable_macro_metric = False
+    _apply_push_args(st, args)
+    _setup_log(args.log_level or st.log_level)
+
+    # 要推送却没配地址：一个景区都不跑，直接退出 —— 跑完才发现推不出去白算一场
+    if st.push_enabled and not st.push_url and not st.push_dry_run:
+        print("未配置推送地址：在 settings_local.py 里填 push_url，"
+              "或设环境变量 OPINION_PUSH_URL，或用 --push-url 传入")
+        return 2
+
+    dates = _dates(args)
+    rerun = st.rerun_days if getattr(args, "rerun_days", None) is None else args.rerun_days
+    asked = dates
+    dates = _with_rerun(dates, rerun)
+    comments_df = fetch_comments_csv(args.comments_csv) if args.comments_csv else None
+    works_df = fetch_works_csv(args.works_csv) if args.works_csv else None
+    drill_keywords = None
+    if args.drill_keywords_csv:
+        drill_keywords = fetch_scenic_keywords_csv(args.drill_keywords_csv)
+
+    db = None
+    if comments_df is None or st.write_db:
+        db = MySQL(st.db)
+    if st.drill_keyword_filter and st.enable_drill_analysis and db is None \
+            and drill_keywords is None:
+        print("开启了下钻表采集关键字过滤（--drill-keyword-filter），但没有连数据库："
+              "用 --drill-keywords-csv 给关键字（scenic_id, word 两列），或去掉 --skip-db")
+        return 2
+
+    from . import __version__
+    from .pipeline import compute_load_range
+    from .source import list_scenic_codes
+    t0 = time.time()
+    summary = []
+    try:
+        scenics = _parse_scenic(args.scenic)
+        if scenics is None:
+            # 不指定 = 取数区间内有评论的全部景区
+            if comments_df is not None:
+                scenics = sorted(comments_df["scenic_id"].astype(str).str.strip().unique())
+            else:
+                lo, hi = compute_load_range(dates, st)
+                scenics = sorted(list_scenic_codes(db, lo, hi))
+        if not scenics:
+            print(f"取数区间内没有任何景区的评论（目标日期 {dates[0]} ~ {dates[-1]}）")
+            return 1
+
+        print("=" * 72)
+        print(f"engin_cli v{__version__}   目标日期 {dates[0]} ~ {dates[-1]}   "
+              f"景区 {len(scenics)} 个"
+              + (f"   推送 → {st.push_url}" if st.push_enabled else ""))
+        if len(dates) > len(asked):
+            print(f"（含往前重跑 {len(dates) - len(asked)} 天：评论会晚到，前几天的数据一起刷新；"
+                  f"--rerun-days 0 可关闭）")
+        if st.drill_keyword_filter and st.enable_drill_analysis:
+            print("下钻表：只写入原文包含本景区采集关键字的评论"
+                  "（src_opinion_scenic_keyword ∪ src_opinion_scenic_filter_word）")
+        print("=" * 72)
+        for i, sc in enumerate(scenics, 1):
+            print(f"\n[{i}/{len(scenics)}] 景区 {sc}")
+            ok, line = _run_one_scenic(st, sc, dates, db, comments_df, works_df,
+                                       verbose=bool(args.verbose),
+                                       no_progress=bool(args.no_progress),
+                                       drill_keywords=drill_keywords)
+            summary.append((sc, ok, line))
+            if not ok and args.fail_fast:
+                print("  --fail-fast：停止，后面的景区不再跑")
+                break
+    finally:
+        if db is not None:
+            db.close()
+
+    print("\n汇总" + f"（用时 {time.time() - t0:.1f}s）")
+    for sc, ok, line in summary:
+        print(f"  {sc:<24} {'✓' if ok else '✗'}  {line}")
+    stopped = len(summary) < len(scenics)
+    return 0 if all(ok for _, ok, _ in summary) and not stopped else 1
+
+
+def _run_one_scenic(st, scenic: str, dates: List[str], db, comments_df, works_df,
+                    verbose: bool = False, no_progress: bool = False,
+                    drill_keywords=None) -> tuple:
+    """跑一个景区。返回 (是否成功, 汇总行文字)。"""
+    s1 = replace(st, output_dir=os.path.join(st.output_dir, scenic))
+    c = w = None
+    if comments_df is not None:
+        c = comments_df[comments_df["scenic_id"].astype(str).str.strip() == scenic]
+    if works_df is not None and "scenic_id" in works_df.columns:
+        w = works_df[works_df["scenic_id"].astype(str).str.strip() == scenic]
+    try:
+        res = run_pipeline(s1, dates, scenic_codes=[scenic], db=db,
+                           comments_df=c, works_df=w,
+                           push_progress=None if no_progress else push_progress_factory(),
+                           drill_keywords=drill_keywords)
+    except Exception as e:                      # noqa: BLE001 —— 一个景区炸了不拖累其他景区
+        logging.getLogger(__name__).exception("景区 %s 跑批异常", scenic)
+        print(f"  ✗ 异常：{e}")
+        return False, f"异常：{e}"
+
+    for t, df in res.tables.items():
+        print(f"  {t:<52} {len(df):>9,} 行")
+    if verbose:
+        for n in res.notes:
+            print(f"  · {n}")
+    for r in res.load_results:
+        print(f"  写入 {r.table:<48} {r.rows:>8,} 行  [{r.strategy}]"
+              + (f"  清理 {r.deleted} 行" if r.deleted else ""))
+    push_note = ""
+    if res.push is not None:
+        for r in res.push.results:
+            if r.skipped and not r.error:
+                continue
+            print(f"  推送 {r.table:<48} {r.rows:>8,} 行  [{r.batches} 批 {r.elapsed:.1f}s]"
+                  + ("" if r.ok else f"  ✗ {r.error}"))
+            _print_pk_warning(r)
+        for n in res.notes:
+            if (n.startswith("推送成功，已删除本地 CSV") or n.startswith("推送响应记录：")) \
+                    and not verbose:
+                print(f"  {n}")
+        push_note = "推送 ✓" if res.push.ok else f"推送 ✗（{len(res.push.errors)} 张表失败，可用 push 补推）"
+        if any(r.unreachable for r in res.push.results):
+            # 地址连不上 / 证书校验失败，后面的景区推也是白等：只算、只落库，事后用 push 补推
+            st.push_enabled = False
+            if any(r.cert_error for r in res.push.results):
+                push_note = "推送 ✗（对方 HTTPS 证书校验失败，后面的景区不再推送，修好后用 push 补推）"
+                print(f"  ✗ {st.push_url} 的 HTTPS 证书校验失败，后面的景区只计算、落库，不再推送。\n"
+                      "    证书过期 / 证书链不完整要找对方运维；也检查本机时间和根证书是否太旧")
+            else:
+                push_note = "推送 ✗（地址连不上或没有响应，后面的景区不再推送，修好后用 push 补推）"
+                print(f"  ✗ 推送地址连不上或没有响应：{st.push_url}，后面的景区只计算、落库，不再推送")
+    if res.errors:
+        for e in res.errors:
+            print(f"  ✗ {e}")
+        return False, "；".join(res.errors[:2]) + (f" 等 {len(res.errors)} 项" if len(res.errors) > 2 else "")
+    print(f"  校验通过 ✓  用时 {res.elapsed:.1f}s")
+    return True, push_note
+
+
+def cmd_report(args) -> int:
+    """从已产出的 CSV 里按规则文档打印一份看板取数结果。"""
+    st = load_settings()
+    _setup_log(args.log_level or st.log_level)
+    d = args.output_dir or st.output_dir
+
+    def _load(name):
+        p = os.path.join(d, f"{name}.csv")
+        if not os.path.exists(p):
+            print(f"缺少 {p}，请先跑 run")
+            sys.exit(2)
+        return pd.read_csv(p, dtype={"travel_date": str})
+
+    core, plat = _load(TABLE_CORE), _load(TABLE_PLATFORM)
+    dim, content = _load(TABLE_DIMENSION), _load(TABLE_CONTENT)
+
+    scenic = args.scenic or core["scenic_spot_code"].iloc[0]
+    anchor = args.date or core[core.scenic_spot_code == scenic]["travel_date"].max()
+    period = args.period
+
+    print("=" * 72)
+    print(f"[{scenic}] 锚点 {anchor}  周期「{period}」")
+    print("=" * 72)
+
+    k = kpi_cards(core, scenic, anchor, period)
+    if k:
+        print("\n■ 核心数值卡")
+        print(f"   评论总数 {k['评论总数']['值']:>8,}   环比 {k['评论总数']['环比']:+.1%}")
+        print(f"   好 评 率 {k['好评率']['值']:>8.1%}   环比 {k['好评率']['环比']:+.1%}")
+        print(f"   差 评 率 {k['差评率']['值']:>8.1%}   环比 {k['差评率']['环比']:+.1%}")
+
+    s = overall_score(core, scenic, anchor, period)
+    if s:
+        print("\n■ 游客总体评分")
+        print(f"   周期得分 {s['周期得分']}   上期 {s['上期得分']}   "
+              f"环比 {'—' if s['环比'] is None else format(s['环比'], '+.1%')}")
+        tops = top_dimensions(dim, scenic, anchor, period)
+        print("   维度好评 TOP3: " + "  ".join(f"{n}={v}" for n, v in tops))
+
+    t = trend_stacked(core, scenic, anchor, period).tail(5)
+    if not t.empty:
+        print("\n■ 评论量趋势图（末 5 天）")
+        for _, r in t.iterrows():
+            print(f"   {r.travel_date}  正面 {int(r.正面):>6,}  中性 {int(r.中性):>6,}  "
+                  f"负面 {int(r.负面):>6,}")
+
+    dt = dimension_trend(dim, scenic, anchor, period)
+    if not dt.empty:
+        print("\n■ 维度评分（末日快照）")
+        for kk, vv in dt.iloc[-1].sort_values(ascending=False).items():
+            print(f"   {kk:<8} {vv:.4f}")
+
+    p = platform_distribution(plat, scenic, anchor, period)
+    if not p.empty:
+        print("\n■ 平台评论分布")
+        for _, r in p.iterrows():
+            print(f"   {str(r.platform_name):<6} 评论 {int(r.评论总量):>8,}  "
+                  f"占比 {r.评论占比:>6.1%}  好评占比 {r.好评占比:>6.1%}  "
+                  f"环比 {r.好评环比:+.1%}")
+
+    print("\n■ 关键词云 TOP8")
+    for emo, lbl in (("positive", "正面"), ("neutral", "中性"), ("negative", "负面")):
+        w = wordcloud(content, scenic, anchor, period, emo, 8)
+        if not w.empty:
+            print(f"   {lbl}: " + " ".join(f"{r.emotion_word}({int(r.出现次数)})"
+                                           for _, r in w.iterrows()))
+
+    sg = negative_surge(content, scenic, anchor, period)
+    if not sg.empty:
+        print("\n■ 负面突增词 TOP10（较上一周期）")
+        for _, r in sg.iterrows():
+            rate = "新增" if r.突增率 == float("inf") else f"{r.突增率:+.0%}"
+            print(f"   {r.emotion_word:<14} 本期 {int(r.本期):>7,}  上期 {int(r.上期):>7,}  "
+                  f"突增 {int(r.突增量):>+7,}  ({rate})")
+    return 0
+
+
+def cmd_repair(args) -> int:
+    """按新口径重刷历史分数（只改 emotional_score / dimension_N_score）。"""
+    st = load_settings()
+    _setup_log(args.log_level or st.log_level)
+    scenic = [x.strip() for x in args.scenic.split(",")] if args.scenic else None
+    tables = [t.strip() for t in (args.tables or "core,dimension").split(",") if t.strip()]
+    formula = args.formula or st.score_formula
+
+    print("=" * 72)
+    print(f"历史分数修正  {args.start_date} ~ {args.end_date}  口径={formula}"
+          + ("   [dry-run 只看不改]" if args.dry_run else ""))
+    print(f"只更新：core {len(CORE_SCORE_FIELDS)} 列 / dimension {len(DIM_SCORE_FIELDS)} 列，"
+          f"其余字段一律不动")
+    print("=" * 72)
+
+    db = MySQL(st.db)
+    results = []
+    try:
+        if "core" in tables:
+            results.append(repair_core(db, args.start_date, args.end_date, scenic,
+                                       formula=formula, dry_run=args.dry_run,
+                                       batch_size=st.batch_size, settings=st))
+        if "dimension" in tables:
+            # 维度表回源重算：按渠道补齐明细后再滚动，不依赖 core 表
+            results.append(repair_dimension(
+                db, args.start_date, args.end_date, scenic, formula=formula,
+                dry_run=args.dry_run, batch_size=st.batch_size,
+                lookback_days=st.lookback_days,
+                unknown_dimension_policy=st.unknown_dimension_policy,
+                settings=st))
+    finally:
+        db.close()
+
+    for r in results:
+        print(f"\n■ {r.table}")
+        print(f"   区间内 {r.scanned:,} 行，其中 {r.changed:,} 行分数有变化，"
+              f"最大变化 {r.max_delta:.4f} 分")
+        print(f"   实际写回 {r.updated:,} 行" + ("（dry-run 未写库）" if args.dry_run else ""))
+        if r.note:
+            print(f"   注：{r.note}")
+        if not r.preview.empty and args.show_preview:
+            # 新旧值必须成对显示 —— 只打 _old 等于什么都没说
+            n_field = 3 if len(r.fields) > 3 else len(r.fields)
+            view = r.preview[r.keys].copy()
+            for fld in r.fields[:n_field]:
+                old, new = r.preview[f"{fld}_old"].astype(float), r.preview[f"{fld}_new"].astype(float)
+                view[f"{fld}|旧"] = old.round(4)
+                view[f"{fld}|新"] = new.round(4)
+                view[f"{fld}|Δ"] = (new - old).round(4)
+            print(f"   前 10 行新旧对比（只列前 {n_field} 个字段，共 {len(r.fields)} 个）：")
+            print(view.head(10).to_string(index=False))
+    return 0
+
+
+# 表名简写 → 完整表名。`--push core,platform` 比敲一长串好使。
+TABLE_ALIAS = {
+    "core": TABLE_CORE,
+    "platform": TABLE_PLATFORM,
+    "dimension": TABLE_DIMENSION,
+    "dim": TABLE_DIMENSION,
+    "content": TABLE_CONTENT,
+    "word": TABLE_CONTENT,
+    "drill": TABLE_DRILL_ANALYSIS,
+    "macro": TABLE_MACRO,
+    "kpi": TABLE_MACRO,
+}
+
+
+def _resolve_tables(text: str) -> Optional[List[str]]:
+    """解析表名清单，认简写也认全名。"all" / 空 → None（= 全部）。
+
+    入参形如 "core,platform" 或 "all" 或完整表名
+    出参：完整表名列表；None 表示不限制
+    """
+    text = (text or "").strip()
+    if not text or text.lower() == "all":
+        return None
+    out, bad = [], []
+    for part in text.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        full = TABLE_ALIAS.get(part.lower(), part)
+        if full in TABLE_ALIAS.values():
+            if full not in out:
+                out.append(full)
+        else:
+            bad.append(part)
+    if bad:
+        raise SystemExit(
+            f"不认识的表名：{', '.join(bad)}\n"
+            f"可用简写：{', '.join(sorted(set(TABLE_ALIAS)))}，或写完整表名，或用 all 表示全部")
+    return out or None
+
+
+# 测试与旧代码里叫这个名字
+_parse_tables = _resolve_tables
+
+
+def _apply_push_args(st, args) -> None:
+    """把命令行的推送开关盖到配置上。--no-push 优先于 --push。"""
+    push = getattr(args, "push", None)
+    if push is not None:
+        # --push 不带值 → const="all"；--push core,platform → 只推这几张
+        st.push_enabled = True
+        st.push_tables = _resolve_tables(push)
+    if getattr(args, "no_push", False):
+        st.push_enabled = False
+    if getattr(args, "push_url", None):
+        st.push_url = args.push_url
+        st.push_enabled = True
+    if getattr(args, "push_dry_run", False):
+        st.push_dry_run = True
+        st.push_enabled = True
+    if getattr(args, "push_strict", False):
+        st.push_strict = True
+    if getattr(args, "keep_local", False):
+        st.push_cleanup_local = False
+
+
+# 补推读 CSV 时，这些列一律按字符串读：它们进了 pkId（下游的查重键），
+# 读成数字会变成 1.0 / 丢前导 0，跟跑批直推的键对不上，下游就多出重复行。
+_STR_COLS = ["scenic_spot_code", "scenic_spot_name", "scenic_id", "scenic_name",
+             "platform_code", "platform_name", "channel", "channel_name",
+             "time_granularity", "publish_time", "emotion_word", "emotion_type",
+             "dimension_level1", "dimension_level2", "dimension_level3",
+             "detail_uk", "work_id", "comment_id", "root_comment_id"]
+
+
+def _read_output_csv(path: str) -> pd.DataFrame:
+    """读跑批产出的 CSV，类型与跑批直推时一致：
+    travel_date 是整数、空串还是空串（不变成 NaN/null）、上面那些键列是字符串。"""
+    df = pd.read_csv(path, dtype={c: str for c in _STR_COLS},
+                     keep_default_na=False, na_values=[], encoding="utf-8-sig")
+    if "travel_date" in df.columns:
+        df["travel_date"] = pd.to_numeric(df["travel_date"]).astype("int64")
+    return df
+
+
+def _push_sources(base: str, scenics: Optional[List[str]]) -> List[tuple]:
+    """找要补推的 CSV：[(景区或 None, 目录)]。
+
+    新布局：<output_dir>/<景区>/<表>.csv（run 按景区写）。
+    兼容老布局：<output_dir>/<表>.csv（老版本 run 平铺写），按景区列过滤。
+
+    **同一个景区只推一份**：景区自己的子目录优先；平铺目录只用来补「没有子目录的景区」，
+    否则新老两份 CSV 都在时，同一个景区会被推两遍（还可能是新旧两版数据）。
+    返回 [(景区或 None, 目录, 平铺目录里要排除的景区集合)]
+    """
+    known = set(TABLE_ALIAS.values())
+
+    def _has_tables(d):
+        return os.path.isdir(d) and any(f"{t}.csv" in os.listdir(d) for t in known)
+
+    out = []
+    if os.path.isdir(base):
+        subs = sorted(d for d in os.listdir(base) if _has_tables(os.path.join(base, d)))
+        for sc in subs:
+            if scenics is None or sc in scenics:
+                out.append((sc, os.path.join(base, sc), set()))
+        if _has_tables(base):
+            # 指定的景区都已经有子目录了，就不再看平铺目录
+            if scenics is None or not set(scenics) <= set(subs):
+                out.append((None, base, set(subs)))
+    return out
+
+
+def _cleanup_pushed_rows(sc: str, results, origins: dict) -> None:
+    """补推成功后，把推过的行从本地 CSV 里删掉：整份都推了就删文件，只推了一部分就留下没推的行。"""
+    for r in results:
+        if r.skipped or not r.ok or (sc, r.table) not in origins:
+            continue
+        path, full, pushed = origins[(sc, r.table)]
+        rest = full.drop(index=pushed)
+        try:
+            if rest.empty:
+                os.remove(path)
+                print(f"  已删除本地 {path}（已全部推送）")
+                d = os.path.dirname(path)
+                if d and os.path.isdir(d) and not os.listdir(d):
+                    os.rmdir(d)
+            else:
+                rest.to_csv(path, index=False, encoding="utf-8-sig")
+                print(f"  已从本地 {path} 删掉推过的 {len(pushed):,} 行，剩 {len(rest):,} 行未推送")
+        except OSError as e:                     # 删不掉（被 Excel 打开等）不影响推送结果
+            print(f"  ⚠ 清理本地 {path} 失败：{e}")
+
+
+def _mask_headers(headers: dict) -> dict:
+    """预览时把令牌打码：只露前 6 位。"""
+    out = {}
+    for k, v in (headers or {}).items():
+        v = str(v)
+        out[k] = v[:6] + "***" if len(v) > 6 else "***"
+    return out
+
+
+def cmd_push(args) -> int:
+    """把已产出的 CSV 推给下游 —— 跑批当时推失败了用它补推，不必重算。
+
+    可按景区、日期、表过滤；--preview 只打印每张表第一批报文，不发送。
+    """
+    from .loader import scenic_key
+    from .pusher import DEFAULT_PUSH_PK, _table_config, build_payload, diagnose, push_all
+
+    st = load_settings()
+    _apply_push_args(st, args)
+    st.push_enabled = True
+    _setup_log(args.log_level or st.log_level)
+    preview = bool(args.preview) or bool(args.preview_rows)
+    if not st.push_url and not preview and not st.push_dry_run:
+        print("未配置推送地址：在 settings_local.py 里填 push_url，"
+              "或设环境变量 OPINION_PUSH_URL，或用 --push-url 传入")
+        return 2
+
+    base = args.output_dir or st.output_dir
+    names = _resolve_tables(args.tables) or list(DEFAULT_PUSH_PK)
+    scenics = _parse_scenic(args.scenic)
+    dates = _explicit_dates(args)
+    date_set = {int(d) for d in dates} if dates else None
+
+    sources = _push_sources(base, scenics)
+    batches = []                         # [(景区, {表: df})]
+    origins = {}                         # (景区, 表) → (CSV 路径, 文件全部行, 这次推的行号)
+    for sc, d, skip in sources:
+        tables = {}
+        for name in names:
+            path = os.path.join(d, f"{name}.csv")
+            if not os.path.exists(path):
+                continue
+            full = _read_output_csv(path)
+            df = full
+            key = scenic_key(name)
+            if scenics is not None and key in df.columns:
+                df = df[df[key].isin(scenics)]
+            if skip and key in df.columns:
+                df = df[~df[key].isin(skip)]          # 已经从景区子目录推过的，平铺目录里不再推
+            if date_set is not None and "travel_date" in df.columns:
+                df = df[df["travel_date"].isin(date_set)]
+            if not df.empty:
+                tables[name] = df.reset_index(drop=True)
+                origins[(sc or "（平铺目录）", name)] = (path, full, df.index)
+        if tables:
+            batches.append((sc or "（平铺目录）", tables))
+
+    if not batches:
+        what = [f"表 {', '.join(names)}"]
+        if scenics:
+            what.append(f"景区 {', '.join(scenics)}")
+        if dates:
+            what.append(f"日期 {dates[0]}~{dates[-1]}")
+        print(f"{base} 下没有可推送的数据（{'，'.join(what)}）。"
+              f"\n先用 run 跑出 CSV（写在 {base}/<景区编码>/ 下），再补推。")
+        return 2
+
+    if args.diagnose:
+        # 用一行真实数据（优先 core 表）一步步排查：域名解析 / 代理 / 逐个地址 / 报文差异
+        sc, tables = batches[0]
+        name = TABLE_CORE if TABLE_CORE in tables else next(iter(tables))
+        cfg = _table_config(name, st)
+        body = build_payload(name, tables[name].head(1), cfg["pk"],
+                             body_fields=st.push_body_fields, table_name=cfg["name"],
+                             extra=st.push_extra_fields)
+        print("=" * 72)
+        print(f"推送诊断（景区 {sc}，只发 1 行，不影响其他数据）")
+        print("=" * 72)
+        res = diagnose(st.push_url, st.push_headers or {}, body,
+                       timeout=min(float(st.push_timeout), 15.0))
+        return 0 if res.get("actual") else 1
+
+    if preview:
+        n = int(args.preview_rows or 2)
+        print("=" * 72)
+        print(f"报文预览（不发送）→ {st.push_url or '（未配置 push_url）'}")
+        print(f"请求头：{json.dumps(_mask_headers(st.push_headers), ensure_ascii=False)}")
+        print("=" * 72)
+        for sc, tables in batches:
+            for name, df in tables.items():
+                cfg = _table_config(name, st)
+                body = build_payload(name, df.head(n), cfg["pk"],
+                                     body_fields=st.push_body_fields, table_name=cfg["name"],
+                                     extra=st.push_extra_fields)
+                size = max(int(st.push_batch_size), 1)
+                print(f"\n# {sc} · {name}：{len(df):,} 行，"
+                      f"{(len(df) + size - 1) // size} 批；第一批前 {min(n, len(df))} 行：")
+                print(json.dumps(body, ensure_ascii=False, indent=2))
+        return 0
+
+    print("=" * 72)
+    print(f"补推 {len(batches)} 个景区 → {st.push_url}"
+          + ("   [dry-run 只组报文不发送]" if st.push_dry_run else ""))
+    print(f"每批 {st.push_batch_size} 行，超时 {st.push_timeout:g}s，失败重试 {st.push_retries} 次")
+    print("=" * 72, flush=True)
+    factory = None if args.no_progress else push_progress_factory()
+    failed = []
+    for sc, tables in batches:
+        print(f"\n景区 {sc}", flush=True)
+        rep = push_all(tables, settings=st, progress_factory=factory)
+        for n in rep.notes():
+            if n.startswith("推送响应记录："):
+                print(f"  {n}")
+        for r in rep.results:
+            if factory is None or r.skipped:     # 有进度条时每张表已经打过结果行了
+                print(f"  {r.table:<52} {r.rows:>8,} 行  [{r.batches} 批 {r.elapsed:.1f}s]"
+                      + ("" if r.ok else f"  ✗ {r.error}"))
+            _print_pk_warning(r)
+        if st.push_cleanup_local and not st.push_dry_run:
+            _cleanup_pushed_rows(sc, rep.results, origins)
+        failed += [f"{sc} · {e}" for e in rep.errors]
+        if any(r.cert_error for r in rep.results):
+            print(f"\n✗ {st.push_url} 的 HTTPS 证书校验失败，重试没有用：\n"
+                  "  · 证书过期 / 证书链不完整：请对方运维续签或修正证书\n"
+                  "  · 浏览器访问正常、只有这台机器报错：检查本机时间（date），"
+                  "以及根证书是否太旧（更新 ca-certificates）\n"
+                  "  后面的景区不再推送，修好后重新执行这条 push 补推。")
+            return 1
+        if any(r.unreachable for r in rep.results):
+            print(f"\n✗ 推送地址连不上或没有响应：{st.push_url}\n"
+                  "  · 连不上：确认地址是否正确（settings_local.py 的 push_url / 环境变量 OPINION_PUSH_URL），"
+                  "以及对方服务是否已启动\n"
+                  f"  · 没有响应（超时）：对方服务连得上但卡住了，请查看对方服务的日志；"
+                  f"也可以调小 push_timeout（当前 {st.push_timeout:g}s）让它更快放弃\n"
+                  "  后面的景区不再推送。")
+            return 1
+    if failed:
+        print("\n推送未全部成功：")
+        for e in failed:
+            print(f"  ✗ {e}")
+        return 1
+    print("\n推送完成 ✓")
+    return 0
+
+
+def cmd_mock(args) -> int:
+    """造演示数据：把一个景区在本地 ADS 库里的结果复制给新景区编号，推给下游（不写本地库）。"""
+    from .mock import build_mock
+    from .pusher import DEFAULT_PUSH_PK, _table_config, build_payload, push_all
+
+    st = load_settings()
+    _apply_push_args(st, args)
+    _setup_log(args.log_level or st.log_level)
+    dates = _explicit_dates(args)
+    if not dates:
+        print("要指定日期：--date yyyyMMdd，或 --start-date / --end-date")
+        return 2
+    preview = bool(args.preview)
+    if not st.push_url and not preview and not st.push_dry_run:
+        print("未配置推送地址：在 settings_local.py 里填 push_url，"
+              "或设环境变量 OPINION_PUSH_URL，或用 --push-url 传入")
+        return 2
+    names = _resolve_tables(args.tables) or list(DEFAULT_PUSH_PK)
+
+    db = MySQL(st.db)
+    try:
+        tables, notes = build_mock(db, args.from_scenic, args.to_scenic, args.to_name,
+                                   dates[0], dates[-1], names)
+    except ValueError as e:
+        print(f"✗ {e}")
+        return 2
+    finally:
+        db.close()
+
+    print("=" * 72)
+    print(f"演示数据：{args.from_scenic} → {args.to_scenic}（{args.to_name}），"
+          f"日期 {dates[0]}~{dates[-1]}")
+    print("=" * 72)
+    for n in notes:
+        print(f"  · {n}")
+    if not tables:
+        print("没有可推送的数据。")
+        return 2
+    for t, df in tables.items():
+        print(f"  {t:<52} {len(df):>9,} 行  {df['travel_date'].min()}~{df['travel_date'].max()}")
+
+    if preview:
+        print(f"\n报文预览（不发送）→ {st.push_url or '（未配置 push_url）'}")
+        for name, df in tables.items():
+            cfg = _table_config(name, st)
+            body = build_payload(name, df.head(2), cfg["pk"],
+                                 body_fields=st.push_body_fields, table_name=cfg["name"],
+                                 extra=st.push_extra_fields)
+            print(f"\n# {name}：前 2 行")
+            print(json.dumps(body, ensure_ascii=False, indent=2))
+        return 0
+
+    st.push_enabled, st.push_tables = True, None
+    print(f"\n推送 → {st.push_url}" + ("   [dry-run 只组报文不发送]" if st.push_dry_run else ""),
+          flush=True)
+    factory = None if args.no_progress else push_progress_factory()
+    rep = push_all(tables, settings=st, progress_factory=factory)
+    for r in rep.results:
+        if factory is None or r.skipped:
+            print(f"  {r.table:<52} {r.rows:>8,} 行  [{r.batches} 批 {r.elapsed:.1f}s]"
+                  + ("" if r.ok else f"  ✗ {r.error}"))
+    for n in rep.notes():
+        if n.startswith("推送响应记录："):
+            print(f"  {n}")
+    if not rep.ok:
+        print("\n推送未全部成功：")
+        for e in rep.errors:
+            print(f"  ✗ {e}")
+        return 1
+    print("\n推送完成 ✓")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(prog="engin_cli", description="舆情指标引擎：源表 → 四张 ADS 指标表 + 下钻明细表")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    r = sub.add_parser("run", help="跑批：源表 → 四张 ADS 表")
+    r.add_argument("--date", help="单日 yyyyMMdd")
+    r.add_argument("--start-date", help="区间起 yyyyMMdd")
+    r.add_argument("--end-date", help="区间止 yyyyMMdd")
+    r.add_argument("--scenic", help="景区编码，逗号分隔；不填或 all = 全部景区，逐个跑、逐个推")
+    r.add_argument("--lookback-days", type=int, help="取数回溯天数，默认 180（近半年）")
+    r.add_argument("--rerun-days", type=int,
+                   help="目标日期之前再重跑几天（评论晚到，前几天一起刷新），默认 settings.rerun_days=3；0 = 不重跑")
+    r.add_argument("--output-dir", help="CSV 输出目录")
+    r.add_argument("--skip-db", action="store_true",
+                   help="不写 ADS 表（照常从源表读数、计算、推送）。不加就一定写库")
+    r.add_argument("--skip-csv", action="store_true", help="不出 CSV")
+    r.add_argument("--dry-run", action="store_true", help="连库但不真正写入")
+    r.add_argument("--no-backfill", action="store_true",
+                   help="关闭缺数回补（backfill_mode=off），渠道当天没评论就是 0")
+    r.add_argument("--backfill-lookback",
+                   help="补明细时最多往前找几天：写一个数（如 5）= 所有周期统一；"
+                        "写 1:5,7:10,30:20 = 按窗口分档，只写要改的档")
+    r.add_argument("--no-drill-analysis", action="store_true", help="不产出 5.2 下钻明细表")
+    kwg = r.add_mutually_exclusive_group()
+    kwg.add_argument("--drill-keyword-filter", action="store_true",
+                     help="下钻表只写入原文包含本景区采集关键字的评论（关键字取 "
+                          "src_opinion_scenic_keyword ∪ src_opinion_scenic_filter_word，按 scenic_id）")
+    kwg.add_argument("--no-drill-keyword-filter", action="store_true",
+                     help="关闭上面的过滤（原逻辑，评论全收），覆盖 settings 里的 drill_keyword_filter")
+    r.add_argument("--drill-keywords-csv",
+                   help="离线 / 不连库时的采集关键字 CSV（scenic_id, word 两列），配合 --drill-keyword-filter")
+    r.add_argument("--no-macro", action="store_true",
+                   help="不产出 2.0 大盘 KPI 表（也就不会为同比多取去年同期的数据）")
+    r.add_argument("--push", nargs="?", const="all", metavar="表名",
+                   help="跑完推送下游。不带值=全部表；也可以只推其中几张，"
+                        "如 --push core,platform（简写见下）")
+    r.add_argument("--no-push", action="store_true", help="本次不推送")
+    r.add_argument("--push-url", help="推送地址，覆盖配置")
+    r.add_argument("--push-dry-run", action="store_true", help="只组报文不真发，验证配置用")
+    r.add_argument("--push-strict", action="store_true", help="推送失败也让退出码非 0")
+    r.add_argument("--keep-local", action="store_true",
+                   help="推送成功后保留本地 CSV（默认推送成功就删掉）")
+    r.add_argument("--comments-csv", help="离线源：评论表 CSV")
+    r.add_argument("--works-csv", help="离线源：作品表 CSV")
+    r.add_argument("--fail-fast", action="store_true", help="某个景区失败就停，不跑后面的")
+    r.add_argument("--no-progress", action="store_true", help="不显示推送进度条")
+    r.add_argument("-v", "--verbose", action="store_true",
+                   help="额外打印回补触发情况、补零行数量等说明")
+    r.add_argument("--log-level", help="DEBUG/INFO/WARNING")
+    r.set_defaults(func=cmd_run)
+
+    p = sub.add_parser("report", help="按规则文档打印看板取数结果")
+    p.add_argument("--scenic")
+    p.add_argument("--date")
+    p.add_argument("--period", default="today", choices=["today", "week", "month"])
+    p.add_argument("--output-dir")
+    p.add_argument("--log-level")
+    p.set_defaults(func=cmd_report)
+
+    u = sub.add_parser("push", help="把已产出的 CSV 推给下游（补推用，不重算）")
+    u.add_argument("--tables", metavar="表名",
+                   help="表名，逗号分隔；不填或 all=全部。"
+                        "简写：core/platform/dimension/content/drill/macro")
+    u.add_argument("--scenic", help="只推这些景区，逗号分隔；不填 = 输出目录下全部景区")
+    u.add_argument("--date", help="只推这一天 yyyyMMdd")
+    u.add_argument("--start-date", help="只推这段日期：起 yyyyMMdd")
+    u.add_argument("--end-date", help="只推这段日期：止 yyyyMMdd（只写起或止 = 只推那一天）")
+    u.add_argument("--output-dir", help="CSV 所在目录（下面按景区分子目录）")
+    u.add_argument("--push-url", help="推送地址，覆盖配置")
+    u.add_argument("--push-dry-run", action="store_true", help="只组报文不真发（只统计批次）")
+    u.add_argument("--keep-local", action="store_true",
+                   help="补推成功后保留本地 CSV（默认把推过的行从 CSV 里删掉）")
+    u.add_argument("--preview", action="store_true",
+                   help="打印每张表第一批报文（令牌打码），不发送")
+    u.add_argument("--preview-rows", type=int, metavar="N",
+                   help="预览时每张表打印前 N 行（默认 2），隐含 --preview")
+    u.add_argument("--no-progress", action="store_true", help="不显示推送进度条")
+    u.add_argument("--diagnose", action="store_true",
+                   help="推送卡住 / 超时时用：拿 1 行数据排查域名解析、代理、逐个地址、报文差异，给出结论")
+    u.add_argument("--log-level")
+    u.set_defaults(func=cmd_push)
+
+    m = sub.add_parser("mock", help="造演示数据：把一个景区的结果复制给新景区编号并推送（不写本地库）")
+    m.add_argument("--from-scenic", required=True, help="从哪个景区复制，如 PFTSCA01016184")
+    m.add_argument("--to-scenic", required=True, help="新景区编号（不能和原景区一样）")
+    m.add_argument("--to-name", required=True, help="新景区名称")
+    m.add_argument("--date", help="只复制这一天 yyyyMMdd")
+    m.add_argument("--start-date", help="复制这段日期：起 yyyyMMdd")
+    m.add_argument("--end-date", help="复制这段日期：止 yyyyMMdd")
+    m.add_argument("--tables", metavar="表名",
+                   help="表名，逗号分隔；不填或 all=全部。"
+                        "简写：core/platform/dimension/content/drill/macro")
+    m.add_argument("--push-url", help="推送地址，覆盖配置")
+    m.add_argument("--push-dry-run", action="store_true", help="只组报文不真发（只统计批次）")
+    m.add_argument("--preview", action="store_true",
+                   help="打印每张表前 2 行报文，不发送")
+    m.add_argument("--no-progress", action="store_true", help="不显示推送进度条")
+    m.add_argument("--log-level")
+    m.set_defaults(func=cmd_mock)
+
+    x = sub.add_parser("repair", help="按新口径重刷历史分数（只改得分字段）")
+    x.add_argument("--start-date", required=True, help="修正区间起 yyyyMMdd")
+    x.add_argument("--end-date", required=True, help="修正区间止 yyyyMMdd")
+    x.add_argument("--scenic", help="景区编码，逗号分隔；不填=全部")
+    x.add_argument("--tables", default="core,dimension",
+                   help="要修的表：core / dimension，逗号分隔")
+    x.add_argument("--formula", choices=["weighted_v2", "confidence_v1"],
+                   help="目标口径，默认取 settings.score_formula")
+    x.add_argument("--dry-run", action="store_true", help="只比对不写库")
+    x.add_argument("--show-preview", action="store_true", help="打印前 10 行新旧对比")
+    x.add_argument("--log-level")
+    x.set_defaults(func=cmd_repair)
+    return ap
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = build_parser().parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

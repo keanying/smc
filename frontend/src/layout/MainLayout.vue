@@ -34,6 +34,10 @@
         <el-menu-item index="/labeling">
           <el-icon><MagicStick /></el-icon><span>标注审核</span>
         </el-menu-item>
+        <!-- 指标计算是可选模块：系统设置里打开才出现 -->
+        <el-menu-item v-if="metricsEnabled" index="/metrics">
+          <el-icon><TrendCharts /></el-icon><span>指标计算</span>
+        </el-menu-item>
         <el-menu-item index="/accounts">
           <el-icon><User /></el-icon><span>账号管理</span>
         </el-menu-item>
@@ -101,9 +105,10 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  Collection, Setting,
+  Collection, Setting, TrendCharts,
 } from '@element-plus/icons-vue'
 import { settingsApi } from '../api'
+import { loadFeatures, metricsEnabled } from '../composables/features'
 
 const route = useRoute()
 const health = ref<Record<string, any> | null>(null)
@@ -174,6 +179,7 @@ async function loadHealth() {
 
 onMounted(() => {
   loadHealth()
+  loadFeatures()
   timer = window.setInterval(loadHealth, 30_000)
 })
 onUnmounted(() => window.clearInterval(timer))

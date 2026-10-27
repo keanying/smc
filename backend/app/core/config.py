@@ -239,6 +239,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "encoding": "utf-8-sig",
         "chunk_size": 5000,
     },
+    # 指标计算（vendor/opinion_metric_engine）。这里只有总开关，景区、参数、定时、
+    # 推送这些在「指标计算」页上维护（存系统设置表的 metrics.config）
+    "metrics": {
+        "enabled": False,
+    },
     "scheduler": {
         "enabled": True,
         "timezone": "Asia/Shanghai",

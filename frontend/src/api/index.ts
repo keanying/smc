@@ -788,3 +788,90 @@ export const qunarApi = {
     api.post<{ created: number; updated: number; failed: unknown[] }>(
       '/api/qunar/import', payload),
 }
+
+// ---------------- 指标计算 ----------------
+export interface MetricTableCfg {
+  push: boolean
+  push_name: string
+  pk: string[]
+  /** 空 = 全部字段原名推送；否则只推这些，按顺序，name 是下游字段名 */
+  fields: { column: string; name: string }[]
+}
+
+export interface MetricsConfig {
+  scenics: string[]
+  params: {
+    lookback_days: number
+    rerun_days: number
+    backfill_mode: 'fill' | 'off'
+    backfill_lookback: number
+    enable_drill_analysis: boolean
+    drill_keyword_filter: boolean
+    drill_mask_content: boolean
+    enable_macro_metric: boolean
+    content_top_words: number
+    score_weights: { positive: number; neutral: number; negative: number }
+    write_db: boolean
+    ads_database: string
+  }
+  schedule: { enabled: boolean; cron: string }
+  push: {
+    enabled: boolean
+    url: string
+    token_header: string
+    token_prefix: string
+    token: string
+    has_token?: boolean
+    body_fields: { table: string; pk: string; data: string }
+    extra_fields: Record<string, unknown>
+    batch_size: number
+    timeout: number
+    retries: number
+    success_field: string
+    dry_run: boolean
+  }
+  tables: Record<string, MetricTableCfg>
+}
+
+export interface MetricCatalogTable {
+  key: string
+  table: string
+  label: string
+  comment: string
+  pk: string[]
+  columns: { name: string; comment: string }[]
+}
+
+export interface MetricRun {
+  run_id: string
+  trigger_type: 'manual' | 'schedule'
+  status: 'running' | 'success' | 'partial' | 'failed' | 'canceled'
+  start_date: string
+  end_date: string
+  scenics: string[]
+  push: boolean
+  summary: Record<string, any>[]
+  error: string
+  log?: string
+  started_at: string
+  finished_at: string | null
+}
+
+export const metricsApi = {
+  status: () => api.get<{ enabled: boolean; running_run_id: string | null; next_fire: string | null }>(
+    '/api/metrics/status', undefined, true),
+  config: () => api.get<MetricsConfig>('/api/metrics/config'),
+  saveConfig: (cfg: MetricsConfig) => api.put<MetricsConfig>('/api/metrics/config', cfg),
+  catalog: () => api.get<MetricCatalogTable[]>('/api/metrics/catalog'),
+  scenics: () => api.get<{ scenic_id: string; scenic_name: string }[]>('/api/metrics/scenics'),
+  tables: () => api.get<{ key: string; table: string; label: string; database: string;
+    exists: boolean; approx_rows: number }[]>('/api/metrics/tables'),
+  initTables: () => api.post<{ table: string; result: string }[]>('/api/metrics/tables/init'),
+  run: (payload: { start_date?: string; end_date?: string; scenics?: string[]; no_push?: boolean }) =>
+    api.post<MetricRun>('/api/metrics/runs', payload),
+  runs: (page = 1, pageSize = 20) =>
+    api.get<{ items: MetricRun[]; total: number }>('/api/metrics/runs',
+      { page, page_size: pageSize }, true),
+  runDetail: (runId: string) => api.get<MetricRun>(`/api/metrics/runs/${runId}`, undefined, true),
+  cancel: (runId: string) => api.post<null>(`/api/metrics/runs/${runId}/cancel`),
+}

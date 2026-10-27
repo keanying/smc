@@ -564,11 +564,41 @@
           </el-col>
         </el-row>
       </el-tab-pane>
+
+      <!-- ==================== 指标计算 ==================== -->
+      <el-tab-pane label="指标计算" name="metrics">
+        <el-row :gutter="16">
+          <el-col :xs="24" :lg="14" class="col">
+            <el-card shadow="never">
+              <template #header>舆情指标计算</template>
+              <el-form label-width="150px" class="settings-form">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">开启指标计算<InfoTip :width="320">
+                      用采集到的评论（含 AI 标注结果）算舆情指标：核心指标、平台分布、维度得分、
+                      关键词云、下钻明细、大盘 KPI 六张表，可定时计算并推送给下游。<br>
+                      打开后左侧菜单出现「指标计算」，景区、参数、定时、推送都在那里维护。
+                    </InfoTip></span>
+                  </template>
+                  <el-switch v-model="metrics.enabled" />
+                </el-form-item>
+                <el-form-item class="form-actions">
+                  <el-button type="primary" :loading="saving"
+                             @click="saveSection('metrics', metrics)">保存</el-button>
+                  <el-button v-if="metricsEnabled" @click="router.push('/metrics')">去指标计算</el-button>
+                </el-form-item>
+              </el-form>
+            </el-card>
+          </el-col>
+        </el-row>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
+import { metricsEnabled } from '../composables/features'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
@@ -615,6 +645,8 @@ const previewPlaceholder = `舆情采集需人工验证：
 远程账号：（保存后点「发送测试」看实际内容）
 远程密码：……`
 const scheduler = reactive<Record<string, any>>({})
+const metrics = reactive<{ enabled: boolean }>({ enabled: false })
+const router = useRouter()
 const browser = reactive<Record<string, any>>({})
 
 /** 后端返回的密钥是打码的 ***，不能原样回填后再保存，否则会把真密钥覆盖成 *** */
@@ -633,6 +665,8 @@ async function load() {
     ])
     configFile.value = settings.config_file
     const config = settings.config
+    metrics.enabled = !!config.metrics?.enabled
+    metricsEnabled.value = metrics.enabled
 
     Object.assign(proxy, config.proxy, {
       secret_id: stripMasked(config.proxy?.secret_id),
