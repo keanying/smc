@@ -219,6 +219,11 @@ export:
   encoding: utf-8-sig
   chunk_size: 5000
 
+# 指标计算（舆情指标引擎，vendor/opinion_metric_engine）。这里只有总开关，
+# 也可以在页面「系统设置 → 指标计算」打开；景区、参数、定时、推送在「指标计算」页上维护
+metrics:
+  enabled: false
+
 scheduler:
   enabled: true
   timezone: Asia/Shanghai

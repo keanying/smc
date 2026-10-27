@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from . import collectors  # noqa: F401  导入即注册全部采集器
 from .api import (
     accounts, archive as archive_api, data, labeling as labeling_api, live, media,
+    metrics as metrics_api,
     qunar as qunar_api, scenic,
     settings as settings_api, tasks, ws,
 )
@@ -133,10 +134,20 @@ async def lifespan(app: FastAPI):
         logger.info("边采边标：已开启，正在检查并续标队列里剩下的评论")
         asyncio.create_task(_get_labeling_manager(config)._resume_quietly("服务启动"))
 
+    # 指标计算：自己的定时循环和运行记录，跟采集互不相干。没开的时候循环空转，不做任何事
+    from .metrics import get_manager as _get_metrics_manager
+
+    metrics_manager = _get_metrics_manager(config, db, setting_repo)
+    try:
+        await metrics_manager.start()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("指标计算没能启动（不影响采集）：%s", exc)
+
     try:
         yield
     finally:
         logger.info("正在关闭服务…")
+        await metrics_manager.stop()
         await close_live_sessions()
         await close_live_views()
         await scheduler.shutdown()
@@ -182,7 +193,7 @@ def create_app() -> FastAPI:
     for router in (
         scenic.router, tasks.router, data.router, media.router,
         accounts.router, settings_api.router, ws.router,
-        live.router, live.ws_router, labeling_api.router, qunar_api.router,
+        live.router, live.ws_router, labeling_api.router, qunar_api.router, metrics_api.router,
         archive_api.router,
     ):
         app.include_router(router)

@@ -47,3 +47,9 @@ beautifulsoup4>=4.12
 # 读机器内存：浏览器闸门据此决定还能不能再开一个 Chromium
 # （读不到时会退回 /proc/meminfo，Windows 上则放弃限制，服务不受影响）
 psutil>=5.9
+
+# 指标计算（vendor/opinion_metric_engine）：在子进程里跑，主服务不 import。
+# 上游写的是 pandas>=3 / numpy>=2.4，但 pandas 3 要 Python 3.11+，而 Docker 镜像是 3.10；
+# 引擎自带的 365 条测试在 pandas 2.2/2.3 和 3.1 上结果一致，所以放宽到 2.2 起。
+pandas>=2.2
+numpy>=1.26

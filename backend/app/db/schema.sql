@@ -434,3 +434,24 @@ CREATE TABLE IF NOT EXISTS `src_opinion_social_authors` (
   -- 作者列表固定按粉丝数倒序，没有它必然 filesort
   KEY `idx_authors_fans` (`fans_count`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='社交媒体平台创作者';
+
+-- 指标计算（vendor/opinion_metric_engine）的运行记录：每次手动 / 定时计算一行。
+-- 计算本身在子进程里跑，结果表（ads_trf_social_opinion_*）由引擎写；这里只记"跑了什么、结果怎样"。
+CREATE TABLE IF NOT EXISTS `src_opinion_metric_run` (
+  `id`          BIGINT       NOT NULL AUTO_INCREMENT,
+  `run_id`      VARCHAR(40)  NOT NULL                COMMENT '运行编号',
+  `trigger_type` VARCHAR(20) NOT NULL DEFAULT 'manual' COMMENT 'manual 手动 / schedule 定时',
+  `status`      VARCHAR(20)  NOT NULL DEFAULT 'running' COMMENT 'running / success / partial / failed / canceled',
+  `start_date`  VARCHAR(8)   NOT NULL DEFAULT ''     COMMENT '目标日期起 yyyyMMdd',
+  `end_date`    VARCHAR(8)   NOT NULL DEFAULT ''     COMMENT '目标日期止 yyyyMMdd',
+  `scenics`     TEXT             NULL                COMMENT '计算的景区，JSON 数组',
+  `push`        TINYINT      NOT NULL DEFAULT 0      COMMENT '这次是否推送',
+  `summary`     MEDIUMTEXT       NULL                COMMENT '每个景区的结果，JSON',
+  `error`       VARCHAR(1000) NOT NULL DEFAULT ''    COMMENT '失败原因',
+  `log`         MEDIUMTEXT       NULL                COMMENT '运行日志（截尾保留）',
+  `started_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `finished_at` DATETIME         NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_metric_run` (`run_id`),
+  KEY `idx_metric_run_started` (`started_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='指标计算运行记录';

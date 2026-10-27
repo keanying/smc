@@ -62,6 +62,8 @@ WORKS = "src_opinion_social_work_di"
 COMMENTS = "src_opinion_social_work_comment_di"
 #: 人工删除过的作品：之后再采到直接跳过，不会被下一轮采集加回来
 DELETED_WORK = "src_opinion_social_work_deleted"
+#: 指标计算的运行记录（每次手动 / 定时计算一行）
+METRIC_RUN = "src_opinion_metric_run"
 #: 系统设置
 SETTING = "src_opinion_sys_setting"
 #: 景区采集任务

@@ -19,6 +19,8 @@ const router = createRouter({
       meta: { title: '数据中心' } },
     { path: '/labeling', name: 'labeling', component: () => import('../views/LabelingView.vue'),
       meta: { title: '标注审核' } },
+    { path: '/metrics', name: 'metrics', component: () => import('../views/MetricsView.vue'),
+      meta: { title: '指标计算' } },
     { path: '/accounts', name: 'accounts', component: () => import('../views/AccountsView.vue'),
       meta: { title: '账号管理' } },
     { path: '/settings', name: 'settings', component: () => import('../views/SettingsView.vue'),
