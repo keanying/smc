@@ -61,6 +61,27 @@ def test_push_token_is_never_echoed_and_kept_when_left_blank():
                         previous=first)["push"]["token"] == "sk_new"
 
 
+def test_auth_defaults_match_the_gateway_xpftkey_without_prefix():
+    """下游网关是 `xpftkey: pfk_xxx`：自定义请求头、不带 Bearer。"""
+    cfg = mc.normalize({})
+    assert (cfg["push"]["token_header"], cfg["push"]["token_prefix"]) == ("xpftkey", "")
+    # 前缀空串 = 不加前缀，不能被当成"没填"换回默认值；Bearer 方式照样能配
+    bearer = mc.normalize({"push": {"token_header": "Authorization", "token_prefix": "Bearer "}})
+    assert (bearer["push"]["token_header"], bearer["push"]["token_prefix"]) == \
+        ("Authorization", "Bearer ")
+    assert mc.normalize({"push": {"token_header": "X-Api-Key", "token_prefix": ""}}
+                        )["push"]["token_prefix"] == ""
+    with pytest.raises(ValueError, match="请求头名"):
+        mc.normalize({"push": {"token_header": "x pft: key"}})
+
+
+def test_default_pk_follows_the_gateway_sample():
+    """客户给的下钻表报文样例里的 pkId（顺序也一致）。引擎自己的默认只有 detail_uk。"""
+    assert mc.DEFAULT_PUSH_PK["drill"] == ["scenic_id", "emotion_word", "emotion_type", "channel",
+                                           "work_id", "comment_id", "publish_time", "travel_date"]
+    assert set(mc.DEFAULT_PUSH_PK) == {t["key"] for t in mc.TABLES}
+
+
 def test_engine_ddl_gives_all_six_tables_with_comments():
     ddl = mc.ddl_statements()
     assert set(ddl) == set(mc.TABLE_NAMES)
@@ -242,8 +263,18 @@ async def test_run_writes_ads_tables_and_pushes_the_configured_fields(env):
     core = sent["dw_core"]
     assert core["headers"].get("X-Api-Key") == "k-1"
     assert core["body"]["source"] == "smc"
-    assert core["body"]["keys"] == ["scenic_code", "travel_date", "publish_time"]
+    assert core["body"]["keys"] == ["scenic_code", "publish_time", "travel_date"]
     assert set(core["body"]["rows"][0]) == {"scenic_code", "travel_date", "publish_time", "total"}
+    drill = sent["ads_trf_social_opinion_drill_analysis_di"]
+    assert drill["body"]["keys"] == mc.DEFAULT_PUSH_PK["drill"], "没配主键时用网关的默认主键"
+
+    # 报文预览：和真正发出去的同一套规则，令牌打码
+    pv = await env.manager.push_preview("core")
+    assert pv["headers"]["X-Api-Key"].startswith("****") or "k-1" not in pv["headers"]["X-Api-Key"]
+    assert pv["body"]["keys"] == ["scenic_code", "publish_time", "travel_date"]
+    assert set(pv["body"]["rows"][0]) == {"scenic_code", "travel_date", "publish_time", "total"}
+    assert pv["body"]["rows"][0]["total"] is not None, "预览用的是表里真实的最新一行"
+    assert "--header 'X-Api-Key: " in pv["curl"]
 
 
 @pytest.mark.asyncio
