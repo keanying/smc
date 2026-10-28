@@ -14,7 +14,7 @@
         <span class="logo-tile"><img class="logo-img" src="/logo.png" alt="CloudSense 云听" /></span>
         <div class="logo-text">
           <div class="logo-title">CloudSense</div>
-          <div class="logo-sub">景区社媒舆情</div>
+          <div class="logo-sub">云听社媒舆情分析</div>
         </div>
       </div>
       <el-menu

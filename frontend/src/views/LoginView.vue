@@ -13,7 +13,7 @@
         <img class="brand-img" src="/logo.png" alt="CloudSense 云听" />
         <div>
           <div class="brand-title">CloudSense</div>
-          <div class="brand-sub">景区社媒舆情采集与分析</div>
+          <div class="brand-sub">云听社媒舆情分析</div>
         </div>
       </div>
 
