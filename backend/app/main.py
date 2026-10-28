@@ -1,4 +1,4 @@
-# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# CloudSense（云听）· Copyright (c) 2026 keanying
 # SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 # 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -18,8 +18,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import collectors  # noqa: F401  导入即注册全部采集器
 from .api import (
-    accounts, archive as archive_api, cluster as cluster_api, data, labeling as labeling_api,
-    live, media,
+    accounts, archive as archive_api, auth as auth_api, cluster as cluster_api, data,
+    labeling as labeling_api, live, media, users as users_api,
     metrics as metrics_api,
     qunar as qunar_api, scenic,
     settings as settings_api, tasks, ws,
@@ -87,6 +87,14 @@ async def lifespan(app: FastAPI):
     # 页面上改的设置优先级最高，启动时先合并进来
     await setting_repo.apply_overrides(config)
 
+    # 登录：会话存在库里，集群里几台机器通用
+    from .auth import AuthService, set_auth
+    from .auth.repo import UserRepository
+    auth_service = AuthService(config, UserRepository(db))
+    set_auth(auth_service)
+    if not auth_service.enabled:
+        logger.warning("登录已关闭（auth.enabled = false）：任何能访问这个端口的人都能操作系统")
+
     proxy_manager = ProxyManager(config, redis)
 
     async def _settings_changed(keys):
@@ -144,6 +152,8 @@ async def lifespan(app: FastAPI):
         logger.info("本机只协调不跑任务（cluster.role = master），不启动本机的任务执行")
     await cluster.start()
     set_cluster(cluster)
+    # 机器之间互相调用（批量检测等）带这个令牌，不走用户登录
+    auth_service.internal_token = cluster.secret
     logger.info("已注册采集器：%s", "、".join(CollectorRegistry.available()))
     logger.info(
         "服务就绪，监听 http://%s:%s（接口文档 /docs）",
@@ -175,6 +185,7 @@ async def lifespan(app: FastAPI):
     # 集群：定时计算只在当前主机上触发；「上次没跑完」的记录也只由主机收尾，
     # 不然一台从机重启就把主机正在跑的计算标成中断
     metrics_manager.leader_check = lambda: cluster.is_leader
+    metrics_manager.node_id = cluster.me.node_id
     try:
         await metrics_manager.start(recover=cluster.is_leader)
     except Exception as exc:  # noqa: BLE001
@@ -185,6 +196,7 @@ async def lifespan(app: FastAPI):
     finally:
         logger.info("正在关闭服务…")
         set_cluster(None)
+        set_auth(None)
         await metrics_manager.stop()
         await close_live_sessions()
         await close_live_views()
@@ -232,7 +244,7 @@ async def _cluster_brief():
 def create_app() -> FastAPI:
     config = load_config()
     app = FastAPI(
-        title="景区社媒采集系统",
+        title="CloudSense 云听",
         description="按景区维度采集抖音/快手/小红书/微博/携程/同程的作品与评论",
         version="1.0.0",
         lifespan=lifespan,
@@ -250,12 +262,16 @@ def create_app() -> FastAPI:
         scenic.router, tasks.router, data.router, media.router,
         accounts.router, settings_api.router, ws.router,
         live.router, live.ws_router, labeling_api.router, qunar_api.router, metrics_api.router,
-        archive_api.router, cluster_api.router,
+        archive_api.router, cluster_api.router, auth_api.router, users_api.router,
+        metrics_api.ws_router,
     ):
         app.include_router(router)
     # 集群：账号 / 任务不在本机时，把请求转给它所在的机器（cluster/forward.py）
     from .cluster.forward import ClusterForwarder
     app.add_middleware(ClusterForwarder)
+    # 登录检查放在最外层（后加的在外层）：没登录的请求不会被转给别的机器
+    from .auth.middleware import AuthMiddleware
+    app.add_middleware(AuthMiddleware)
 
     @app.exception_handler(HTTPException)
     async def _http_error(request: Request, exc: HTTPException):

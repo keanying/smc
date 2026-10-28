@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# CloudSense（云听）· Copyright (c) 2026 keanying
 # SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 # 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。

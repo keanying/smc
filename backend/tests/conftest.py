@@ -1,4 +1,4 @@
-# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# CloudSense（云听）· Copyright (c) 2026 keanying
 # SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 # 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -26,6 +26,8 @@ if _env_file.exists():
         os.environ.setdefault(_key.strip(), _value.strip())
 
 os.environ.setdefault("SMC_REDIS_ENABLED", "false")  # 测试默认走内存退化实现
+# 登录默认关掉：老用例直接调接口、起真实服务点页面，不登录。登录本身在 test_auth.py 里单独测
+os.environ.setdefault("SMC_AUTH_ENABLED", "false")
 
 
 @pytest.fixture(scope="session")

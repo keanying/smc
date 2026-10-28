@@ -19,7 +19,7 @@ MARKER = "SPDX-License-Identifier:"
 SELF = "scripts/add_license_headers.py"
 
 HEADER = [
-    "景区社媒采集系统 · Copyright (c) 2026 keanying",
+    "CloudSense（云听）· Copyright (c) 2026 keanying",
     "SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0",
     "按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，",
     "不得用于大规模抓取、绕过平台防护或非法获取个人信息。",
@@ -37,12 +37,12 @@ THIRD_PARTY = {
         "SPDX-License-Identifier: LicenseRef-ShilongLee-Crawler-NC-1.0",
         "第三方代码：原样复制自 ShilongLee/Crawler，版权归原作者",
         "（版权所有 (c) 2024 lishilong0101@gmail.com），按其《非商业使用许可证 1.0》授权，禁止商用。",
-        "随「景区社媒采集系统」分发时同时受根目录 LICENSE 约束，见 THIRD_PARTY_NOTICES.md。",
+        "随 CloudSense（云听）分发时同时受根目录 LICENSE 约束，见 THIRD_PARTY_NOTICES.md。",
     ],
     "backend/libs/stealth.min.js": [
         "SPDX-License-Identifier: MIT",
         "第三方代码：由 puppeteer-extra 的 extract-stealth-evasions 生成，版权归原作者，MIT 许可。",
-        "随「景区社媒采集系统」分发，见 THIRD_PARTY_NOTICES.md。",
+        "随 CloudSense（云听）分发，见 THIRD_PARTY_NOTICES.md。",
     ],
 }
 

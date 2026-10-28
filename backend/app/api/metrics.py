@@ -1,4 +1,4 @@
-# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# CloudSense（云听）· Copyright (c) 2026 keanying
 # SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 # 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query, WebSocket, WebSocketDisconnect
 
 from ..metrics import config as mc
 from ..metrics import get_manager
@@ -17,6 +17,7 @@ from .common import bad_request, not_found, ok
 from .deps import AppState, get_state
 
 router = APIRouter(prefix="/api/metrics", tags=["指标计算"])
+ws_router = APIRouter(tags=["指标计算"])
 
 
 def _manager(state: AppState):
@@ -142,3 +143,56 @@ async def cancel_run(run_id: str, state: AppState = Depends(get_state)):
     if not await _manager(state).cancel(run_id):
         raise not_found("这次计算不在运行中")
     return ok(None, "已停止")
+
+
+@ws_router.websocket("/ws/metrics/runs/{run_id}/logs")
+async def run_log_stream(websocket: WebSocket, run_id: str):
+    """一次计算的实时日志。
+
+    服务端 -> 页面（JSON 文本帧）：
+        {"type":"snapshot","lines":[...],"summary":[...],"status":"running"}  连上先给已有的
+        {"type":"log","line":"..."}                                          之后每来一行推一行
+        {"type":"summary","summary":[...]}                                   一个景区算完
+        {"type":"end","status":"success","error":"","summary":[...]}         结束，随后关闭
+        {"type":"ping"}                                                      30 秒心跳
+    不在跑（或跑在别的机器上又没转过来）的，给库里存的日志和结果后直接 end。
+    """
+    import asyncio
+
+    await websocket.accept()
+    manager = get_manager()
+    live = manager.subscribe(run_id)
+    try:
+        if live is None:
+            run = await manager.get_run(run_id, with_log=True)
+            if not run:
+                await websocket.send_json({"type": "end", "status": "missing", "error": "运行记录不存在"})
+                return
+            await websocket.send_json({"type": "snapshot", "status": run["status"],
+                                       "lines": (run.get("log") or "").splitlines(),
+                                       "summary": run.get("summary") or []})
+            await websocket.send_json({"type": "end", "status": run["status"],
+                                       "error": run.get("error") or "",
+                                       "summary": run.get("summary") or []})
+            return
+        lines, summary, queue = live
+        await websocket.send_json({"type": "snapshot", "status": "running", "lines": lines,
+                                   "summary": summary})
+        while True:
+            try:
+                message = await asyncio.wait_for(queue.get(), timeout=30)
+            except asyncio.TimeoutError:
+                await websocket.send_json({"type": "ping"})
+                continue
+            await websocket.send_json(message)
+            if message.get("type") == "end":
+                return
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if live is not None:
+            manager.unsubscribe(live[2])
+        try:
+            await websocket.close()
+        except Exception:  # noqa: BLE001 —— 页面那头已经断了
+            pass

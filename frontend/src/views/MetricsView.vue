@@ -1,5 +1,5 @@
 <!--
-  景区社媒采集系统 · Copyright (c) 2026 keanying
+  CloudSense（云听）· Copyright (c) 2026 keanying
   SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
   按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
   不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -603,7 +603,8 @@
     </el-dialog>
 
     <!-- 运行详情 -->
-    <el-drawer v-model="drawer" size="62%" :title="detail ? `计算 ${detail.run_id}` : ''" destroy-on-close>
+    <el-drawer v-model="drawer" size="62%" :title="detail ? `计算 ${detail.run_id}` : ''" destroy-on-close
+               @closed="closeLogSocket">
       <template v-if="detail">
         <div class="detail-head">
           <el-tag :type="STATUS[detail.status]?.type">{{ STATUS[detail.status]?.label }}</el-tag>
@@ -644,20 +645,26 @@
             <template #default="{ row }">{{ row.elapsed }}s</template>
           </el-table-column>
         </el-table>
-        <div class="section-title">日志</div>
-        <pre class="log-terminal run-log">{{ detail.log || '（暂无）' }}</pre>
+        <div class="section-title">
+          日志
+          <span v-if="detail.status === 'running'" class="live-state" :class="{ on: logLive }">
+            <span class="live-dot" />{{ logLive ? '实时' : '连接中…' }}
+          </span>
+        </div>
+        <pre ref="logBox" class="log-terminal run-log">{{ detail.log || '（暂无）' }}</pre>
       </template>
     </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   metricsApi, type MetricCatalogTable, type MetricRun, type MetricsConfig,
 } from '../api'
+import { MetricLogSocket } from '../api/ws'
 import ParamNote from '../components/ParamNote.vue'
 
 const router = useRouter()
@@ -757,9 +764,53 @@ async function loadStatus() {
 
 async function refreshLive() {
   await Promise.all([loadStatus(), loadRuns()])
-  if (drawer.value && detail.value?.status === 'running') {
+  // 实时日志连着的时候日志由 WebSocket 推；连不上才退回轮询
+  if (drawer.value && detail.value?.status === 'running' && !logLive.value) {
     detail.value = await metricsApi.runDetail(detail.value.run_id)
   }
+}
+
+// ---------------- 实时日志（WebSocket） ----------------
+const logLive = ref(false)
+const logBox = ref<HTMLElement | null>(null)
+let logSocket: MetricLogSocket | null = null
+
+function scrollLogToEnd() {
+  nextTick(() => {
+    const box = logBox.value
+    // 用户往上翻着看的时候别把他拽回底部
+    if (box && box.scrollHeight - box.scrollTop - box.clientHeight < 80) box.scrollTop = box.scrollHeight
+  })
+}
+
+function openLogSocket(runId: string) {
+  closeLogSocket()
+  logSocket = new MetricLogSocket(runId, async (msg) => {
+    const d = detail.value
+    if (!d || d.run_id !== runId) return
+    if (msg.type === 'snapshot') {
+      d.log = msg.lines.join('\n')
+      d.summary = msg.summary
+      nextTick(() => { if (logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight })
+    } else if (msg.type === 'log') {
+      d.log = d.log ? `${d.log}\n${msg.line}` : msg.line
+      scrollLogToEnd()
+    } else if (msg.type === 'summary') {
+      d.summary = msg.summary
+    } else if (msg.type === 'end') {
+      // 结束了：取一次完整记录（结束时间、最终状态），列表也刷新
+      detail.value = await metricsApi.runDetail(runId)
+      closeLogSocket()
+      await Promise.all([loadStatus(), loadRuns()])
+    }
+  }, (connected) => { logLive.value = connected })
+  logSocket.open()
+}
+
+function closeLogSocket() {
+  logSocket?.close()
+  logSocket = null
+  logLive.value = false
 }
 
 async function startRun() {
@@ -781,6 +832,7 @@ async function startRun() {
 async function openRun(row: MetricRun) {
   detail.value = await metricsApi.runDetail(row.run_id)
   drawer.value = true
+  if (detail.value?.status === 'running') openLogSocket(row.run_id)
 }
 
 async function cancelRun(row: MetricRun) {
@@ -1076,7 +1128,10 @@ onMounted(async () => {
     if (status.value?.running_run_id || runs.value.some((r) => r.status === 'running')) refreshLive()
   }, 3000)
 })
-onUnmounted(() => window.clearInterval(timer))
+onUnmounted(() => {
+  window.clearInterval(timer)
+  closeLogSocket()
+})
 </script>
 
 <style scoped>
@@ -1169,5 +1224,11 @@ onUnmounted(() => window.clearInterval(timer))
 .out-chip { display: inline-block; margin: 0 6px 2px 0; padding: 0 6px; border-radius: 4px; font-size: 12px; background: var(--el-fill-color-light); }
 .out-chip.bad { color: var(--el-color-danger); background: var(--el-color-danger-light-9); }
 .err { color: var(--el-color-danger); font-size: 12px; }
+.live-state { display: inline-flex; align-items: center; gap: 5px; margin-left: 10px;
+  font-size: 12px; font-weight: normal; color: var(--smc-text-secondary); }
+.live-state .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #c0c4cc; }
+.live-state.on { color: #16a34a; }
+.live-state.on .live-dot { background: #22c55e; animation: live-pulse 1.4s ease-in-out infinite; }
+@keyframes live-pulse { 50% { opacity: 0.35; } }
 .run-log { max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
 </style>

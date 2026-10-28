@@ -1,4 +1,4 @@
-// 景区社媒采集系统 · Copyright (c) 2026 keanying
+// CloudSense（云听）· Copyright (c) 2026 keanying
 // SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 // 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 // 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -33,6 +33,11 @@ const http = axios.create({
 http.interceptors.response.use(
   (response) => response,
   (error) => {
+    // 登录过期 / 被管理员踢下线：回登录页，登完回到现在这页
+    if (error?.response?.status === 401 && !window.location.hash.startsWith('#/login')) {
+      const back = window.location.hash.replace(/^#/, '') || '/'
+      window.location.hash = `#/login?redirect=${encodeURIComponent(back)}`
+    }
     // 后端异常处理器保证了错误体也是 {code, data, message}
     const payload = error?.response?.data as ApiEnvelope | undefined
     const message = payload?.message || error?.message || '请求失败'

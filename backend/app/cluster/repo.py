@@ -1,4 +1,4 @@
-# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# CloudSense（云听）· Copyright (c) 2026 keanying
 # SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 # 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -20,6 +20,8 @@ from ..db import tables as T
 from .identity import NodeIdentity
 
 MASTER_LEASE = "master"
+#: 集群内部令牌在设置表里的键。不在页面设置的可改段里，页面看不到
+SECRET_KEY = "cluster.secret"
 
 
 class NodeRepository:
@@ -110,11 +112,24 @@ class NodeRepository:
             f"UPDATE `{T.CLUSTER_LEASE}` SET expires_at = NOW() - INTERVAL 1 SECOND "
             f"WHERE lease_name = %s AND holder = %s", [name, holder])
 
+    # ------------------------------------------------------------------ 内部令牌
+    async def ensure_secret(self) -> str:
+        """集群内部令牌：机器之间互相调用时带上，不走用户登录。第一台启动的机器生成，存在库里大家共用。"""
+        import secrets
+        await self.db.execute(
+            f"INSERT INTO `{T.SETTING}` (setting_key, setting_value) VALUES (%s, %s) "
+            f"ON DUPLICATE KEY UPDATE setting_key = setting_key",
+            [SECRET_KEY, json.dumps(secrets.token_urlsafe(32))])
+        row = await self.db.fetch_one(
+            f"SELECT setting_value FROM `{T.SETTING}` WHERE setting_key = %s", [SECRET_KEY])
+        return str(json.loads(row["setting_value"])) if row else ""
+
     # ------------------------------------------------------------------ 设置同步
     async def settings_digest(self) -> Dict[str, str]:
         """各段设置的原文。别的机器在页面上改了设置，本机靠比对它发现。"""
         rows = await self.db.fetch_all(
-            f"SELECT setting_key, setting_value FROM `{T.SETTING}`")
+            f"SELECT setting_key, setting_value FROM `{T.SETTING}` WHERE setting_key <> %s",
+            [SECRET_KEY])
         return {str(r["setting_key"]): str(r["setting_value"] or "") for r in rows}
 
 

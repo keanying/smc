@@ -1,14 +1,18 @@
-// 景区社媒采集系统 · Copyright (c) 2026 keanying
+// CloudSense（云听）· Copyright (c) 2026 keanying
 // SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 // 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 // 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
 // 首次运行即表示已阅读并同意根目录 LICENSE，使用风险与法律责任由使用者自行承担。
 
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { authEnabled, currentUser, isAdmin, loadAuth } from '../composables/auth'
 
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
+    // 登录页不套主框架（没有菜单和顶栏），不用登录就能进
+    { path: '/login', name: 'login', component: () => import('../views/LoginView.vue'),
+      meta: { title: '登录', bare: true, public: true } },
     { path: '/', name: 'home', component: () => import('../views/HomeView.vue'),
       meta: { title: '概览' } },
     { path: '/scenics', name: 'scenics', component: () => import('../views/ScenicView.vue'),
@@ -31,9 +35,22 @@ const router = createRouter({
       meta: { title: '账号管理' } },
     { path: '/cluster', name: 'cluster', component: () => import('../views/ClusterView.vue'),
       meta: { title: '集群' } },
+    { path: '/users', name: 'users', component: () => import('../views/UsersView.vue'),
+      meta: { title: '用户管理', admin: true } },
     { path: '/settings', name: 'settings', component: () => import('../views/SettingsView.vue'),
-      meta: { title: '系统设置' } },
+      meta: { title: '系统设置', admin: true } },
   ],
+})
+
+/** 没登录去登录页；只有管理员能进的页面，别的角色回概览 */
+router.beforeEach(async (to) => {
+  await loadAuth()
+  if (to.meta.public) return true
+  if (authEnabled.value && !currentUser.value) {
+    return { path: '/login', query: { redirect: to.fullPath } }
+  }
+  if (to.meta.admin && !isAdmin.value) return { path: '/' }
+  return true
 })
 
 export default router

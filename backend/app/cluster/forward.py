@@ -1,4 +1,4 @@
-# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# CloudSense（云听）· Copyright (c) 2026 keanying
 # SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 # 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -44,6 +44,8 @@ _WS_BROWSER = re.compile(r"^/ws/browser/(?P<sid>[^/]+)$")
 _VIEW_FRAME = re.compile(r"^/api/live/views/(?P<vid>[^/]+)/frame\.jpg$")
 _WS_LIVE = re.compile(r"^/ws/live/(?P<vid>[^/]+)$")
 _WS_TASK_LOG = re.compile(r"^/ws/tasks/(?P<task>[^/]+)/logs$")
+_WS_METRIC_LOG = re.compile(r"^/ws/metrics/runs/(?P<run>[^/]+)/logs$")
+_METRIC_CANCEL = re.compile(r"^/api/metrics/runs/(?P<run>[^/]+)/cancel$")
 
 
 def node_of_session(session_id: str) -> str:
@@ -59,6 +61,15 @@ async def _task_node(cluster: Cluster, task_id: str) -> str:
     if not task or task.get("status") not in ("running", "queued"):
         return ""
     return str(task.get("node_id") or "")
+
+
+async def _metric_run_node(cluster: Cluster, run_id: str) -> str:
+    """指标计算正在哪台机器上跑（看实时日志、点停止要找它）。跑完了就本机读库。"""
+    row = await cluster.db.fetch_one(
+        "SELECT status, node_id FROM `src_opinion_metric_run` WHERE run_id = %s", [run_id])
+    if not row or row.get("status") != "running":
+        return ""
+    return str(row.get("node_id") or "")
 
 
 async def _any_worker(cluster: Cluster) -> str:
@@ -79,7 +90,12 @@ async def resolve_target(cluster: Cluster, scope_type: str, method: str, path: s
             return await _task_node(cluster, m["vid"].split("::", 1)[0])
         if m := _WS_TASK_LOG.match(path):
             return await _task_node(cluster, m["task"])
+        if m := _WS_METRIC_LOG.match(path):
+            return await _metric_run_node(cluster, m["run"])
         return ""
+
+    if m := _METRIC_CANCEL.match(path):
+        return await _metric_run_node(cluster, m["run"])
 
     if not (path.startswith("/api/accounts") or path.startswith("/api/live")):
         return ""
@@ -234,9 +250,11 @@ async def _forward_ws(cluster: Cluster, scope, receive, send, base: str, reason:
     upstream = None
     if base:
         try:
+            # 带上集群内部令牌：WebSocket 转发拿不到页面的 Cookie 以外的东西，对方靠它认
             upstream = await websockets.connect(
                 _target_url(scope, base, ws=True), max_size=None, open_timeout=10,
-                additional_headers=[("x-smc-forwarded", cluster.me.node_id)])
+                additional_headers=[("x-smc-forwarded", cluster.me.node_id),
+                                    ("x-smc-cluster-token", cluster.secret)])
         except Exception as exc:  # noqa: BLE001
             reason = f"连不上那台机器（{base}）：{exc}"
     await send({"type": "websocket.accept"})

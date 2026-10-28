@@ -1,4 +1,4 @@
-# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# CloudSense（云听）· Copyright (c) 2026 keanying
 # SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 # 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -236,6 +236,16 @@ scheduler:
   # 同时运行的任务数上限
   max_running_tasks: 3
   misfire_grace_seconds: 300
+
+# 登录与用户。第一次打开页面时创建管理员，其他人由管理员在「用户管理」里添加。
+# 只能在这里或环境变量里改（SMC_AUTH_ENABLED=false 关掉登录），不放在页面上，免得一改错把所有人锁在外面。
+# 忘了管理员密码：python scripts/reset_password.py admin
+auth:
+  enabled: true
+  session_hours: 72          # 多久不用要重新登录（每次访问往后顺延）
+  max_failed_logins: 5       # 连续输错几次锁定
+  lock_minutes: 10           # 锁多久
+  cookie_secure: false       # 服务走 HTTPS 时打开
 
 # 集群：多台机器连同一个 MySQL 和 Redis，主机派任务、从机跑任务。
 # 这一段是每台机器自己的（不在页面上改）。只有一台机器时不用改，默认既是主也是从。

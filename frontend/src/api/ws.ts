@@ -1,4 +1,4 @@
-// 景区社媒采集系统 · Copyright (c) 2026 keanying
+// CloudSense（云听）· Copyright (c) 2026 keanying
 // SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 // 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 // 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -61,6 +61,63 @@ export class TaskLogSocket {
       const delay = Math.min(1000 * 2 ** this.retries, 15_000)
       this.retries += 1
       setTimeout(() => this.open(), delay)
+    }
+    this.socket.onerror = () => this.socket?.close()
+  }
+
+  close(): void {
+    this.closedByUser = true
+    this.socket?.close()
+    this.socket = null
+  }
+}
+
+/** 指标计算实时日志的消息（后端 api/metrics.py 的 run_log_stream） */
+export type MetricLogMessage =
+  | { type: 'snapshot'; status: string; lines: string[]; summary: any[] }
+  | { type: 'log'; line: string }
+  | { type: 'summary'; summary: any[] }
+  | { type: 'end'; status: string; error: string; summary: any[] }
+  | { type: 'ping' }
+
+/**
+ * 指标计算的实时日志。连上先收到已有的日志（snapshot），之后每来一行推一行，
+ * 算完收到 end 后服务端关闭连接。中途断了自动重连——重连又会先收到完整的 snapshot，不会缺行。
+ */
+export class MetricLogSocket {
+  private socket: WebSocket | null = null
+  private retries = 0
+  private closedByUser = false
+  private ended = false
+
+  constructor(
+    private readonly runId: string,
+    private readonly onMessage: (message: MetricLogMessage) => void,
+    private readonly onStateChange?: (connected: boolean) => void,
+  ) {}
+
+  open(): void {
+    this.closedByUser = false
+    this.socket = new WebSocket(wsUrl(`/ws/metrics/runs/${encodeURIComponent(this.runId)}/logs`))
+    this.socket.onopen = () => {
+      this.retries = 0
+      this.onStateChange?.(true)
+    }
+    this.socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as MetricLogMessage
+        if (payload.type === 'end') this.ended = true
+        if (payload.type !== 'ping') this.onMessage(payload)
+      } catch {
+        /* 非 JSON 帧忽略 */
+      }
+    }
+    this.socket.onclose = () => {
+      this.onStateChange?.(false)
+      if (this.closedByUser || this.ended) return
+      const delay = Math.min(1000 * 2 ** this.retries, 15_000)
+      this.retries += 1
+      setTimeout(() => { if (!this.closedByUser) this.open() }, delay)
     }
     this.socket.onerror = () => this.socket?.close()
   }

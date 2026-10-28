@@ -1,4 +1,4 @@
-# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# CloudSense（云听）· Copyright (c) 2026 keanying
 # SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 # 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -57,6 +57,8 @@ class Cluster:
         self._digest: Optional[Dict[str, str]] = None
         self._notes: Dict[str, Tuple[str, float]] = {}
         self._tick_lock = asyncio.Lock()
+        #: 集群内部令牌（机器之间互相调用时带上），start() 时从库里取
+        self.secret = ""
 
     # ------------------------------------------------------------------ 配置
     @property
@@ -81,6 +83,7 @@ class Cluster:
 
     # ------------------------------------------------------------------ 生命周期
     async def start(self) -> None:
+        self.secret = await self.nodes.ensure_secret()
         await self._warn_duplicate()
         if self.me.is_worker_role:
             await self._claim_accounts()

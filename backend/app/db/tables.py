@@ -1,4 +1,4 @@
-# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# CloudSense（云听）· Copyright (c) 2026 keanying
 # SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 # 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -70,6 +70,10 @@ COMMENTS = "src_opinion_social_work_comment_di"
 DELETED_WORK = "src_opinion_social_work_deleted"
 #: 指标计算的运行记录（每次手动 / 定时计算一行）
 METRIC_RUN = "src_opinion_metric_run"
+#: 系统用户（登录页面用的账号，不是社媒平台账号）
+SYS_USER = "src_opinion_sys_user"
+#: 登录会话：一次登录一行，Cookie 里存的令牌只在这里存哈希
+SYS_USER_SESSION = "src_opinion_sys_user_session"
 #: 集群机器（每台机器一行，心跳刷新）
 CLUSTER_NODE = "src_opinion_cluster_node"
 #: 集群租约：谁是当前的主机
@@ -154,6 +158,11 @@ EXTRA_COLUMNS = [
      "VARCHAR(100) NOT NULL DEFAULT '' COMMENT '派给哪台机器跑（最近一次）'"),
     (TASK, "dispatched_at",
      "DATETIME NULL DEFAULT NULL COMMENT '最近一次派发时间'"),
+    # 指标计算在哪台机器上跑：看实时日志要连到那台
+    (METRIC_RUN, "node_id",
+     "VARCHAR(100) NOT NULL DEFAULT '' COMMENT '在哪台机器上算的'"),
+    (METRIC_RUN, "triggered_by",
+     "VARCHAR(100) NOT NULL DEFAULT '' COMMENT '谁点的（定时触发为空）'"),
     (TASK, "cancel_requested",
      "TINYINT NOT NULL DEFAULT 0 COMMENT '取消请求：任务在别的机器上跑时由那台机器读到后停止'"),
 ]

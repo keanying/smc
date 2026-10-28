@@ -1,4 +1,4 @@
-# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# CloudSense（云听）· Copyright (c) 2026 keanying
 # SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 # 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -508,3 +508,36 @@ async def test_demo_targets_are_pushed_right_after_their_source_scenic(env):
         "SELECT COUNT(*) AS c FROM ads_trf_social_opinion_comment_core_di WHERE scenic_spot_code = %s",
         [dst])
     assert local["c"] == 0, "演示数据不写本地库"
+
+
+@pytest.mark.asyncio
+async def test_live_log_reaches_listeners_from_another_thread():
+    """实时日志：子进程输出是在另一个线程（SUBPROCESS_LOOP）里写进来的，看日志的页面要一行不落地收到。"""
+    import asyncio
+    import threading
+
+    from app.metrics.common import EVENT_PREFIX
+    from app.metrics.manager import _RunState
+
+    state = _RunState()
+    state.feed("开始之前的一行")
+    queue: asyncio.Queue = asyncio.Queue()
+    snapshot = state.attach(asyncio.get_running_loop(), queue)
+    assert len(snapshot) == 1 and snapshot[0].endswith("开始之前的一行"), "连上先拿到已有的"
+
+    def worker():
+        state.feed("第二行")
+        state.feed(EVENT_PREFIX + '{"event": "scenic", "scenic": "S1", "ok": true, "rows": 3}')
+
+    t = threading.Thread(target=worker)
+    t.start()
+    t.join()
+    got = [await asyncio.wait_for(queue.get(), 2) for _ in range(3)]
+    assert got[0]["type"] == "log" and got[0]["line"].endswith("第二行")
+    assert got[1]["type"] == "log"
+    assert got[2]["type"] == "summary" and got[2]["summary"][0]["scenic"] == "S1"
+
+    state.detach(queue)
+    state.feed("没人看了")
+    await asyncio.sleep(0.05)
+    assert queue.empty(), "断开之后不再往它的队列里塞"

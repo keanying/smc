@@ -1,4 +1,4 @@
--- 景区社媒采集系统 · Copyright (c) 2026 keanying
+-- CloudSense（云听）· Copyright (c) 2026 keanying
 -- SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 -- 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 -- 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -463,6 +463,8 @@ CREATE TABLE IF NOT EXISTS `src_opinion_metric_run` (
   `log`         MEDIUMTEXT       NULL                COMMENT '运行日志（截尾保留）',
   `started_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `finished_at` DATETIME         NULL DEFAULT NULL,
+  `node_id`     VARCHAR(100) NOT NULL DEFAULT ''     COMMENT '在哪台机器上算的',
+  `triggered_by` VARCHAR(100) NOT NULL DEFAULT ''    COMMENT '谁点的（定时触发为空）',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_metric_run` (`run_id`),
   KEY `idx_metric_run_started` (`started_at`)
@@ -497,3 +499,38 @@ CREATE TABLE IF NOT EXISTS `src_opinion_cluster_lease` (
   `update_time` TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`lease_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='集群租约：谁是当前的主机';
+
+-- -------------------------------------------------------------------
+-- 用户：登录本系统的人（不是社媒平台账号）
+-- -------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `src_opinion_sys_user` (
+  `id`              BIGINT       NOT NULL AUTO_INCREMENT,
+  `username`        VARCHAR(64)  NOT NULL                COMMENT '登录名',
+  `display_name`    VARCHAR(100) NOT NULL DEFAULT ''     COMMENT '显示名，复核人等处显示它',
+  `password_hash`   VARCHAR(255) NOT NULL                COMMENT 'pbkdf2_sha256$迭代次数$盐$哈希',
+  `role`            VARCHAR(20)  NOT NULL DEFAULT 'operator' COMMENT 'admin 管理员 / operator 操作员 / viewer 只读',
+  `enabled`         TINYINT      NOT NULL DEFAULT 1,
+  `failed_count`    INT          NOT NULL DEFAULT 0      COMMENT '连续输错密码次数',
+  `locked_until`    DATETIME         NULL DEFAULT NULL   COMMENT '输错太多次锁到什么时候',
+  `last_login_at`   DATETIME         NULL DEFAULT NULL,
+  `last_login_ip`   VARCHAR(64)  NOT NULL DEFAULT '',
+  `password_changed_at` DATETIME     NULL DEFAULT NULL,
+  `create_time`     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time`     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_sys_user` (`username`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='系统用户';
+
+CREATE TABLE IF NOT EXISTS `src_opinion_sys_user_session` (
+  `token_hash`    CHAR(64)     NOT NULL                COMMENT '会话令牌的 SHA-256，库里不存明文',
+  `user_id`       BIGINT       NOT NULL,
+  `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_seen_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `expires_at`    DATETIME     NOT NULL                COMMENT '不用就过期；每次访问往后顺延',
+  `ip`            VARCHAR(64)  NOT NULL DEFAULT '',
+  `user_agent`    VARCHAR(300) NOT NULL DEFAULT '',
+  PRIMARY KEY (`token_hash`),
+  KEY `idx_session_user` (`user_id`),
+  KEY `idx_session_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='登录会话';
