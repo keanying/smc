@@ -90,6 +90,48 @@ def test_engine_ddl_gives_all_six_tables_with_comments():
     assert notes["columns"]["comment_count"] == "总评论数"
 
 
+def test_scenic_push_overrides_which_tables_go_out():
+    """按景区配推送表：配了的景区只推它自己勾的，没配的按各表的推送开关。"""
+    cfg = mc.normalize({
+        "tables": {"content": {"push": False}},
+        "scenic_push": {"S1": ["macro", "core", "core"], "S2": []},
+    })
+    assert cfg["scenic_push"] == {"S1": ["core", "macro"], "S2": []}, "按固定顺序、去重"
+    assert mc.push_keys_for(cfg, "S1") == ["core", "macro"]
+    assert mc.push_keys_for(cfg, "S2") == [], "空列表 = 这个景区不推"
+    assert mc.push_keys_for(cfg, "S9") == ["core", "platform", "dimension", "drill", "macro"]
+    with pytest.raises(ValueError, match="不认识的表"):
+        mc.normalize({"scenic_push": {"S1": ["nope"]}})
+
+
+def test_worker_pushes_only_the_scenics_own_tables():
+    pd = pytest.importorskip("pandas")
+    from app.metrics import worker
+
+    worker._load_engine()
+    from engin_cli.settings import EtlSettings
+
+    receiver = _Receiver()
+    try:
+        cfg = mc.normalize({"push": {"enabled": True, "url": receiver.url},
+                            "scenic_push": {"S1": ["core"]}})
+        frame = pd.DataFrame([{"scenic_spot_code": "S1", "publish_time": "20261010",
+                               "travel_date": 20261010, "platform_code": "dy",
+                               "comment_count": 1}])
+        tables = {"ads_trf_social_opinion_comment_core_di": frame,
+                  "ads_trf_social_opinion_comment_platform_di": frame}
+        st = EtlSettings()
+        st.push_log_dir = ""
+        worker.push_tables(st, tables, cfg, "S1")
+        assert [r["body"]["tableName"] for r in receiver.requests] == \
+            ["ads_trf_social_opinion_comment_core_di"]
+        receiver.requests.clear()
+        worker.push_tables(st, tables, cfg, "S2")           # 没单独配：按各表开关，两张都推
+        assert len(receiver.requests) == 2
+    finally:
+        receiver.close()
+
+
 def test_date_list_includes_rerun_days():
     assert date_list("20261010", "20261011", 2) == ["20261008", "20261009", "20261010", "20261011"]
     with pytest.raises(ValueError):
