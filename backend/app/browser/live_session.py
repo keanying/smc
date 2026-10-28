@@ -44,6 +44,10 @@ from .specs import (
 
 logger = get_logger(__name__)
 
+#: 会话编号前缀。集群里设成「本机编号~」：主机收到 /ws/browser/{id} 这类请求，
+#: 看前缀就知道浏览器开在哪台机器上，转过去（见 cluster/forward.py）
+ID_PREFIX = ""
+
 FrameCallback = Callable[[str, int, int], Awaitable[None]]
 StatusCallback = Callable[[str, str], Awaitable[None]]
 
@@ -61,7 +65,7 @@ POLL_INTERVAL_SECONDS = 2
 
 class LiveBrowserSession:
     def __init__(self, manager, channel: str, account_name: str, mode: str = "login"):
-        self.session_id = uuid.uuid4().hex
+        self.session_id = f"{ID_PREFIX}{uuid.uuid4().hex}"
         #: login = 登录（没登录就跳到登录页）；browse = 已登录的号直接打开浏览器看，
         #: **不跳登录页**。账号页对已登录的号走 browse：以前一律当登录处理，
         #: 登录检测偶尔误判（微博的登录页无论登没登录都渲染登录框）就把人带去登录页，

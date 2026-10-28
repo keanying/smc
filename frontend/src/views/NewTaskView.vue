@@ -149,6 +149,19 @@
               </el-select>
             </el-form-item>
 
+            <el-form-item v-if="isCluster">
+              <template #label>
+                运行机器<InfoTip>
+                  默认由主机自动挑：有这个平台能用的号、又有空位的机器。<br>
+                  指定了就只在这台跑，那台离线时任务会一直等。
+                </InfoTip>
+              </template>
+              <el-select v-model="form.node_id" clearable placeholder="自动分配（推荐）" style="width: 240px">
+                <el-option v-for="n in workerNodes" :key="n.node_id" :value="n.node_id"
+                           :label="`${n.node_name}${n.online ? '' : '（离线）'}`" />
+              </el-select>
+            </el-form-item>
+
             <div class="form-section">执行方式</div>
 
             <el-form-item label="调度模式">
@@ -232,6 +245,7 @@
 </template>
 
 <script setup lang="ts">
+import { isCluster, loadCluster, workerNodes } from '../composables/cluster'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -263,6 +277,8 @@ const form = reactive({
   collect_type: 'keyword',
   keywords: [] as string[],
   account_group: '',
+  /** 集群：指定在哪台机器跑；'' = 主机自动分配 */
+  node_id: '',
   schedule_type: 'once',
   schedule_at: '' as string | null,
   cron_expression: '',
@@ -379,6 +395,7 @@ async function submit() {
       params: {
         ...params.value,
         ...(form.account_group ? { account_group: form.account_group } : {}),
+        ...(form.node_id ? { node_id: form.node_id } : {}),
       },
       schedule_type: form.schedule_type,
       timezone: 'Asia/Shanghai',
@@ -400,6 +417,7 @@ async function submit() {
 watch(() => form.collect_type, previewSchedule)
 
 onMounted(async () => {
+  loadCluster()
   const [scenicOptions, channelList, settings, groups] = await Promise.all([
     scenicApi.options(true),
     scenicApi.channels(),

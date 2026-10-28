@@ -94,6 +94,10 @@
             v-if="row.status === 'running'" :percentage="row.progress || 0"
             :stroke-width="4" :show-text="false" style="margin-top: 6px"
           />
+          <!-- 集群：派给了哪台机器（排队 / 在跑时是当前，其他时候是最近一次） -->
+          <div v-if="isCluster && row.node_id" class="task-node" :title="`机器编号 ${row.node_id}`">
+            {{ nodeLabel(row.node_id) }}
+          </div>
         </template>
       </el-table-column>
       <el-table-column label="采集量" width="150">
@@ -170,6 +174,7 @@
 </template>
 
 <script setup lang="ts">
+import { isCluster, loadCluster, nodeLabel } from '../composables/cluster'
 import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
@@ -283,6 +288,7 @@ function setupTimer() {
 watch([autoRefresh, editVisible], setupTimer)
 
 onMounted(async () => {
+  loadCluster()
   // 下拉框走精简接口；任务列表不等它，并行拉
   const [scenicOptions, channelList] = await Promise.all([
     scenicApi.options(false),
@@ -298,6 +304,7 @@ onUnmounted(() => window.clearTimeout(timer))
 
 
 <style scoped>
+.task-node { margin-top: 4px; font-size: 12px; color: var(--smc-text-secondary); }
 .row-actions {
   display: inline-flex;
   align-items: center;

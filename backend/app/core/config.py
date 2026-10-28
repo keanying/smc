@@ -256,6 +256,26 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_running_tasks": 3,
         "misfire_grace_seconds": 300,
     },
+    # 集群：多台机器连同一个 MySQL（和同一个 Redis），主机负责派任务，从机负责跑。
+    # 这一段是**每台机器自己的**，写在各自的 config.yaml 或环境变量里
+    # （SMC_CLUSTER_ROLE=worker 这样），不在页面上改。只有一台机器时不用管，默认既是主也是从。
+    "cluster": {
+        # all=主+从（单机就是这个） / master=只协调不跑任务 / worker=只跑任务
+        "role": "all",
+        # 机器编号，集群里不能重复。留空 = 主机名
+        "node_id": "",
+        # 页面上显示的名字。留空 = 机器编号
+        "node_name": "",
+        # 别的机器访问本机用的地址，如 http://10.0.0.12:8000。
+        # 主机要通过它把「扫码登录 / 采集 Cookie / 实时画面」这类只能在账号所在机器上做的事转过去。
+        # 留空 = http://<本机内网 IP>:<server.port>
+        "advertise_url": "",
+        # 本机最多同时跑几个任务。0 = 跟随「系统设置 → 调度」里的全局值
+        "max_running_tasks": 0,
+        # 心跳间隔，以及多久没心跳算掉线（掉线机器上的任务会被标成中断）
+        "heartbeat_seconds": 5,
+        "offline_seconds": 30,
+    },
     # 大模型调用（评论分析等）。
     # ⚠️ api_key / base_url 特意不写默认值，也不建议写进 config.yaml——
     # 这个文件是要提交进仓库的。用环境变量传：

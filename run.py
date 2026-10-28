@@ -34,6 +34,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -107,6 +108,10 @@ def main() -> int:
         print("[注意] 监听了所有网卡。本服务没有登录鉴权，"
               "实时画面里能看到已登录的平台页面，别暴露到公网。")
 
+    # 命令行改了端口时同步给服务里的配置：集群登记的「别的机器怎么访问我」要用真实端口
+    os.environ["SMC_SERVER_PORT"] = str(port)
+    from app.core.config import reset_cache
+    reset_cache()
     uvicorn.run("app.main:app", **options)
     return 0
 

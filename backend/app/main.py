@@ -18,7 +18,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import collectors  # noqa: F401  导入即注册全部采集器
 from .api import (
-    accounts, archive as archive_api, data, labeling as labeling_api, live, media,
+    accounts, archive as archive_api, cluster as cluster_api, data, labeling as labeling_api,
+    live, media,
     metrics as metrics_api,
     qunar as qunar_api, scenic,
     settings as settings_api, tasks, ws,
@@ -73,7 +74,12 @@ async def lifespan(app: FastAPI):
     # 挂在 repo 上，是因为"挑哪个号"这件事全都收口在 pick_active / active_names
     # 这两个方法里——挂在这儿，四个挑号入口一次全覆盖。
     from .core.account_rotation import AccountRotation
-    account_repo = AccountRepository(db, rotation=AccountRotation(config, redis))
+    from .cluster import Cluster, set_cluster
+    from .cluster.identity import resolve_identity
+    identity = resolve_identity(config)
+    # 挑号只在本机的号里挑：号的登录态在它所在机器的硬盘上
+    account_repo = AccountRepository(db, rotation=AccountRotation(config, redis),
+                                     node_id=identity.node_id)
     task_repo = TaskRepository(db)
     data_repo = DataRepository(db)
     setting_repo = SettingRepository(db)
@@ -82,13 +88,29 @@ async def lifespan(app: FastAPI):
     await setting_repo.apply_overrides(config)
 
     proxy_manager = ProxyManager(config, redis)
+
+    async def _settings_changed(keys):
+        """别的机器在页面上改了设置：代理池、标注引擎要跟着重建，和本机保存时一样。"""
+        if "proxy" in keys:
+            proxy_manager.reset()
+        if "labeling" in keys:
+            from .labeling import get_manager
+            await get_manager(config).reset()
+
+    # 集群：单机时角色是 all，自己当主机、派给自己，行为和以前一样
+    cluster = Cluster(config, db, tasks=task_repo, accounts=account_repo,
+                      settings=setting_repo, on_settings_changed=_settings_changed,
+                      identity=identity)
+    from .browser import live_session
+    live_session.ID_PREFIX = f"{identity.node_id}~"
     browser_manager = BrowserSessionManager(config, account_repo)
     runner = TaskRunner(
         config,
         task_repo=task_repo, scenic_repo=scenic_repo, data_repo=data_repo,
         proxy_manager=proxy_manager, browser_manager=browser_manager,
     )
-    scheduler = TaskScheduler(config, task_repo, runner, browser_manager=browser_manager)
+    scheduler = TaskScheduler(config, task_repo, runner, browser_manager=browser_manager,
+                              cluster=cluster)
     exporter = CsvExporter(config, data_repo)
 
     set_state(AppState(
@@ -115,7 +137,13 @@ async def lifespan(app: FastAPI):
             "浏览器已改由专用循环承载，功能不受影响"
         )
 
-    await scheduler.start()
+    if identity.is_worker_role:
+        cluster.scheduler = scheduler
+        await scheduler.start()
+    else:
+        logger.info("本机只协调不跑任务（cluster.role = master），不启动本机的任务执行")
+    await cluster.start()
+    set_cluster(cluster)
     logger.info("已注册采集器：%s", "、".join(CollectorRegistry.available()))
     logger.info(
         "服务就绪，监听 http://%s:%s（接口文档 /docs）",
@@ -134,7 +162,7 @@ async def lifespan(app: FastAPI):
     _notifier = _get_notifier(config)
     if _notifier.enabled:
         logger.info("通知：飞书机器人已开启（需要人工介入或采集报错时会推送）")
-    if (config.get("labeling") or {}).get("enabled"):
+    if (config.get("labeling") or {}).get("enabled") and cluster.is_leader:
         # 重启前队列里没标完的，现在就接着标——不等下一次采集任务来"顺便"拉起引擎。
         # 放后台跑：自检要真打一次模型，别拖慢服务启动
         logger.info("边采边标：已开启，正在检查并续标队列里剩下的评论")
@@ -144,8 +172,11 @@ async def lifespan(app: FastAPI):
     from .metrics import get_manager as _get_metrics_manager
 
     metrics_manager = _get_metrics_manager(config, db, setting_repo)
+    # 集群：定时计算只在当前主机上触发；「上次没跑完」的记录也只由主机收尾，
+    # 不然一台从机重启就把主机正在跑的计算标成中断
+    metrics_manager.leader_check = lambda: cluster.is_leader
     try:
-        await metrics_manager.start()
+        await metrics_manager.start(recover=cluster.is_leader)
     except Exception as exc:  # noqa: BLE001
         logger.warning("指标计算没能启动（不影响采集）：%s", exc)
 
@@ -153,10 +184,12 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         logger.info("正在关闭服务…")
+        set_cluster(None)
         await metrics_manager.stop()
         await close_live_sessions()
         await close_live_views()
         await scheduler.shutdown()
+        await cluster.stop()
         from .api.media import close_media_client
         from .utils.jsvm import shutdown_js_runtime
 
@@ -177,6 +210,23 @@ async def lifespan(app: FastAPI):
         SUBPROCESS_LOOP.stop()
         await db.close()
         logger.info("服务已关闭")
+
+
+async def _cluster_brief():
+    """顶栏用：本机是谁、集群里在线几台、总共在跑几个任务。"""
+    from .cluster import get_cluster
+    cluster = get_cluster()
+    if cluster is None:
+        return None
+    nodes = [n for n in await cluster.nodes.list(cluster.offline_seconds) if n["online"]]
+    workers = [n for n in nodes if n.get("role") in ("all", "worker")]
+    return {
+        "node_id": cluster.me.node_id, "node_name": cluster.me.node_name,
+        "role": cluster.me.role, "is_leader": cluster.is_leader,
+        "nodes_online": len(nodes),
+        "running": sum(int(n.get("running_count") or 0) for n in workers),
+        "max_running": sum(int(n.get("max_running") or 0) for n in workers),
+    }
 
 
 def create_app() -> FastAPI:
@@ -200,9 +250,12 @@ def create_app() -> FastAPI:
         scenic.router, tasks.router, data.router, media.router,
         accounts.router, settings_api.router, ws.router,
         live.router, live.ws_router, labeling_api.router, qunar_api.router, metrics_api.router,
-        archive_api.router,
+        archive_api.router, cluster_api.router,
     ):
         app.include_router(router)
+    # 集群：账号 / 任务不在本机时，把请求转给它所在的机器（cluster/forward.py）
+    from .cluster.forward import ClusterForwarder
+    app.add_middleware(ClusterForwarder)
 
     @app.exception_handler(HTTPException)
     async def _http_error(request: Request, exc: HTTPException):
@@ -242,6 +295,7 @@ def create_app() -> FastAPI:
                 "redis_is_real": state.redis.is_real_redis,
                 "collectors": CollectorRegistry.available(),
                 "scheduler": state.scheduler.status(),
+                "cluster": await _cluster_brief(),
                 "proxy_enabled": bool(state.config.get("proxy.enabled")),
                 # 浏览器闸门：现在开着几个、上限多少、内存还剩多少。
                 # 卡机那次事后完全查不到"当时开了几个浏览器"，只能看监控猜。

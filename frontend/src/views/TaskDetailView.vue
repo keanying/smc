@@ -67,6 +67,10 @@
             <el-descriptions-item label="进度">
               <el-progress :percentage="task?.progress || 0" :stroke-width="10" />
             </el-descriptions-item>
+            <el-descriptions-item v-if="isCluster" label="运行机器">
+              {{ task?.node_id ? nodeLabel(task.node_id) : '还没派发过' }}
+              <span v-if="task?.dispatched_at" class="muted">（{{ formatTime(task.dispatched_at) }} 派发）</span>
+            </el-descriptions-item>
             <el-descriptions-item label="任务 ID">
               <span class="mono task-id">{{ taskId }}</span>
             </el-descriptions-item>
@@ -186,6 +190,7 @@
 </template>
 
 <script setup lang="ts">
+import { isCluster, loadCluster, nodeLabel } from '../composables/cluster'
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -262,6 +267,7 @@ async function clearLogs() {
 }
 
 onMounted(async () => {
+  loadCluster()
   loading.value = true
   try {
     await Promise.all([

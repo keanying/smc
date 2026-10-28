@@ -237,6 +237,23 @@ scheduler:
   max_running_tasks: 3
   misfire_grace_seconds: 300
 
+# 集群：多台机器连同一个 MySQL 和 Redis，主机派任务、从机跑任务。
+# 这一段是每台机器自己的（不在页面上改）。只有一台机器时不用改，默认既是主也是从。
+cluster:
+  # all=主+从 / master=只协调不跑任务 / worker=只跑任务
+  role: all
+  # 机器编号，集群里不能重复。留空 = 主机名
+  node_id: ""
+  # 页面上显示的名字。留空 = 机器编号
+  node_name: ""
+  # 别的机器访问本机的地址，如 http://10.0.0.12:8000。留空 = http://<本机内网 IP>:<server.port>
+  advertise_url: ""
+  # 本机最多同时跑几个任务。0 = 跟随上面 scheduler.max_running_tasks
+  max_running_tasks: 0
+  # 心跳间隔；多久没心跳算掉线（掉线机器上的任务标成中断）
+  heartbeat_seconds: 5
+  offline_seconds: 30
+
 platforms:
   douyin:
     enabled: true

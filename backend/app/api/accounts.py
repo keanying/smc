@@ -7,7 +7,7 @@
 """账号管理 API：多平台账号增删改、静默检测、交互式登录会话。"""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
 
 from ..browser.live_session import LiveBrowserSession, close_all, get_session, register
 from ..browser.cookie_import import CookieParseError
@@ -36,12 +36,12 @@ async def channels():
 
 @router.get("")
 async def list_accounts(
-    channel: str = "", status: str = "", group: str = "",
+    channel: str = "", status: str = "", group: str = "", node: str = "",
     page: int = 1, page_size: int = 50,
     state: AppState = Depends(get_state),
 ):
     return ok(await state.accounts.list(
-        channel=channel, status=status, group=group, page=page, page_size=page_size
+        channel=channel, status=status, group=group, node=node, page=page, page_size=page_size
     ))
 
 
@@ -145,6 +145,14 @@ async def create_account(payload: AccountIn, state: AppState = Depends(get_state
     data["profile_dir"] = str(
         state.browser_manager.profile_dir(data["channel"], data["account_name"])
     )
+    # 集群：账号落在处理这个请求的机器上——选了别的机器时，请求已经被转到那台（cluster/forward.py）
+    from ..cluster import get_cluster
+    cluster = get_cluster()
+    exists = await state.accounts.get(data["channel"], data["account_name"]) is not None
+    if cluster is not None and not exists:      # 编辑已有账号不改它在哪台机器
+        if needs_login(data["channel"]) and not cluster.me.is_worker_role:
+            raise bad_request("这台机器只协调不跑任务，账号要放在从机上：请选择一台从机")
+        data["node_id"] = cluster.me.node_id if needs_login(data["channel"]) else ""
     await state.accounts.create(data)
     message = (
         "账号已添加，请点击登录按钮完成授权"
@@ -158,6 +166,10 @@ async def create_account(payload: AccountIn, state: AppState = Depends(get_state
 async def delete_account(
     channel: str, account_name: str, state: AppState = Depends(get_state)
 ):
+    # ⚠️ DELETE /api/accounts/login-session/{id}（关登录窗口）也会先匹配到这条路由——
+    # 它注册得早，路径形状又一样。以前关窗口其实走到了这里，会话根本没关。
+    if channel == "login-session":
+        return await close_login_session(account_name)
     await state.browser_manager.clear_profile(channel, account_name)
     await state.accounts.delete(channel, account_name)
     return ok(message="账号及其浏览器 profile 已删除")
@@ -318,7 +330,51 @@ async def probe(
 
 @router.post("/check-all")
 async def check_all(channel: str = "", state: AppState = Depends(get_state)):
-    return ok(await state.browser_manager.check_all(channel))
+    """检测本机的号，再让其他在线的从机各自检测自己的号，结果合在一起。"""
+    results = await state.browser_manager.check_all(channel)
+    from ..cluster import get_cluster
+    cluster = get_cluster()
+    if cluster is None:
+        return ok(results)
+    import httpx
+
+    for node in await cluster.online_workers():
+        if node["node_id"] == cluster.me.node_id or not node.get("advertise_url"):
+            continue
+        try:
+            async with httpx.AsyncClient(timeout=600) as client:
+                resp = await client.post(
+                    f"{node['advertise_url'].rstrip('/')}/api/accounts/check-all",
+                    params={"channel": channel},
+                    headers={"x-smc-forwarded": cluster.me.node_id})
+            results.extend(resp.json().get("data") or [])
+        except Exception as exc:  # noqa: BLE001 —— 一台连不上不影响其他机器的结果
+            results.append({"channel": channel or "-", "account_name": "-", "ok": False,
+                            "message": f"机器 {node.get('node_name') or node['node_id']} 连不上：{exc}"})
+    return ok(results)
+
+
+@router.put("/{channel}/{account_name}/node")
+async def move_account(
+    channel: str, account_name: str, node_id: str = Body(..., embed=True),
+    state: AppState = Depends(get_state),
+):
+    """把账号迁到另一台机器。登录态在原来那台的硬盘上带不过去，迁完要在新机器上重新登录。"""
+    if not await state.accounts.get(channel, account_name):
+        raise not_found(f"账号不存在：{channel}/{account_name}")
+    from ..cluster import get_cluster
+    cluster = get_cluster()
+    if cluster is not None and node_id:
+        row = await cluster.nodes.get(node_id)
+        if not row:
+            raise bad_request(f"机器不存在：{node_id}")
+        if row.get("role") == "master":
+            raise bad_request("这台机器只协调不跑任务，账号不能放在上面")
+    await state.accounts.set_node(channel, account_name, node_id)
+    if needs_login(channel):
+        await state.accounts.update(channel, account_name, {"status": "expired",
+                                                            "last_error": "已迁到新机器，需要重新登录"})
+    return ok(message="已迁移。请在新机器上重新登录（扫码或导入 Cookie）")
 
 
 @router.post("/probe-all")

@@ -891,7 +891,7 @@ class BrowserSessionManager:
         用户看到的就是"抖音采到一半就不采了"。
         定时体检本来就是"顺手看一眼"，撞上了跳过就行，下一轮再看。
         """
-        listing = await self.accounts.list(channel=channel, page_size=200)
+        listing = await self.accounts.list(channel=channel, local_only=True, page_size=200)
         results = []
         for account in listing["items"]:
             if not account["enabled"] or account["status"] == "disabled":

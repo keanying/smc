@@ -37,13 +37,21 @@ POLL_INTERVAL_SECONDS = 5
 
 
 class TaskScheduler:
+    """本机的任务执行器。
+
+    单独用（测试里、没接集群时）：自己扫到点的任务自己跑，和以前一样。
+    接了集群（cluster 不为 None）：**不自己挑任务**，只跑主机派给本机的
+    （src_opinion_crawl_task.node_id = 本机、status = queued），派任务的事归 cluster/service.py。
+    """
+
     def __init__(self, config: Config, task_repo: TaskRepository, runner: TaskRunner,
-                 browser_manager=None):
+                 browser_manager=None, cluster=None):
         self.config = config
         self.tasks = task_repo
         self.runner = runner
         self.browser_manager = browser_manager
-        self.max_running = int(config.get("scheduler.max_running_tasks", 3))
+        self.cluster = cluster
+        self._fixed_max_running = int(config.get("scheduler.max_running_tasks", 3))
 
         self._scheduler: Optional[AsyncIOScheduler] = None
         self._running: Dict[str, asyncio.Task] = {}
@@ -52,16 +60,29 @@ class TaskScheduler:
         self._started_at: Dict[str, float] = {}
         self._poll_lock = asyncio.Lock()
 
+    @property
+    def max_running(self) -> int:
+        return self.cluster.max_running if self.cluster is not None else self._fixed_max_running
+
     # ---------------- 生命周期 ----------------
     async def start(self) -> None:
-        # 上次进程被杀时可能留下 running 状态的任务，先清理掉
-        reset = await self.tasks.reset_stuck_running()
+        # 上次进程被杀时可能留下 running 状态的任务，先清理掉。
+        # 集群里只清本机的；主机再顺带清升级前没有机器归属的老记录
+        if self.cluster is not None:
+            me = self.cluster.me
+            reset = await self.tasks.reset_stuck_running(
+                [me.node_id, ""] if me.is_master_role else [me.node_id])
+        else:
+            reset = await self.tasks.reset_stuck_running()
         if reset:
             logger.warning("发现 %d 个上次未正常结束的任务，已标记为失败", reset)
 
         if not self.config.get("scheduler.enabled", True):
-            logger.warning("调度器在配置里被关闭，任务只能手动触发")
-            return
+            if self.cluster is None:
+                logger.warning("调度器在配置里被关闭，任务只能手动触发")
+                return
+            # 集群里本机照样要轮询：「立即执行」派过来的任务得有人跑。只是主机不再自动派到点的任务
+            logger.warning("调度器在配置里被关闭，到点的任务不会自动执行，只能手动触发")
 
         self._scheduler = AsyncIOScheduler(timezone=self.config.get("scheduler.timezone", "Asia/Shanghai"))
         self._scheduler.add_job(
@@ -130,10 +151,36 @@ class TaskScheduler:
             await asyncio.gather(*self._running.values(), return_exceptions=True)
 
     # ---------------- 轮询 ----------------
+    def poke(self) -> None:
+        """主机刚把任务派给本机：马上轮询一次，不等下一个 5 秒。"""
+        try:
+            asyncio.get_running_loop().create_task(self._poll())
+        except RuntimeError:
+            pass
+
+    async def _poll_assigned(self) -> None:
+        """集群：读别的机器发来的取消请求，再把派给本机的任务跑起来。"""
+        for task_id in await self.tasks.should_stop(sorted(self._running)):
+            event = self._cancel_events.get(task_id)
+            if event is not None and not event.is_set():
+                logger.info("任务 %s 收到取消请求（来自别的机器的页面）", task_id)
+                event.set()
+        node_id = self.cluster.me.node_id
+        # 不按 max_running 截断：派过来的都是主机按本机空位算过的
+        for task in await self.tasks.assigned_to(node_id):
+            if task["task_id"] in self._running:
+                continue
+            if not await self.tasks.start_assigned(task["task_id"], node_id):
+                continue        # 刚被取消了
+            await self._launch(task, claimed=True)
+
     async def _poll(self) -> None:
         async with self._poll_lock:
             self._reap_finished()
             await self._watchdog()
+            if self.cluster is not None:
+                await self._poll_assigned()
+                return
             slots = self.max_running - len(self._running)
             if slots <= 0:
                 return
@@ -214,9 +261,10 @@ class TaskScheduler:
         except Exception as exc:  # noqa: BLE001
             logger.error("补标任务 %s 状态失败：%s", task_id, exc)
 
-    async def _launch(self, task: Dict[str, Any]) -> None:
+    async def _launch(self, task: Dict[str, Any], claimed: bool = False) -> None:
         task_id = task["task_id"]
-        await self.tasks.update(task_id, {"status": TaskStatus.QUEUED.value})
+        if not claimed:
+            await self.tasks.update(task_id, {"status": TaskStatus.QUEUED.value})
         cancel_event = asyncio.Event()
         self._cancel_events[task_id] = cancel_event
         self._started_at[task_id] = asyncio.get_event_loop().time()
@@ -242,10 +290,12 @@ class TaskScheduler:
 
     # ---------------- 手动控制 ----------------
     async def trigger_now(self, task_id: str) -> bool:
-        """立即执行一次，不等轮询。"""
+        """立即执行一次，不等轮询。集群里由本机当场挑一台机器派出去（可能是别的机器）。"""
         self._reap_finished()
         if task_id in self._running:
             return False
+        if self.cluster is not None:
+            return await self.cluster.dispatch_now(task_id) is not None
         task = await self.tasks.get(task_id)
         if not task:
             raise KeyError(f"任务不存在：{task_id}")
@@ -258,6 +308,16 @@ class TaskScheduler:
 
     async def cancel(self, task_id: str) -> bool:
         event = self._cancel_events.get(task_id)
+        if event is None and self.cluster is not None:
+            # 在别的机器上排队 / 在跑：排队的直接取消，在跑的打标记，那台机器几秒内读到后自己停
+            outcome = await self.tasks.request_cancel(task_id)
+            if outcome == "flagged":
+                return True
+            if outcome == "canceled":
+                task = await self.tasks.get(task_id)
+                if task:
+                    await self.tasks.reschedule(task)
+                return False
         if event is None:
             # 没在跑，但可能是排队中的周期任务，直接停用
             task = await self.tasks.get(task_id)

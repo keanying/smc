@@ -70,6 +70,10 @@ COMMENTS = "src_opinion_social_work_comment_di"
 DELETED_WORK = "src_opinion_social_work_deleted"
 #: 指标计算的运行记录（每次手动 / 定时计算一行）
 METRIC_RUN = "src_opinion_metric_run"
+#: 集群机器（每台机器一行，心跳刷新）
+CLUSTER_NODE = "src_opinion_cluster_node"
+#: 集群租约：谁是当前的主机
+CLUSTER_LEASE = "src_opinion_cluster_lease"
 #: 系统设置
 SETTING = "src_opinion_sys_setting"
 #: 景区采集任务
@@ -143,6 +147,15 @@ EXTRA_COLUMNS = [
      "VARCHAR(1000) NOT NULL DEFAULT '' COMMENT '命中的主关键字（搜到它的搜索词），逗号分隔'"),
     (WORKS, "hit_aux_keywords",
      "VARCHAR(1000) NOT NULL DEFAULT '' COMMENT '命中的附关键字（标题/描述/标签里出现的），逗号分隔'"),
+    # 集群：账号在哪台机器上（profile 在那台的硬盘上），任务派给了哪台
+    (ACCOUNT, "node_id",
+     "VARCHAR(100) NOT NULL DEFAULT '' COMMENT '账号所在机器（浏览器 profile 在哪台机器上）；空=未分配'"),
+    (TASK, "node_id",
+     "VARCHAR(100) NOT NULL DEFAULT '' COMMENT '派给哪台机器跑（最近一次）'"),
+    (TASK, "dispatched_at",
+     "DATETIME NULL DEFAULT NULL COMMENT '最近一次派发时间'"),
+    (TASK, "cancel_requested",
+     "TINYINT NOT NULL DEFAULT 0 COMMENT '取消请求：任务在别的机器上跑时由那台机器读到后停止'"),
 ]
 
 #: 后加的索引：(表名, 索引名, 索引定义)
@@ -179,4 +192,7 @@ EXTRA_INDEXES = [
      "(`scenic_id`, `channel`, `author_id`(191))"),
     # 作者列表固定按粉丝数倒序，这张表上原来一个相关索引都没有
     (AUTHORS, "idx_authors_fans", "(`fans_count`, `id`)"),
+    # 集群：从机每几秒查一次"派给我的任务"，主机按机器统计账号
+    (TASK, "idx_task_node", "(`node_id`)"),
+    (ACCOUNT, "idx_account_node", "(`node_id`, `channel`)"),
 ]

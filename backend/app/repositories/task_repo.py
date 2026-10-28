@@ -330,13 +330,98 @@ class TaskRepository:
         )
         return next_run
 
-    async def reset_stuck_running(self) -> int:
-        """服务重启时把残留的 running 任务标记为失败，避免永远卡在运行中。"""
+    async def reset_stuck_running(self, node_ids: Optional[Sequence[str]] = None) -> int:
+        """服务重启时把残留的 running 任务标记为失败，避免永远卡在运行中。
+
+        集群里只能清**自己机器上**的（node_ids 给本机编号；主机再带上 '' 清升级前的老记录），
+        否则任何一台重启，都会把别的机器正在跑的任务标成中断。
+        """
+        where = "status IN ('running', 'queued')"
+        args: List[Any] = [datetime.now()]
+        if node_ids is not None:
+            if not node_ids:
+                return 0
+            where += f" AND node_id IN ({', '.join(['%s'] * len(node_ids))})"
+            args.extend(node_ids)
         return await self.db.execute(
             "UPDATE `src_opinion_crawl_task` SET status = 'failed', end_time = %s, "
-            "error = '服务重启，任务被中断' WHERE status IN ('running', 'queued')",
-            [datetime.now()],
+            f"error = '服务重启，任务被中断' WHERE {where}",
+            args,
         )
+
+    # ---------------- 集群：派发 ----------------
+    async def claim_for_node(self, task_id: str, node_id: str) -> bool:
+        """把任务派给某台机器。已经在跑 / 已经派出去的不动——两台主机同时派也只有一台成功。"""
+        return await self.db.execute(
+            "UPDATE `src_opinion_crawl_task` SET status = 'queued', node_id = %s, "
+            "dispatched_at = NOW(), cancel_requested = 0 "
+            "WHERE task_id = %s AND status NOT IN ('running', 'queued')",
+            [node_id, task_id],
+        ) > 0
+
+    async def assigned_to(self, node_id: str, limit: int = 50) -> List[Dict]:
+        """派给本机、还没开跑的任务。"""
+        rows = await self.db.fetch_all(
+            "SELECT * FROM `src_opinion_crawl_task` WHERE node_id = %s AND status = 'queued' "
+            "AND cancel_requested = 0 ORDER BY dispatched_at ASC, id ASC LIMIT %s",
+            [node_id, int(limit)],
+        )
+        return [_decode(r) for r in rows]
+
+    async def start_assigned(self, task_id: str, node_id: str) -> bool:
+        """从机开跑前先把状态原子地改成 running：跟「取消还没开跑的任务」抢，只有一边成功。"""
+        return await self.db.execute(
+            "UPDATE `src_opinion_crawl_task` SET status = 'running' "
+            "WHERE task_id = %s AND node_id = %s AND status = 'queued' AND cancel_requested = 0",
+            [task_id, node_id],
+        ) > 0
+
+    async def load_by_node(self) -> Dict[str, int]:
+        """每台机器上已派出（排队 + 在跑）的任务数。比心跳里报的数准：刚派出去还没开跑的也算上。"""
+        rows = await self.db.fetch_all(
+            "SELECT node_id, COUNT(*) AS c FROM `src_opinion_crawl_task` "
+            "WHERE status IN ('queued', 'running') AND node_id <> '' GROUP BY node_id"
+        )
+        return {str(r["node_id"]): int(r["c"]) for r in rows}
+
+    async def orphaned(self, online_node_ids: Sequence[str]) -> List[Dict]:
+        """派给了掉线机器、还挂在排队 / 运行中的任务。"""
+        where = "status IN ('running', 'queued') AND node_id <> ''"
+        args: List[Any] = []
+        if online_node_ids:
+            where += f" AND node_id NOT IN ({', '.join(['%s'] * len(online_node_ids))})"
+            args.extend(online_node_ids)
+        rows = await self.db.fetch_all(
+            f"SELECT * FROM `src_opinion_crawl_task` WHERE {where}", args)
+        return [_decode(r) for r in rows]
+
+    async def request_cancel(self, task_id: str) -> str:
+        """取消在别的机器上的任务。
+
+        还没开跑的直接改成已取消（返回 'canceled'）；在跑的打个取消标记，
+        那台机器几秒内读到后自己停（返回 'flagged'）；都不是返回 ''。
+        """
+        if await self.db.execute(
+            "UPDATE `src_opinion_crawl_task` SET status = 'canceled', queued_at = NULL, "
+            "error = '已取消' WHERE task_id = %s AND status = 'queued'", [task_id],
+        ) > 0:
+            return "canceled"
+        if await self.db.execute(
+            "UPDATE `src_opinion_crawl_task` SET cancel_requested = 1 "
+            "WHERE task_id = %s AND status = 'running'", [task_id],
+        ) > 0:
+            return "flagged"
+        return ""
+
+    async def should_stop(self, task_ids: Sequence[str]) -> List[str]:
+        """本机在跑的任务里，哪些被要求取消了（或者任务已经被删掉了）。"""
+        if not task_ids:
+            return []
+        rows = await self.db.fetch_all(
+            "SELECT task_id, cancel_requested FROM `src_opinion_crawl_task` "
+            f"WHERE task_id IN ({', '.join(['%s'] * len(task_ids))})", list(task_ids))
+        alive = {str(r["task_id"]): int(r["cancel_requested"] or 0) for r in rows}
+        return [t for t in task_ids if t not in alive or alive[t]]
 
     # ---------------- 日志 ----------------
     async def add_logs(self, rows: Sequence[Dict[str, Any]]) -> None:
