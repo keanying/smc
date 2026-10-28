@@ -24,7 +24,7 @@ from dataclasses import replace
 from typing import Any, Dict, List, Optional
 
 from .common import EVENT_PREFIX, date_list
-from .config import DEFAULT_PUSH_PK as _SMC_PK, ENGINE_DIR, TABLES
+from .config import DEFAULT_PUSH_PK as _SMC_PK, ENGINE_DIR, TABLES, push_keys_for
 
 #: smc 这边的默认主键（对齐下游网关），按表名查
 DEFAULT_PK_BY_TABLE = {t["table"]: _SMC_PK[t["key"]] for t in TABLES if t["key"] in _SMC_PK}
@@ -98,16 +98,20 @@ def shape_for_push(table: str, df, table_cfg: Dict[str, Any], default_pk: List[s
     return out, [rename.get(c, c) for c in pk]
 
 
-def push_tables(st, tables: Dict[str, Any], cfg: Dict[str, Any]):
-    """把一个景区算出来的表按配置推出去。返回 engine 的 PushReport。"""
+def push_tables(st, tables: Dict[str, Any], cfg: Dict[str, Any], scenic: str = ""):
+    """把一个景区算出来的表按配置推出去。返回 engine 的 PushReport。
+
+    推哪几张表按景区定（push_keys_for）：单独配过的景区按它自己的，其余按各表的推送开关。
+    """
     from engin_cli.pusher import DEFAULT_PUSH_PK, push_all
 
     push = cfg["push"]
-    by_table = {t["table"]: cfg["tables"][t["key"]] for t in TABLES}
+    allowed = set(push_keys_for(cfg, scenic))
+    by_table = {t["table"]: (t["key"], cfg["tables"][t["key"]]) for t in TABLES}
     shaped, pk_map, names = {}, {}, {}
     for table, df in tables.items():
-        tc = by_table.get(table)
-        if tc is None or not tc.get("push", True):
+        key, tc = by_table.get(table, (None, None))
+        if tc is None or key not in allowed:
             continue
         default_pk = DEFAULT_PK_BY_TABLE.get(table) or DEFAULT_PUSH_PK.get(table, [])
         shaped[table], pk_map[table] = shape_for_push(table, df, tc, default_pk)
@@ -167,7 +171,10 @@ def run(job: Dict[str, Any]) -> int:
                     loads=[{"table": r.table, "rows": r.rows, "deleted": r.deleted}
                            for r in res.load_results])
                 if push_on and res.ok:
-                    rep = push_tables(st, res.tables, cfg)
+                    rep = push_tables(st, res.tables, cfg, sc)
+                    if sc in (cfg.get("scenic_push") or {}):
+                        item["notes"].append("按景区单独配置推送：" + (
+                            "、".join(push_keys_for(cfg, sc)) or "这个景区不推送"))
                     item["push"] = [{"table": r.table, "rows": r.rows, "batches": r.batches,
                                      "failed_batches": r.failed_batches, "ok": r.ok,
                                      "skipped": r.skipped, "error": r.error,

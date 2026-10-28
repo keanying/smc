@@ -89,6 +89,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     #   fields 空 = 全部字段原名推送；否则只推列出来的，按列出的顺序，name 是下游字段名
     "tables": {t["key"]: {"push": True, "push_name": "", "pk": [], "fields": []}
                for t in TABLES},
+    # 按景区单独指定推哪几张表：{景区 ID: [表简写, ...]}。
+    #   不在这里的景区 = 按上面每张表的 push 开关；在这里的景区 = 只推列出来的（空列表 = 都不推）
+    "scenic_push": {},
 }
 
 _CRON_FIELDS = 5
@@ -213,7 +216,30 @@ def normalize(raw: Optional[Dict[str, Any]], *, previous: Optional[Dict[str, Any
             if missing:
                 raise ValueError(f"{t['label']}：主键字段没有勾选推送：{'、'.join(missing)}")
         tc["fields"] = fields
+    scenic_push = raw.get("scenic_push") or {}
+    if not isinstance(scenic_push, dict):
+        raise ValueError("按景区推送的配置必须是 {景区: [表]}")
+    keys = [t["key"] for t in TABLES]
+    cfg["scenic_push"] = {}
+    for scenic, picked in scenic_push.items():
+        scenic = str(scenic).strip()
+        if not scenic:
+            continue
+        if not isinstance(picked, list):
+            raise ValueError(f"景区 {scenic} 的推送表必须是列表")
+        bad = [k for k in picked if k not in keys]
+        if bad:
+            raise ValueError(f"景区 {scenic}：不认识的表 {'、'.join(map(str, bad))}")
+        cfg["scenic_push"][scenic] = [k for k in keys if k in picked]   # 按固定顺序、去重
     return cfg
+
+
+def push_keys_for(cfg: Dict[str, Any], scenic: str) -> List[str]:
+    """这个景区推哪几张表（表简写）：单独配了就按单独的，否则按各表的推送开关。"""
+    override = (cfg.get("scenic_push") or {}).get(scenic)
+    if override is not None:
+        return list(override)
+    return [t["key"] for t in TABLES if cfg["tables"][t["key"]].get("push", True)]
 
 
 def redact(cfg: Dict[str, Any]) -> Dict[str, Any]:

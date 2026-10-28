@@ -831,6 +831,8 @@ export interface MetricsConfig {
     dry_run: boolean
   }
   tables: Record<string, MetricTableCfg>
+  /** 按景区单独指定推哪几张表（表简写）；不在这里的景区按各表的 push 开关 */
+  scenic_push: Record<string, string[]>
 }
 
 export interface MetricCatalogTable {

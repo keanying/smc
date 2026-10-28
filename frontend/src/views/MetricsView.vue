@@ -332,6 +332,52 @@
       <!-- ==================== 推送表 ==================== -->
       <el-tab-pane label="推送表" name="tables">
         <el-alert v-if="catalogError" type="error" :closable="false" show-icon :title="catalogError" class="block" />
+
+        <!-- 按景区选推哪几张表：第一行是默认（就是下面每张表的「推送」开关），之后每行一个单独配置的景区 -->
+        <el-card shadow="never" class="block">
+          <template #header>
+            <div class="card-head">
+              <span class="lbl">按景区推送<InfoTip :width="320">
+                <ul class="tip-list">
+                  <li>没有单独添加的景区，按「默认」这一行推送（和下面每张表的「推送」开关是同一个设置）</li>
+                  <li>添加过的景区，只推它这一行勾选的表；一个都不勾 = 这个景区不推送</li>
+                  <li>只管推不推，表名、主键、字段仍按下面每张表的设置</li>
+                </ul>
+              </InfoTip></span>
+              <div class="add-scenic">
+                <el-select v-model="addScenicId" filterable placeholder="选景区单独配置" size="small" class="add-scenic-select">
+                  <el-option v-for="s in addableScenics" :key="s.scenic_id"
+                             :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id" />
+                </el-select>
+                <el-button size="small" :disabled="!addScenicId" @click="addScenicPush">添加</el-button>
+              </div>
+            </div>
+          </template>
+          <el-table :data="scenicPushRows" size="small" class="data-table push-matrix">
+            <el-table-column label="景区" min-width="200">
+              <template #default="{ row }">
+                <template v-if="row.isDefault">
+                  <b>默认</b><span class="muted matrix-sub">未单独配置的景区</span>
+                </template>
+                <template v-else>
+                  {{ scenicName(row.scenic) }}<span class="muted mono matrix-sub">{{ row.scenic }}</span>
+                </template>
+              </template>
+            </el-table-column>
+            <el-table-column v-for="t in TABLE_OPTIONS" :key="t.key" :label="t.label" width="92" align="center">
+              <template #default="{ row }">
+                <el-checkbox :model-value="isPushed(row, t.key)" @change="(v: any) => setPushed(row, t.key, !!v)" />
+              </template>
+            </el-table-column>
+            <el-table-column label="" width="96" align="right">
+              <template #default="{ row }">
+                <el-button v-if="!row.isDefault" link type="primary" size="small"
+                           @click="removeScenicPush(row.scenic)">恢复默认</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+
         <el-collapse v-model="openTables" class="table-collapse">
           <el-collapse-item v-for="t in catalog" :key="t.key" :name="t.key">
             <template #title>
@@ -339,7 +385,7 @@
                 <span class="tbl-label">{{ t.label }}</span>
                 <span class="mono muted">{{ t.table }}</span>
                 <el-tag size="small" :type="cfg.tables[t.key].push ? 'success' : 'info'">
-                  {{ cfg.tables[t.key].push ? '推送' : '不推送' }}
+                  {{ cfg.tables[t.key].push ? '默认推送' : '默认不推' }}
                 </el-tag>
                 <span class="muted tbl-meta">
                   {{ cfg.tables[t.key].push_name ? `→ ${cfg.tables[t.key].push_name}` : '' }}
@@ -348,7 +394,8 @@
               </div>
             </template>
             <el-form label-width="110px" class="tbl-form">
-              <el-form-item label="推送">
+              <el-form-item>
+                <template #label><span class="lbl">默认推送<InfoTip content="没有在「按景区推送」里单独添加的景区，按这个开关" /></span></template>
                 <el-switch v-model="cfg.tables[t.key].push" />
               </el-form-item>
               <el-form-item>
@@ -649,6 +696,49 @@ async function copyPreview() {
   }
 }
 
+// ---------------- 按景区推送 ----------------
+type PushRow = { isDefault: boolean; scenic: string }
+const addScenicId = ref('')
+const scenicPushRows = computed<PushRow[]>(() => [
+  { isDefault: true, scenic: '' },
+  ...Object.keys(cfg.value?.scenic_push || {}).map((s) => ({ isDefault: false, scenic: s })),
+])
+const addableScenics = computed(() =>
+  scenicOptions.value.filter((s) => !(s.scenic_id in (cfg.value?.scenic_push || {}))))
+function scenicName(id: string): string {
+  return scenicOptions.value.find((s) => s.scenic_id === id)?.scenic_name || id
+}
+function isPushed(row: PushRow, key: string): boolean {
+  if (!cfg.value) return false
+  return row.isDefault ? cfg.value.tables[key].push : (cfg.value.scenic_push[row.scenic] || []).includes(key)
+}
+function setPushed(row: PushRow, key: string, on: boolean) {
+  if (!cfg.value) return
+  if (row.isDefault) {
+    cfg.value.tables[key].push = on
+    return
+  }
+  const cur = new Set(cfg.value.scenic_push[row.scenic] || [])
+  if (on) cur.add(key)
+  else cur.delete(key)
+  cfg.value.scenic_push[row.scenic] = TABLE_OPTIONS.map((t) => t.key).filter((k) => cur.has(k))
+}
+function addScenicPush() {
+  if (!cfg.value || !addScenicId.value) return
+  // 先照默认这一行勾好，再按需要去掉几张
+  cfg.value.scenic_push = {
+    ...cfg.value.scenic_push,
+    [addScenicId.value]: TABLE_OPTIONS.map((t) => t.key).filter((k) => cfg.value!.tables[k].push),
+  }
+  addScenicId.value = ''
+}
+function removeScenicPush(scenic: string) {
+  if (!cfg.value) return
+  const next = { ...cfg.value.scenic_push }
+  delete next[scenic]
+  cfg.value.scenic_push = next
+}
+
 // ---------------- 推送附加字段 ----------------
 const extraRows = ref<{ key: string; value: string }[]>([])
 
@@ -796,6 +886,11 @@ onUnmounted(() => window.clearInterval(timer))
 .form-group-title:not(:first-child) { margin-top: 22px; }
 .param-form :deep(.el-form-item) { margin-bottom: 16px; }
 .preview-select { width: 140px; margin-right: 8px; }
+.add-scenic { display: flex; align-items: center; gap: 8px; }
+.add-scenic-select { width: 240px; }
+.matrix-sub { margin-left: 8px; font-size: 12px; }
+.tip-list { margin: 0; padding-left: 16px; }
+.tip-list li + li { margin-top: 4px; }
 .preview-hint { margin-left: 8px; font-size: 12px; }
 .preview-code { max-height: 460px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
 .body-row { display: grid; grid-template-columns: auto 1fr auto 1fr auto 1fr; align-items: center; gap: 8px; width: 100%; }
