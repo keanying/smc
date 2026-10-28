@@ -519,7 +519,11 @@ def _describe(event: Dict[str, Any]) -> str:
         if not event.get("ok"):
             return head + "✗ " + "；".join(event.get("errors") or ["失败"])
         rows = sum((event.get("tables") or {}).values())
-        text = head + f"✓ 产出 {rows} 行（{event.get('elapsed')}s）"
+        timing = event.get("timing") or {}
+        stages = "、".join(f"{label} {timing[k]}s" for k, label in (
+            ("compute", "计算"), ("drill_filter", "下钻过滤"), ("load", "写库"), ("push", "推送"))
+            if k in timing)
+        text = head + f"✓ 产出 {rows} 行（{event.get('elapsed')}s" + (f"：{stages}" if stages else "") + "）"
         pushes = event.get("push") or []
         if pushes:
             bad = [p for p in pushes if not p.get("ok") and not p.get("skipped")]
