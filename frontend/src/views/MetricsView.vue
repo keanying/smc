@@ -53,6 +53,55 @@
           </div>
         </el-card>
 
+        <!-- 演示数据：把一个景区已经算好的结果复制给另一个景区编号，推给下游（不写本地库） -->
+        <el-card shadow="never" class="block">
+          <template #header>
+            <span class="lbl">演示数据<InfoTip :width="340">
+              <ul class="tip-list">
+                <li>把一个景区<b>已经算好</b>的指标结果，换成另一个景区的编号和名称，推给下游；不写本地库</li>
+                <li>用于下游要看一个还没开始采集的景区的效果</li>
+                <li>下钻明细的 detail_uk 按新景区重算，不会和原景区的数据撞</li>
+                <li>推送按「推送」「推送表」里的地址、表名、主键、字段；推哪几张表以这里勾的为准</li>
+              </ul>
+            </InfoTip></span>
+          </template>
+          <div class="mock-grid">
+            <div class="mock-field">
+              <span class="cell-label">从哪个景区复制</span>
+              <el-select v-model="mock.from_scenic" filterable placeholder="选景区（要已经算过）">
+                <el-option v-for="s in scenicOptions" :key="s.scenic_id"
+                           :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id" />
+              </el-select>
+            </div>
+            <div class="mock-field">
+              <span class="cell-label">复制给（景区编号）</span>
+              <el-input v-model="mock.to_scenic" placeholder="如 PFTSCA01018088" @blur="fillMockName" />
+            </div>
+            <div class="mock-field">
+              <span class="cell-label">景区名称</span>
+              <el-input v-model="mock.to_name" placeholder="如 泰宁九龙潭生态旅游区" />
+            </div>
+            <div class="mock-field">
+              <span class="cell-label">日期区间</span>
+              <el-date-picker v-model="mock.dates" type="daterange" value-format="YYYYMMDD" format="YYYY-MM-DD"
+                              range-separator="至" start-placeholder="开始" end-placeholder="结束" :clearable="false" />
+            </div>
+          </div>
+          <div class="mock-row">
+            <span class="cell-label">推哪几张表</span>
+            <el-checkbox-group v-model="mock.tables">
+              <el-checkbox v-for="t in TABLE_OPTIONS" :key="t.key" :value="t.key">{{ t.label }}</el-checkbox>
+            </el-checkbox-group>
+          </div>
+          <div class="mock-row">
+            <el-checkbox v-model="mock.dry_run">只组报文不发送（先验证）</el-checkbox>
+            <div class="spacer" />
+            <el-button type="primary" :loading="mocking" :disabled="!!status?.running_run_id" @click="startMock">
+              <AppIcon v-if="!mocking" name="publish" :size="14" class="btn-icon" />复制并推送
+            </el-button>
+          </div>
+        </el-card>
+
         <el-card shadow="never">
           <template #header>
             <div class="card-head">
@@ -63,7 +112,10 @@
           <el-table :data="runs" size="small" class="data-table" max-height="calc(100vh - 430px)">
             <el-table-column label="开始时间" width="160" prop="started_at" />
             <el-table-column label="触发" width="70">
-              <template #default="{ row }">{{ row.trigger_type === 'schedule' ? '定时' : '手动' }}</template>
+              <template #default="{ row }">
+                <el-tag v-if="row.trigger_type === 'mock'" size="small" type="warning">演示</el-tag>
+                <template v-else>{{ row.trigger_type === 'schedule' ? '定时' : '手动' }}</template>
+              </template>
             </el-table-column>
             <el-table-column label="目标日期" width="190">
               <template #default="{ row }">
@@ -71,7 +123,7 @@
               </template>
             </el-table-column>
             <el-table-column label="景区" width="90">
-              <template #default="{ row }">{{ row.scenics.length || '全部' }}</template>
+              <template #default="{ row }">{{ row.trigger_type === 'mock' ? 1 : (row.scenics.length || '全部') }}</template>
             </el-table-column>
             <el-table-column label="状态" width="100">
               <template #default="{ row }">
@@ -514,7 +566,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   metricsApi, type MetricCatalogTable, type MetricRun, type MetricsConfig,
 } from '../api'
@@ -585,6 +637,14 @@ function shortTable(t: string): string {
 function resultText(row: MetricRun): string {
   if (row.error && row.status !== 'running') return row.error
   const s = row.summary || []
+  if (row.trigger_type === 'mock') {
+    const [from, to] = row.scenics
+    const head = `${scenicName(from)} → ${s[0]?.to_name || to}（${to}）`
+    if (!s.length) return row.status === 'running' ? `${head}，推送中…` : head
+    const rows = Object.values(s[0].tables || {}).reduce((a: number, b: any) => a + Number(b), 0)
+    const pushed = s[0].dry_run ? '，只组报文未发送' : '，已推送'
+    return `${head}：${rows} 行` + (s[0].push_ok === false ? '，推送失败' : (s[0].ok ? pushed : ''))
+  }
   if (!s.length) return row.status === 'running' ? '计算中…' : ''
   const ok = s.filter((x) => x.ok).length
   const rows = s.reduce((n, x) => n + Object.values(x.tables || {}).reduce((a: number, b: any) => a + Number(b), 0), 0)
@@ -741,6 +801,68 @@ function removeScenicPush(scenic: string) {
   cfg.value.scenic_push = next
 }
 
+// ---------------- 演示数据 ----------------
+const mocking = ref(false)
+const mock = reactive({
+  from_scenic: '', to_scenic: '', to_name: '',
+  dates: [yesterday, yesterday] as [string, string],
+  tables: ['core', 'platform', 'dimension', 'content', 'drill', 'macro'],
+  dry_run: false,
+})
+
+/** 目标编号在景区管理里建过的话，名称自动带出来 */
+function fillMockName() {
+  const hit = scenicOptions.value.find((s) => s.scenic_id === mock.to_scenic.trim())
+  if (hit && !mock.to_name) mock.to_name = hit.scenic_name
+}
+
+async function startMock() {
+  const to = mock.to_scenic.trim()
+  if (!mock.from_scenic || !to || !mock.to_name.trim()) {
+    ElMessage.warning('源景区、目标景区编号和名称都要填')
+    return
+  }
+  if (mock.from_scenic === to) {
+    ElMessage.error('目标编号和源景区一样：这样会用演示数据覆盖真实景区')
+    return
+  }
+  if (!mock.tables.length) {
+    ElMessage.warning('至少勾一张表')
+    return
+  }
+  // 目标景区要是已经有真实数据，推出去会按主键覆盖下游里它的数据——说清楚再让人确认
+  const check = await metricsApi.mockCheck(to)
+  const risk = check.comments > 0 || check.ads_rows > 0
+  const lines = [
+    `把「${scenicName(mock.from_scenic)}」${fmtDate(mock.dates[0])} ~ ${fmtDate(mock.dates[1])} 的指标结果，`
+      + `复制给「${mock.to_name.trim()}（${to}）」并推给下游；不写本地库。`,
+    risk
+      ? `⚠️ 这个编号在本系统里已经有真实数据（评论 ${check.comments} 条，指标 ${check.ads_rows} 行）：`
+        + '推出去会按主键覆盖下游里它的真实数据。'
+      : '这个编号在本系统里没有数据。',
+    mock.dry_run ? '本次只组报文、不发送。' : '',
+  ].filter(Boolean)
+  try {
+    await ElMessageBox.confirm(lines.join('\n'), risk ? '目标景区已有真实数据' : '确认推送演示数据', {
+      type: risk ? 'error' : 'warning',
+      confirmButtonText: risk ? '仍然覆盖' : (mock.dry_run ? '组报文' : '推送'),
+      customStyle: { whiteSpace: 'pre-line', maxWidth: '520px' },
+    })
+  } catch { return }
+  mocking.value = true
+  try {
+    const run = await metricsApi.mock({
+      from_scenic: mock.from_scenic, to_scenic: to, to_name: mock.to_name.trim(),
+      start_date: mock.dates[0], end_date: mock.dates[1], tables: mock.tables, dry_run: mock.dry_run,
+    })
+    ElMessage.success(mock.dry_run ? '已开始组报文' : '已开始推送演示数据')
+    await refreshLive()
+    openRun(run)
+  } finally {
+    mocking.value = false
+  }
+}
+
 // ---------------- 推送附加字段 ----------------
 const extraRows = ref<{ key: string; value: string }[]>([])
 
@@ -889,6 +1011,11 @@ onUnmounted(() => window.clearInterval(timer))
 .param-form :deep(.el-form-item) { margin-bottom: 16px; }
 .preview-select { width: 140px; margin-right: 8px; }
 .add-scenic { display: flex; align-items: center; gap: 8px; }
+.mock-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.mock-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.mock-field :deep(.el-date-editor) { width: 100% !important; }
+.mock-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.spacer { flex: 1; }
 .add-scenic-select { width: 240px; }
 .matrix-sub { margin-left: 8px; font-size: 12px; }
 .tip-list { margin: 0; padding-left: 16px; }

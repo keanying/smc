@@ -395,3 +395,47 @@ async def test_drill_keyword_filter_uses_only_enabled_main_and_aux_words_on_comm
     pairs = {(r["emotion_word"], r["emotion_type"]) for r in rows}
     assert td_cloud <= pairs, f"当天词云里的词在下钻表里找不到：{sorted(td_cloud - pairs)[:5]}"
     assert " 去掉 0 行" not in note, "样例里有不该收的行，过滤应该去掉一些"
+
+
+@pytest.mark.asyncio
+async def test_mock_copies_a_scenics_results_to_another_code_and_only_pushes(env):
+    """演示数据：把一个景区算好的结果换成另一个景区编号推给下游，不写本地库。"""
+    from app.metrics.common import yesterday
+
+    scenics = await _seed(env.db)
+    src, dst = scenics[0], "PFTSCA09999999"
+    day = yesterday()
+    await env.manager.init_tables()
+    await env.manager.save_config({
+        "scenics": [src], "params": {"lookback_days": 30, "rerun_days": 1},
+        "push": {"enabled": False, "url": env.receiver.url},
+    })
+    done = await _wait(env.manager, (await env.manager.start_run(start_date=day))["run_id"])
+    assert done["status"] == "success", done["error"]
+
+    with pytest.raises(ValueError, match="一样"):
+        await env.manager.start_mock(from_scenic=src, to_scenic=src, to_name="x", start_date=day,
+                                     end_date=day, tables=["core"])
+    check = await env.manager.mock_check(src)
+    assert check["comments"] > 0 and check["ads_rows"] > 0, "目标有真实数据时要能看出来"
+    assert (await env.manager.mock_check(dst))["comments"] == 0
+
+    run = await env.manager.start_mock(from_scenic=src, to_scenic=dst, to_name="演示景区",
+                                       start_date=day, end_date=day, tables=["core", "drill"])
+    done = await _wait(env.manager, run["run_id"])
+    assert done["status"] == "success" and done["trigger_type"] == "mock", done["error"]
+
+    sent = {r["body"]["tableName"]: r["body"] for r in env.receiver.requests}
+    assert set(sent) == {"ads_trf_social_opinion_comment_core_di",
+                         "ads_trf_social_opinion_drill_analysis_di"}, "只推勾选的表（推送开关关着也推）"
+    core = sent["ads_trf_social_opinion_comment_core_di"]["data"]
+    assert {r["scenic_spot_code"] for r in core} == {dst}
+    assert {r["scenic_spot_name"] for r in core} == {"演示景区"}
+    drill = sent["ads_trf_social_opinion_drill_analysis_di"]["data"]
+    src_uk = {r["detail_uk"] for r in await env.db.fetch_all(
+        "SELECT detail_uk FROM ads_trf_social_opinion_drill_analysis_di WHERE scenic_id = %s", [src])}
+    assert drill and not ({r["detail_uk"] for r in drill} & src_uk), "detail_uk 要按新景区重算，不能和原景区撞"
+    local = await env.db.fetch_one(
+        "SELECT COUNT(*) AS c FROM ads_trf_social_opinion_comment_core_di WHERE scenic_spot_code = %s",
+        [dst])
+    assert local["c"] == 0, "演示数据不写本地库"
