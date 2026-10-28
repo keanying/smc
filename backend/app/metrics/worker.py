@@ -98,15 +98,18 @@ def shape_for_push(table: str, df, table_cfg: Dict[str, Any], default_pk: List[s
     return out, [rename.get(c, c) for c in pk]
 
 
-def push_tables(st, tables: Dict[str, Any], cfg: Dict[str, Any], scenic: str = ""):
+def push_tables(st, tables: Dict[str, Any], cfg: Dict[str, Any], scenic: str = "",
+                only_keys: Optional[List[str]] = None, dry_run: Optional[bool] = None):
     """把一个景区算出来的表按配置推出去。返回 engine 的 PushReport。
 
     推哪几张表按景区定（push_keys_for）：单独配过的景区按它自己的，其余按各表的推送开关。
+    only_keys：明确指定推哪几张（演示数据用，不看上面的开关）。
+    下游表名、主键、字段裁剪 / 改名照常按每张表的配置。
     """
     from engin_cli.pusher import DEFAULT_PUSH_PK, push_all
 
     push = cfg["push"]
-    allowed = set(push_keys_for(cfg, scenic))
+    allowed = set(only_keys if only_keys is not None else push_keys_for(cfg, scenic))
     by_table = {t["table"]: (t["key"], cfg["tables"][t["key"]]) for t in TABLES}
     shaped, pk_map, names = {}, {}, {}
     for table, df in tables.items():
@@ -127,7 +130,8 @@ def push_tables(st, tables: Dict[str, Any], cfg: Dict[str, Any], scenic: str = "
         push_extra_fields=dict(push.get("extra_fields") or {}) or None,
         push_table_names=names or None, push_pk=pk_map, push_tables=list(shaped),
         push_batch_size=int(push["batch_size"]), push_timeout=float(push["timeout"]),
-        push_retries=int(push["retries"]), push_dry_run=bool(push.get("dry_run")),
+        push_retries=int(push["retries"]),
+        push_dry_run=bool(push.get("dry_run") if dry_run is None else dry_run),
         push_success_field=push.get("success_field") or "")
     return push_all(shaped, settings=pst)
 
@@ -328,6 +332,62 @@ def run(job: Dict[str, Any]) -> int:
         db.close()
 
 
+def run_mock(job: Dict[str, Any]) -> int:
+    """演示数据：把一个景区在本地 ADS 表里一段日期的结果复制给另一个景区编号，推给下游。
+
+    复制逻辑用引擎自己的 build_mock（编号 / 名称换掉，下钻表 detail_uk 按新景区重算，
+    etl_time 记成现在）；**只推送，不写本地库**——和引擎的 mock 命令一致。
+    推送走和正常计算同一条路（下游表名、主键、字段裁剪 / 改名都按配置），
+    只是推哪几张表以这次勾选的为准，不看「按景区推送」和各表的默认推送开关。
+    """
+    _load_engine()
+    logging.basicConfig(level=logging.INFO, stream=sys.stderr,
+                        format="%(levelname)s %(name)s: %(message)s")
+    from engin_cli.db import MySQL
+    from engin_cli.mock import build_mock
+
+    cfg = job["config"]
+    st = build_settings(job)
+    keys = [t["key"] for t in TABLES if t["key"] in (job.get("tables") or [])]
+    names = [t["table"] for t in TABLES if t["key"] in keys]
+    src, dst, to_name = job["from_scenic"], job["to_scenic"], job["to_name"]
+    dry_run = bool(job.get("dry_run"))
+    t0 = time.time()
+    emit("start", dates=[job["start_date"], job["end_date"]], days=len(
+        date_list(job["start_date"], job["end_date"])), scenics=[dst], push=True,
+        write_db=False, mock={"from": src, "to": dst, "to_name": to_name, "dry_run": dry_run})
+
+    db = MySQL(st.db)
+    try:
+        tables, notes = build_mock(db, src, dst, to_name, job["start_date"], job["end_date"],
+                                   names)
+    finally:
+        db.close()
+    item: Dict[str, Any] = {
+        "scenic": dst, "index": 1, "total": 1, "mock_from": src, "to_name": to_name,
+        "tables": {t: int(len(df)) for t, df in tables.items()}, "notes": list(notes),
+        "loads": [], "errors": [], "timing": {}, "dry_run": dry_run}
+    if not tables:
+        item.update(ok=False, errors=[f"{src} 在 {job['start_date']}~{job['end_date']} "
+                                      f"这几张表里都没有数据，没有可推送的"] + notes[:4])
+    else:
+        t1 = time.time()
+        rep = push_tables(st, tables, cfg, dst, only_keys=keys, dry_run=dry_run)
+        item["timing"]["push"] = round(time.time() - t1, 1)
+        item["push"] = [{"table": r.table, "rows": r.rows, "batches": r.batches,
+                         "failed_batches": r.failed_batches, "ok": r.ok, "skipped": r.skipped,
+                         "error": r.error, "warning": r.warning} for r in rep.results]
+        item["push_ok"] = rep.ok
+        item["ok"] = True
+        if dry_run:
+            item["notes"].append("只组报文不发送（dry-run）：没有真的推给下游")
+    item["elapsed"] = round(time.time() - t0, 1)
+    emit("scenic", **item)
+    ok = bool(item.get("ok")) and item.get("push_ok") is not False
+    emit("end", ok=ok, failed=0 if ok else 1, elapsed=round(time.time() - t0, 1))
+    return 0 if ok else 1
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     cmd = argv[0] if argv else "run"
@@ -336,7 +396,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             emit("catalog", tables=catalog())
             return 0
         if cmd == "run":
-            return run(json.loads(sys.stdin.read()))
+            job = json.loads(sys.stdin.read())
+            return run_mock(job) if job.get("mode") == "mock" else run(job)
         print(f"不认识的命令：{cmd}", file=sys.stderr)
         return 2
     except Exception as exc:                    # noqa: BLE001

@@ -94,6 +94,29 @@ async def start_run(payload: dict = Body(default={}), state: AppState = Depends(
     return ok(run, "已开始计算")
 
 
+@router.get("/mock/check")
+async def mock_check(to_scenic: str = Query(...), state: AppState = Depends(get_state)):
+    """演示数据的目标景区在本系统里有没有真实数据（有的话推出去会覆盖下游里它的数据）。"""
+    return ok(await _manager(state).mock_check(to_scenic))
+
+
+@router.post("/mock")
+async def start_mock(payload: dict = Body(...), state: AppState = Depends(get_state)):
+    """演示数据：把一个景区的指标结果复制给另一个景区编号并推送（不写本地库）。"""
+    try:
+        run = await _manager(state).start_mock(
+            from_scenic=str(payload.get("from_scenic") or ""),
+            to_scenic=str(payload.get("to_scenic") or ""),
+            to_name=str(payload.get("to_name") or ""),
+            start_date=str(payload.get("start_date") or "").replace("-", ""),
+            end_date=str(payload.get("end_date") or "").replace("-", ""),
+            tables=[str(t) for t in (payload.get("tables") or [])],
+            dry_run=bool(payload.get("dry_run")))
+    except (RuntimeError, ValueError) as exc:
+        raise bad_request(str(exc))
+    return ok(run, "演示数据已开始推送")
+
+
 @router.get("/runs")
 async def list_runs(page: int = Query(1), page_size: int = Query(20),
                     state: AppState = Depends(get_state)):

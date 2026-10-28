@@ -250,6 +250,72 @@ class MetricsManager:
                     "、".join(scenics) or "全部")
         return await self.get_run(run_id)
 
+    # ------------------------------------------------------------------ 演示数据
+    async def mock_check(self, to_scenic: str) -> Dict[str, Any]:
+        """目标景区在本系统里是不是已经有真实数据——有的话，演示数据会覆盖下游里它的真实数据。"""
+        to_scenic = str(to_scenic or "").strip()
+        cfg = await self.get_config()
+        comments = await self.db.fetch_one(
+            "SELECT COUNT(*) AS c FROM `src_opinion_social_work_comment_di` WHERE scenic_id = %s",
+            [to_scenic])
+        ads_rows = 0
+        status = {s["key"]: s for s in await self.table_status()}
+        if status["core"]["exists"]:
+            row = await self.db.fetch_one(
+                f"SELECT COUNT(*) AS c FROM `{status['core']['database']}`."
+                f"`ads_trf_social_opinion_comment_core_di` WHERE scenic_spot_code = %s",
+                [to_scenic])
+            ads_rows = int(row["c"] or 0)
+        scenic = await self.db.fetch_one(
+            "SELECT scenic_name FROM `src_opinion_social_scenic` WHERE scenic_id = %s", [to_scenic])
+        return {"to_scenic": to_scenic, "comments": int(comments["c"] or 0), "ads_rows": ads_rows,
+                "in_config": to_scenic in cfg["scenics"],
+                "scenic_name": scenic["scenic_name"] if scenic else ""}
+
+    async def start_mock(self, *, from_scenic: str, to_scenic: str, to_name: str,
+                         start_date: str, end_date: str, tables: List[str],
+                         dry_run: bool = False) -> Dict[str, Any]:
+        """演示数据：复制 from_scenic 的结果给 to_scenic 并推送（不写本地库）。和计算共用一个运行位。"""
+        if not self.enabled:
+            raise RuntimeError("指标计算没有开启：到「系统设置 → 指标计算」打开")
+        if self._run_id:
+            raise RuntimeError(f"已经有一次计算在跑（{self._run_id}），等它结束或先停止")
+        from_scenic, to_scenic, to_name = (str(from_scenic or "").strip(),
+                                           str(to_scenic or "").strip(), str(to_name or "").strip())
+        if not from_scenic or not to_scenic or not to_name:
+            raise ValueError("源景区、目标景区编号、目标景区名称都要填")
+        if from_scenic == to_scenic:
+            raise ValueError("目标景区编号和源景区一样：这样会用演示数据覆盖真实景区，请换一个编号")
+        keys = [t["key"] for t in mc.TABLES]
+        bad = [k for k in tables if k not in keys]
+        if bad or not tables:
+            raise ValueError("要选推哪几张表" if not tables else f"不认识的表：{'、'.join(bad)}")
+        if not start_date or not end_date:
+            raise ValueError("要选日期区间")
+        date_list(start_date, end_date)
+        cfg = await self.get_config()
+        if not dry_run and not cfg["push"]["url"]:
+            raise ValueError("还没配推送地址：到「推送」页填好再来，或者先勾「只组报文不发送」")
+
+        run_id = f"mk{datetime.now():%Y%m%d%H%M%S}-{uuid.uuid4().hex[:4]}"
+        await self.db.execute(
+            f"INSERT INTO `{T.METRIC_RUN}` (run_id, trigger_type, status, start_date, end_date, "
+            f"scenics, push, started_at) VALUES (%s, 'mock', 'running', %s, %s, %s, 1, %s)",
+            [run_id, start_date, end_date,
+             json.dumps([from_scenic, to_scenic], ensure_ascii=False), datetime.now()])
+        job = {"mode": "mock", "config": cfg, "mysql": self.config.get("mysql"),
+               "from_scenic": from_scenic, "to_scenic": to_scenic, "to_name": to_name,
+               "start_date": start_date, "end_date": end_date, "tables": tables,
+               "dry_run": bool(dry_run),
+               "work_dir": str(Path(self.config.get("server.data_dir")) / "metrics" / run_id)}
+        self._run_id = run_id
+        self._cancel_requested = False
+        asyncio.create_task(self._execute(run_id, job))
+        logger.info("[指标] 演示数据 %s：%s → %s（%s），%s ~ %s，表 %s%s", run_id, from_scenic,
+                    to_scenic, to_name, start_date, end_date, "、".join(tables),
+                    "（只组报文不发送）" if dry_run else "")
+        return await self.get_run(run_id)
+
     async def cancel(self, run_id: str) -> bool:
         if run_id != self._run_id or self._proc is None:
             return False
@@ -508,6 +574,12 @@ def _parse_events(text: str) -> List[Dict[str, Any]]:
 def _describe(event: Dict[str, Any]) -> str:
     """事件 → 日志里给人看的一行。"""
     kind = event.get("event")
+    if kind == "start" and event.get("mock"):
+        m = event["mock"]
+        d = event.get("dates") or ["", ""]
+        return (f"演示数据：{m.get('from')} → {m.get('to')}（{m.get('to_name')}），"
+                f"日期 {d[0]} ~ {d[-1]}；只推送不写本地库"
+                + ("，只组报文不发送" if m.get("dry_run") else ""))
     if kind == "start":
         d = event.get("dates") or ["", ""]
         sc = event.get("scenics") or []

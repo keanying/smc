@@ -440,7 +440,7 @@ CREATE TABLE IF NOT EXISTS `src_opinion_social_authors` (
 CREATE TABLE IF NOT EXISTS `src_opinion_metric_run` (
   `id`          BIGINT       NOT NULL AUTO_INCREMENT,
   `run_id`      VARCHAR(40)  NOT NULL                COMMENT '运行编号',
-  `trigger_type` VARCHAR(20) NOT NULL DEFAULT 'manual' COMMENT 'manual 手动 / schedule 定时',
+  `trigger_type` VARCHAR(20) NOT NULL DEFAULT 'manual' COMMENT 'manual 手动 / schedule 定时 / mock 演示数据',
   `status`      VARCHAR(20)  NOT NULL DEFAULT 'running' COMMENT 'running / success / partial / failed / canceled',
   `start_date`  VARCHAR(8)   NOT NULL DEFAULT ''     COMMENT '目标日期起 yyyyMMdd',
   `end_date`    VARCHAR(8)   NOT NULL DEFAULT ''     COMMENT '目标日期止 yyyyMMdd',

@@ -846,7 +846,7 @@ export interface MetricCatalogTable {
 
 export interface MetricRun {
   run_id: string
-  trigger_type: 'manual' | 'schedule'
+  trigger_type: 'manual' | 'schedule' | 'mock'
   status: 'running' | 'success' | 'partial' | 'failed' | 'canceled'
   start_date: string
   end_date: string
@@ -877,4 +877,9 @@ export const metricsApi = {
       { page, page_size: pageSize }, true),
   runDetail: (runId: string) => api.get<MetricRun>(`/api/metrics/runs/${runId}`, undefined, true),
   cancel: (runId: string) => api.post<null>(`/api/metrics/runs/${runId}/cancel`),
+  mockCheck: (toScenic: string) => api.get<{ to_scenic: string; comments: number; ads_rows: number;
+    in_config: boolean; scenic_name: string }>('/api/metrics/mock/check', { to_scenic: toScenic }),
+  mock: (payload: { from_scenic: string; to_scenic: string; to_name: string; start_date: string;
+    end_date: string; tables: string[]; dry_run: boolean }) =>
+    api.post<MetricRun>('/api/metrics/mock', payload),
 }
