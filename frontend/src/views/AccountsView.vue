@@ -1,5 +1,5 @@
 <!--
-  景区社媒采集系统 · Copyright (c) 2026 keanying
+  CloudSense（云听）· Copyright (c) 2026 keanying
   SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
   按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
   不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -395,6 +395,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Odometer, Plus, Refresh, Setting } from '@element-plus/icons-vue'
 import {
@@ -426,7 +427,12 @@ const cookieVisible = ref(false)
 const cookieTarget = reactive({ channel: '', accountName: '' })
 const probeVisible = ref(false)
 const probeTarget = reactive({ channel: '', accountName: '' })
-const query = reactive({ channel: '', status: '', group: '', node: '' })
+// 从集群页点某台机器的某个平台跳过来时带着 ?node=…&channel=…
+const route = useRoute()
+const query = reactive({
+  channel: String(route.query.channel || ''), status: '', group: '',
+  node: String(route.query.node || ''),
+})
 const form = reactive({
   channel: 'douyin', account_name: '', nickname: '', account_group: 'default',
   rotate_lock_hours: 0, node_id: '',

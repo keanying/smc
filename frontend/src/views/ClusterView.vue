@@ -1,5 +1,5 @@
 <!--
-  景区社媒采集系统 · Copyright (c) 2026 keanying
+  CloudSense（云听）· Copyright (c) 2026 keanying
   SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
   按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
   不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -40,11 +40,11 @@
           <div class="sum-value">{{ onlineCount }} / {{ info.nodes.length }}</div>
           <div class="sum-sub">{{ info.offline_seconds }} 秒没心跳算掉线</div>
         </div>
-        <div class="sum-item">
+        <router-link class="sum-item is-link" :to="{ path: '/tasks', query: { status: 'running' } }">
           <div class="sum-label">运行中任务</div>
           <div class="sum-value">{{ runningTotal }} / {{ capacityTotal }}</div>
-          <div class="sum-sub">所有在线机器合计</div>
-        </div>
+          <div class="sum-sub">所有在线机器合计 · 点击查看</div>
+        </router-link>
       </div>
 
       <el-alert v-if="!info.leader" type="error" :closable="false" show-icon class="alert"
@@ -66,7 +66,8 @@
         <el-table-column label="机器" min-width="170">
           <template #default="{ row }">
             <div class="node-name">
-              {{ row.node_name }}
+              <router-link class="link" :to="{ path: '/tasks', query: { node: row.node_id } }"
+                           :title="`看派给 ${row.node_name} 的任务`">{{ row.node_name }}</router-link>
               <el-tag v-if="row.is_leader" size="small" type="success" effect="dark">主机</el-tag>
               <el-tag v-if="row.is_self" size="small" type="info">本机</el-tag>
             </div>
@@ -89,7 +90,9 @@
           <template #default="{ row }">
             <span v-if="!row.online" class="muted">-</span>
             <template v-else-if="row.role !== 'master'">
-              <div>在跑 {{ row.running_count }} / {{ row.max_running }}</div>
+              <router-link class="link" :to="{ path: '/tasks', query: { node: row.node_id, status: 'running' } }">
+                在跑 {{ row.running_count }} / {{ row.max_running }}
+              </router-link>
               <div v-if="row.load > row.running_count" class="node-sub">另有 {{ row.load - row.running_count }} 个刚派到</div>
             </template>
             <span v-else class="muted">不跑任务</span>
@@ -109,18 +112,23 @@
         <el-table-column label="账号（能用 / 总数）" min-width="200">
           <template #default="{ row }">
             <div v-if="Object.keys(row.accounts).length" class="acc-chips">
-              <span v-for="(v, ch) in row.accounts" :key="ch" class="acc-chip"
-                    :class="{ 'is-none': !v.usable }">
+              <router-link v-for="(v, ch) in row.accounts" :key="ch" class="acc-chip"
+                           :class="{ 'is-none': !v.usable }"
+                           :to="{ path: '/accounts', query: { node: row.node_id, channel: String(ch) } }"
+                           :title="`看 ${row.node_name} 上的${channelLabel(String(ch))}账号`">
                 <span class="acc-dot" :style="{ background: CHANNEL_COLORS[ch] }" />
                 {{ channelLabel(String(ch)) }} {{ v.usable }}/{{ v.total }}
-              </span>
+              </router-link>
             </div>
             <span v-else class="muted">{{ row.role === 'master' ? '-' : '没有账号' }}</span>
           </template>
         </el-table-column>
         <el-table-column label="访问地址" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
-            <span class="mono nowrap">{{ row.advertise_url || '-' }}</span>
+            <!-- 直接打开那台机器自己的页面（比如只在那台上能看的东西、或者排查它的问题） -->
+            <a v-if="row.advertise_url && row.online" class="mono nowrap link" :href="row.advertise_url"
+               target="_blank" rel="noopener" :title="`在新标签页打开 ${row.node_name} 的页面`">{{ row.advertise_url }}</a>
+            <span v-else class="mono nowrap">{{ row.advertise_url || '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column label="版本" width="70">
@@ -131,13 +139,14 @@
             接新任务<InfoTip content="关掉后这台机器在跑的任务照常跑完，主机不再往这台派新任务。维护、重启机器前先关掉。离线的机器可以在这里删掉。" />
           </template>
           <template #default="{ row }">
-            <el-popconfirm v-if="!row.online" title="从列表里删掉这台已下线的机器？" width="230"
+            <el-popconfirm v-if="!row.online && isAdmin" title="从列表里删掉这台已下线的机器？" width="230"
                            @confirm="remove(row)">
               <template #reference>
                 <span class="pop-ref"><IconAction icon="delete" tip="删除这台机器" /></span>
               </template>
             </el-popconfirm>
             <el-switch v-else-if="row.role !== 'master'" :model-value="row.accept_tasks" size="small"
+                       :disabled="!isAdmin"
                        :loading="toggling === row.node_id" @change="(v: any) => setAccept(row, !!v)" />
             <span v-else class="muted">-</span>
           </template>
@@ -173,6 +182,7 @@ import { Refresh } from '@element-plus/icons-vue'
 import { clusterApi, settingsApi, type ClusterNode, type ClusterOverview } from '../api'
 import { CHANNEL_COLORS, channelLabel } from '../constants'
 import { clusterInfo } from '../composables/cluster'
+import { isAdmin } from '../composables/auth'
 
 const info = ref<ClusterOverview | null>(null)
 const loading = ref(false)
@@ -254,7 +264,13 @@ onUnmounted(() => window.clearInterval(timer))
 .sum-value { font-size: 20px; font-weight: 600; margin-top: 4px; }
 .sum-sub { font-size: 12px; color: var(--smc-text-secondary); margin-top: 2px; }
 .alert { margin-bottom: 12px; }
-.link { color: var(--el-color-primary); margin: 0 2px; }
+.link { color: var(--el-color-primary); text-decoration: none; }
+.link:hover { text-decoration: underline; }
+a.sum-item { color: inherit; text-decoration: none; display: block; }
+.sum-item.is-link { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+.sum-item.is-link:hover { border-color: var(--el-color-primary-light-5); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); }
+a.acc-chip { color: inherit; text-decoration: none; }
+a.acc-chip:hover { color: var(--el-color-primary); }
 .node-name { display: flex; align-items: center; gap: 6px; font-weight: 500; }
 .node-sub { font-size: 12px; color: var(--smc-text-secondary); line-height: 18px; }
 .state { display: inline-flex; align-items: center; gap: 6px; }

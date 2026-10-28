@@ -1,4 +1,4 @@
-# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# CloudSense（云听）· Copyright (c) 2026 keanying
 # SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 # 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, Query
 
+from ..auth import current_name
 from ..core.constants import ALL_CHANNELS, CHANNEL_LABELS
 from ..labeling import get_manager
 from ..repositories.labeling_repo import (
@@ -148,7 +149,7 @@ async def save_review(row_id: int, payload: dict = Body(...),
     try:
         okk = await repo.save_review(
             row_id, flag=flag,
-            reviewer=str(payload.get("reviewer") or "人工"), **fields)
+            reviewer=current_name() or str(payload.get("reviewer") or "人工"), **fields)
     except ValueError as exc:
         raise bad_request(str(exc))
     if not okk:

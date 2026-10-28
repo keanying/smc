@@ -1,5 +1,5 @@
 <!--
-  景区社媒采集系统 · Copyright (c) 2026 keanying
+  CloudSense（云听）· Copyright (c) 2026 keanying
   SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
   按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
   不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -10,10 +10,10 @@
   <el-container class="app-shell">
     <el-aside width="216px" class="aside-menu">
       <div class="logo">
-        <div class="logo-mark">S</div>
+        <img class="logo-img" src="/logo.svg" alt="CloudSense 云听" />
         <div class="logo-text">
-          <div class="logo-title">景区社媒采集</div>
-          <div class="logo-sub">Scenic Media Collector</div>
+          <div class="logo-title">CloudSense</div>
+          <div class="logo-sub">云听 · 景区社媒舆情</div>
         </div>
       </div>
       <el-menu
@@ -52,7 +52,11 @@
         <el-menu-item index="/cluster">
           <el-icon><Connection /></el-icon><span>集群</span>
         </el-menu-item>
-        <el-menu-item index="/settings">
+        <!-- 用户管理、系统设置只有管理员能用 -->
+        <el-menu-item v-if="isAdmin && authEnabled" index="/users">
+          <el-icon><UserFilled /></el-icon><span>用户管理</span>
+        </el-menu-item>
+        <el-menu-item v-if="isAdmin" index="/settings">
           <el-icon><Setting /></el-icon><span>系统设置</span>
         </el-menu-item>
       </el-menu>
@@ -60,7 +64,7 @@
     <el-container>
       <el-header height="56px" class="app-header">
         <div class="header-title">
-          <span class="crumb-root">景区社媒采集</span>
+          <span class="crumb-root">云听</span>
           <span class="crumb-sep">/</span>
           <span>{{ route.meta.title || '' }}</span>
         </div>
@@ -113,26 +117,61 @@
               <Setting />
             </el-icon>
           </el-tooltip>
+          <!-- 当前登录的人：改密码、退出 -->
+          <el-dropdown v-if="currentUser" trigger="click" @command="onUserCommand">
+            <span class="user-chip">
+              <span class="user-avatar">{{ (currentUser.display_name || currentUser.username).slice(0, 1) }}</span>
+              <span class="user-name">{{ currentUser.display_name || currentUser.username }}</span>
+              <span class="user-role">{{ currentUser.role_label }}</span>
+              <el-icon class="user-caret"><ArrowDown /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item disabled>登录名：{{ currentUser.username }}</el-dropdown-item>
+                <el-dropdown-item command="password" divided>修改密码</el-dropdown-item>
+                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </el-header>
       <el-main class="app-main">
         <router-view />
       </el-main>
+      <ChangePasswordDialog v-model="passwordVisible" />
     </el-container>
   </el-container>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessageBox } from 'element-plus'
 import {
-  Collection, Connection, Setting, TrendCharts,
+  ArrowDown, Collection, Connection, Setting, TrendCharts, UserFilled,
 } from '@element-plus/icons-vue'
-import { settingsApi } from '../api'
+import { authApi, settingsApi } from '../api'
 import { loadFeatures, metricsEnabled } from '../composables/features'
+import { authEnabled, currentUser, isAdmin, loadAuth } from '../composables/auth'
+import ChangePasswordDialog from '../components/ChangePasswordDialog.vue'
 
 const route = useRoute()
+const router = useRouter()
 const health = ref<Record<string, any> | null>(null)
+const passwordVisible = ref(false)
+
+async function onUserCommand(command: string) {
+  if (command === 'password') {
+    passwordVisible.value = true
+    return
+  }
+  if (command === 'logout') {
+    await ElMessageBox.confirm('确定退出登录？', '退出', { type: 'info' })
+    await authApi.logout()
+    await loadAuth(true)
+    router.replace('/login')
+  }
+}
 let timer: number | undefined
 
 /**
@@ -229,17 +268,9 @@ onUnmounted(() => window.clearInterval(timer))
   gap: 10px;
   padding: 0 18px;
 }
-.logo-mark {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: var(--smc-primary);
-  color: #fff;
-  font-weight: 700;
-  font-size: 15px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.logo-img {
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
 }
 .logo-title {
@@ -298,6 +329,19 @@ onUnmounted(() => window.clearInterval(timer))
 }
 .health-dot.sm { width: 6px; height: 6px; }
 .meta-link { color: inherit; text-decoration: none; }
+.user-chip {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer; margin-left: 16px;
+  padding: 4px 10px 4px 4px; border-radius: 18px; transition: background 0.15s;
+}
+.user-chip:hover { background: var(--el-fill-color-light); }
+.user-avatar {
+  width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--el-color-primary); color: #fff; font-size: 13px; font-weight: 600;
+}
+.user-name { font-size: 13px; color: var(--el-text-color-primary); max-width: 120px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-role { font-size: 12px; color: var(--smc-text-secondary); }
+.user-caret { font-size: 12px; color: var(--smc-text-secondary); }
 .meta-link:hover { color: var(--el-color-primary); }
 .health-dot.ok { background: #22c55e; }
 .health-dot.bad { background: #ef4444; }

@@ -1,4 +1,4 @@
-// 景区社媒采集系统 · Copyright (c) 2026 keanying
+// CloudSense（云听）· Copyright (c) 2026 keanying
 // SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 // 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 // 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -462,7 +462,7 @@ export const labelingApi = {
 // ===================== 任务 =====================
 
 export const taskApi = {
-  list: (params: { status?: string; scenic_id?: string; keyword?: string; page?: number; page_size?: number } = {}) =>
+  list: (params: { status?: string; scenic_id?: string; keyword?: string; node?: string; page?: number; page_size?: number } = {}) =>
     api.get<Paged<Task>>('/api/tasks', params),
   detail: (taskId: string) => api.get<Task>(`/api/tasks/${taskId}`),
   create: (payload: Record<string, unknown>) => api.post<Task>('/api/tasks', payload),
@@ -617,6 +617,65 @@ export const accountApi = {
     api.post<ProbeReport[]>('/api/accounts/probe-all', undefined, {
       keyword, ctrip_target: ctripTarget, tongcheng_target: tongchengTarget,
     }),
+}
+
+// ===================== 用户与登录 =====================
+
+export type UserRole = 'admin' | 'operator' | 'viewer'
+
+export interface CurrentUser {
+  id: number
+  username: string
+  display_name: string
+  role: UserRole
+  role_label: string
+}
+
+export interface AuthStatus {
+  /** 登录关掉了（auth.enabled=false）：谁都能用，也没有用户菜单 */
+  enabled: boolean
+  /** 还没有任何用户：登录页显示「创建管理员」 */
+  needs_setup: boolean
+  user: CurrentUser | null
+  roles: Record<UserRole, string>
+}
+
+export interface SysUser {
+  id: number
+  username: string
+  display_name: string
+  role: UserRole
+  role_label: string
+  enabled: number
+  failed_count: number
+  locked_until?: string | null
+  last_login_at?: string | null
+  last_login_ip?: string
+  password_changed_at?: string | null
+  create_time?: string
+}
+
+export const authApi = {
+  status: () => api.get<AuthStatus>('/api/auth/status', undefined, true),
+  login: (username: string, password: string) =>
+    api.post<CurrentUser>('/api/auth/login', { username, password }),
+  setup: (payload: { username: string; password: string; display_name?: string }) =>
+    api.post<CurrentUser>('/api/auth/setup', payload),
+  logout: () => api.post<null>('/api/auth/logout'),
+  changePassword: (oldPassword: string, newPassword: string) =>
+    api.put<null>('/api/auth/password', { old_password: oldPassword, new_password: newPassword }),
+}
+
+export const usersApi = {
+  list: () => api.get<SysUser[]>('/api/users'),
+  create: (payload: { username: string; password: string; role: UserRole; display_name?: string }) =>
+    api.post<null>('/api/users', payload),
+  update: (id: number, payload: { display_name?: string; role?: UserRole; enabled?: boolean }) =>
+    api.put<SysUser>(`/api/users/${id}`, payload),
+  resetPassword: (id: number, password: string) =>
+    api.put<null>(`/api/users/${id}/password`, { password }),
+  unlock: (id: number) => api.post<null>(`/api/users/${id}/unlock`),
+  remove: (id: number) => api.del<null>(`/api/users/${id}`),
 }
 
 // ===================== 集群 =====================

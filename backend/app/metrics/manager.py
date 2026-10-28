@@ -1,4 +1,4 @@
-# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# CloudSense（云听）· Copyright (c) 2026 keanying
 # SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 # 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
+from ..auth import current_name
 from ..core.config import Config
 from ..core.db import Database
 from ..core.logging import get_logger
@@ -57,6 +58,10 @@ class MetricsManager:
         self._next_fire_cron: str = ""
         #: 集群里只有当前主机按定时触发计算，别的机器到点不动（不然每台各推一遍）
         self.leader_check: Callable[[], bool] = lambda: True
+        #: 本机的集群编号：记进运行记录，别的机器上的页面看实时日志时据此转到这台
+        self.node_id = ""
+        #: 正在跑的那一次的进度（实时日志从这里推给页面）
+        self._live: Optional["_RunState"] = None
 
     # ------------------------------------------------------------------ 开关 / 配置
     @property
@@ -244,9 +249,11 @@ class MetricsManager:
         run_id = f"mr{datetime.now():%Y%m%d%H%M%S}-{uuid.uuid4().hex[:4]}"
         await self.db.execute(
             f"INSERT INTO `{T.METRIC_RUN}` (run_id, trigger_type, status, start_date, end_date, "
-            f"scenics, push, started_at) VALUES (%s, %s, 'running', %s, %s, %s, %s, %s)",
+            f"scenics, push, started_at, node_id, triggered_by) "
+            f"VALUES (%s, %s, 'running', %s, %s, %s, %s, %s, %s, %s)",
             [run_id, trigger, start_date, end_date, json.dumps(scenics, ensure_ascii=False),
-             int(push), datetime.now()])
+             int(push), datetime.now(), self.node_id,
+             current_name() if trigger != "schedule" else ""])
         work_dir = Path(self.config.get("server.data_dir")) / "metrics" / run_id
         job = {"config": cfg, "mysql": self.config.get("mysql"), "start_date": start_date,
                "end_date": end_date, "scenics": scenics, "no_push": no_push,
@@ -308,9 +315,11 @@ class MetricsManager:
         run_id = f"mk{datetime.now():%Y%m%d%H%M%S}-{uuid.uuid4().hex[:4]}"
         await self.db.execute(
             f"INSERT INTO `{T.METRIC_RUN}` (run_id, trigger_type, status, start_date, end_date, "
-            f"scenics, push, started_at) VALUES (%s, 'mock', 'running', %s, %s, %s, 1, %s)",
+            f"scenics, push, started_at, node_id, triggered_by) "
+            f"VALUES (%s, 'mock', 'running', %s, %s, %s, 1, %s, %s, %s)",
             [run_id, start_date, end_date,
-             json.dumps([from_scenic, to_scenic], ensure_ascii=False), datetime.now()])
+             json.dumps([from_scenic, to_scenic], ensure_ascii=False), datetime.now(),
+             self.node_id, current_name()])
         job = {"mode": "mock", "config": cfg, "mysql": self.config.get("mysql"),
                "from_scenic": from_scenic, "to_scenic": to_scenic, "to_name": to_name,
                "start_date": start_date, "end_date": end_date, "tables": tables,
@@ -348,6 +357,7 @@ class MetricsManager:
         （数据库连接池属于它）。两边通过 _RunState 交换：子进程那边往里写，这边每 2 秒存一次库。
         """
         state = _RunState()
+        self._live = state
         status, error = "failed", ""
         saver = asyncio.create_task(self._autosave(run_id, state))
         try:
@@ -374,6 +384,10 @@ class MetricsManager:
             self._proc = self._proc_loop = None
             self._run_id = None
             await self._finish(run_id, status, error, state.summary_copy(), state.log.text())
+            # 告诉正在看实时日志的页面：结束了
+            state.broadcast({"type": "end", "status": status, "error": error,
+                             "summary": state.summary_copy()})
+            self._live = None
             logger.info("[指标] 计算 %s 结束：%s %s", run_id, status, error)
 
     async def _stream(self, job: Dict[str, Any], state: "_RunState") -> int:
@@ -418,18 +432,35 @@ class MetricsManager:
             [status, error, json.dumps(summary, ensure_ascii=False), log_text, datetime.now(),
              run_id])
 
+    # ------------------------------------------------------------------ 实时日志
+    def subscribe(self, run_id: str):
+        """看这一次计算的实时日志。正在本机跑：返回 (已有的日志行, 摘要, 队列)，之后的新行、
+        摘要变化、结束都从队列里来；不在本机跑返回 None（页面改读库里存的）。"""
+        state = self._live
+        if state is None or run_id != self._run_id:
+            return None
+        queue: asyncio.Queue = asyncio.Queue()
+        lines = state.attach(asyncio.get_running_loop(), queue)
+        return lines, state.summary_copy(), queue
+
+    def unsubscribe(self, queue) -> None:
+        state = self._live
+        if state is not None:
+            state.detach(queue)
+
     async def list_runs(self, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
         page, page_size = max(1, int(page)), max(1, min(100, int(page_size)))
         total = await self.db.fetch_one(f"SELECT COUNT(*) AS c FROM `{T.METRIC_RUN}`")
         rows = await self.db.fetch_all(
             f"SELECT run_id, trigger_type, status, start_date, end_date, scenics, push, "
-            f"summary, error, started_at, finished_at FROM `{T.METRIC_RUN}` "
+            f"summary, error, started_at, finished_at, node_id, triggered_by FROM `{T.METRIC_RUN}` "
             f"ORDER BY id DESC LIMIT %s OFFSET %s", [page_size, (page - 1) * page_size])
         return {"items": [_decode_run(r) for r in rows], "total": int(total["c"] or 0)}
 
     async def get_run(self, run_id: str, *, with_log: bool = False) -> Optional[Dict[str, Any]]:
         cols = "*" if with_log else ("run_id, trigger_type, status, start_date, end_date, "
-                                     "scenics, push, summary, error, started_at, finished_at")
+                                     "scenics, push, summary, error, started_at, finished_at, "
+                                     "node_id, triggered_by")
         row = await self.db.fetch_one(
             f"SELECT {cols} FROM `{T.METRIC_RUN}` WHERE run_id = %s", [run_id])
         return _decode_run(row) if row else None
@@ -496,12 +527,17 @@ class MetricsManager:
 
 # ---------------------------------------------------------------------- 小工具
 class _LogBuffer:
-    """运行日志：只留尾巴，超长就从前面丢。两个线程（两个事件循环）都会碰它，加锁。"""
+    """运行日志：只留尾巴，超长就从前面丢。两个线程（两个事件循环）都会碰它，加锁。
+
+    有人在看实时日志时（WebSocket 连着），每加一行就推给他们的队列。子进程输出是在
+    SUBPROCESS_LOOP 线程里读的，队列属于服务器循环，所以用 call_soon_threadsafe 送过去。
+    """
 
     def __init__(self) -> None:
         self._parts: List[str] = []
         self._size = 0
         self._lock = threading.Lock()
+        self._listeners: List[Any] = []        # [(loop, queue)]
 
     def add(self, line: str) -> None:
         line = f"{datetime.now():%H:%M:%S} {line}"
@@ -510,10 +546,34 @@ class _LogBuffer:
             self._size += len(line) + 1
             while self._size > LOG_MAX_CHARS and len(self._parts) > 1:
                 self._size -= len(self._parts.pop(0)) + 1
+            listeners = list(self._listeners)
+        _notify(listeners, {"type": "log", "line": line})
 
     def text(self) -> str:
         with self._lock:
             return "\n".join(self._parts)
+
+    def attach(self, loop, queue) -> List[str]:
+        """登记一个看日志的人，返回此刻已有的日志。登记和取快照在同一把锁里，不会漏行也不会重复。"""
+        with self._lock:
+            self._listeners.append((loop, queue))
+            return list(self._parts)
+
+    def detach(self, queue) -> None:
+        with self._lock:
+            self._listeners = [(lp, q) for lp, q in self._listeners if q is not queue]
+
+    def listeners(self) -> List[Any]:
+        with self._lock:
+            return list(self._listeners)
+
+
+def _notify(listeners, message: Dict[str, Any]) -> None:
+    for loop, queue in listeners:
+        try:
+            loop.call_soon_threadsafe(queue.put_nowait, message)
+        except RuntimeError:          # 循环已经关了
+            pass
 
 
 class _RunState:
@@ -537,6 +597,8 @@ class _RunState:
                     self.summary.append({k: v for k, v in event.items() if k != "event"})
                 elif event.get("event") == "end":
                     self.end_event = event
+            if event.get("event") == "scenic":
+                self.broadcast({"type": "summary", "summary": self.summary_copy()})
         else:
             self.log.add(line)
         self.dirty = True
@@ -544,6 +606,15 @@ class _RunState:
     def summary_copy(self) -> List[Dict[str, Any]]:
         with self._lock:
             return list(self.summary)
+
+    def attach(self, loop, queue) -> List[str]:
+        return self.log.attach(loop, queue)
+
+    def detach(self, queue) -> None:
+        self.log.detach(queue)
+
+    def broadcast(self, message: Dict[str, Any]) -> None:
+        _notify(self.log.listeners(), message)
 
 
 def _mask(secret: str) -> str:

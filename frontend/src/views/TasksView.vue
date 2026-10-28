@@ -1,5 +1,5 @@
 <!--
-  景区社媒采集系统 · Copyright (c) 2026 keanying
+  CloudSense（云听）· Copyright (c) 2026 keanying
   SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
   按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
   不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -32,6 +32,10 @@
           v-for="s in scenics" :key="s.scenic_id"
           :label="s.scenic_name" :value="s.scenic_id"
         />
+      </el-select>
+      <el-select v-if="isCluster || query.node" v-model="query.node" placeholder="全部机器" clearable
+                 style="width: 140px" @change="load">
+        <el-option v-for="n in workerNodes" :key="n.node_id" :label="n.node_name" :value="n.node_id" />
       </el-select>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
       <el-switch v-model="autoRefresh" active-text="自动刷新" style="margin-left: auto" />
@@ -174,8 +178,9 @@
 </template>
 
 <script setup lang="ts">
-import { isCluster, loadCluster, nodeLabel } from '../composables/cluster'
+import { isCluster, loadCluster, nodeLabel, workerNodes } from '../composables/cluster'
 import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { scenicApi, taskApi, type ChannelOption, type ScenicOption, type Task } from '../api'
@@ -196,7 +201,14 @@ function engineLabel(value: unknown): string {
   const engine = normalizeEngine(value)
   return COLLECT_ENGINES.find((item) => item.value === engine)?.label || engine
 }
-const query = reactive({ keyword: '', status: '', scenic_id: '', page: 1, page_size: 20 })
+// 从集群页等地方跳过来时带着筛选条件（?node=…&status=…）
+const route = useRoute()
+const query = reactive({
+  keyword: '', page: 1, page_size: 20,
+  status: String(route.query.status || ''),
+  scenic_id: String(route.query.scenic_id || ''),
+  node: String(route.query.node || ''),
+})
 const channelOptions = ref<ChannelOption[]>([])
 const editVisible = ref(false)
 const editing = ref<Task | null>(null)

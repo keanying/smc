@@ -1,4 +1,4 @@
-# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# CloudSense（云听）· Copyright (c) 2026 keanying
 # SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 # 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -12,6 +12,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
 
+from ..auth import current_name
 from ..core import collect_params, content_filter, search_filters
 from ..core.constants import CHANNELS_POI_BASED
 from ..repositories.task_repo import compute_next_run, validate_cron
@@ -46,12 +47,12 @@ def _filters_summary(task: dict) -> list:
 
 @router.get("")
 async def list_tasks(
-    status: str = "", scenic_id: str = "", keyword: str = "",
+    status: str = "", scenic_id: str = "", keyword: str = "", node: str = "",
     page: int = 1, page_size: int = 20,
     state: AppState = Depends(get_state),
 ):
     result = await state.tasks.list(
-        status=status, scenic_id=scenic_id, keyword=keyword,
+        status=status, scenic_id=scenic_id, keyword=keyword, node=node,
         page=page, page_size=page_size,
     )
     running = state.scheduler.running_task_ids()
@@ -68,6 +69,8 @@ async def list_tasks(
 @router.post("")
 async def create_task(payload: TaskIn, state: AppState = Depends(get_state)):
     data = payload.model_dump()
+    # 谁建的：登录了就记登录的人
+    data["created_by"] = current_name() or data.get("created_by")
 
     # 关键字模式必须有关键字；没显式传就从景区自动带（默认上限见配置）
     if data["collect_type"] == "keyword" and not data["keywords"]:

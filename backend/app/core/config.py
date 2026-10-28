@@ -1,4 +1,4 @@
-# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# CloudSense（云听）· Copyright (c) 2026 keanying
 # SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
 # 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
@@ -255,6 +255,19 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "timezone": "Asia/Shanghai",
         "max_running_tasks": 3,
         "misfire_grace_seconds": 300,
+    },
+    # 登录与用户。只能在 config.yaml / 环境变量里改（SMC_AUTH_ENABLED=false 关掉），
+    # 不放进页面设置：页面上一改错就可能把所有人都锁在外面。
+    "auth": {
+        "enabled": True,
+        # 登录后多久不用就要重新登录（小时）。每次访问都会往后顺延
+        "session_hours": 72,
+        # 连续输错几次密码锁定账号，锁多久（分钟）
+        "max_failed_logins": 5,
+        "lock_minutes": 10,
+        # 会话 Cookie。服务走 HTTPS 时把 cookie_secure 打开
+        "cookie_name": "smc_session",
+        "cookie_secure": False,
     },
     # 集群：多台机器连同一个 MySQL（和同一个 Redis），主机负责派任务，从机负责跑。
     # 这一段是**每台机器自己的**，写在各自的 config.yaml 或环境变量里
