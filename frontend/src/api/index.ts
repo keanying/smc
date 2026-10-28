@@ -86,6 +86,9 @@ export interface Task {
   stat_updated_comments: number
   error?: string | null
   create_time: string
+  /** 集群：最近一次派给哪台机器跑 */
+  node_id?: string
+  dispatched_at?: string | null
   is_running?: boolean
   /** 后端算好的「每个平台最终生效的采集数量」，只读 */
   collect_limits?: CollectLimit[]
@@ -276,6 +279,8 @@ export interface Account {
   cooldown_reason?: string | null
   /** 轮换锁时长（小时）。0 = 跟随系统设置里的全局值 */
   rotate_lock_hours?: number
+  /** 集群：账号在哪台机器上（浏览器 profile 在那台的硬盘上）。'' = 还没分配 */
+  node_id?: string
 }
 
 export interface AccountGroup {
@@ -545,8 +550,11 @@ export interface AccountQuotaInfo {
 export const accountApi = {
   channels: () => api.get<ChannelOption[]>('/api/accounts/channels'),
   groups: () => api.get<AccountGroup[]>('/api/accounts/groups'),
-  list: (params: { channel?: string; status?: string; group?: string } = {}) =>
+  list: (params: { channel?: string; status?: string; group?: string; node?: string } = {}) =>
     api.get<Paged<Account>>('/api/accounts', params),
+  /** 迁到另一台机器（登录态带不过去，迁完要重新登录） */
+  moveNode: (channel: string, accountName: string, nodeId: string) =>
+    api.put<null>(`/api/accounts/${channel}/${encodeURIComponent(accountName)}/node`, { node_id: nodeId }),
   create: (payload: Record<string, unknown>) => api.post<null>('/api/accounts', payload),
   remove: (channel: string, accountName: string) =>
     api.del<null>(`/api/accounts/${channel}/${encodeURIComponent(accountName)}`),
@@ -609,6 +617,52 @@ export const accountApi = {
     api.post<ProbeReport[]>('/api/accounts/probe-all', undefined, {
       keyword, ctrip_target: ctripTarget, tongcheng_target: tongchengTarget,
     }),
+}
+
+// ===================== 集群 =====================
+
+export interface ClusterNode {
+  node_id: string
+  node_name: string
+  /** all=主+从 / master=主 / worker=从 */
+  role: 'all' | 'master' | 'worker'
+  role_label: string
+  advertise_url: string
+  host: string
+  version: string
+  online: boolean
+  /** 距上次心跳多少秒；null = 从没心跳 / 已正常关机 */
+  idle_seconds: number | null
+  heartbeat_at?: string | null
+  started_at?: string | null
+  accept_tasks: boolean
+  max_running: number
+  running_count: number
+  /** 已派出（排队 + 在跑）的任务数 */
+  load: number
+  stats: { running_tasks?: string[]; browser?: Record<string, any> }
+  /** 平台 -> { total 总数, usable 能用的 } */
+  accounts: Record<string, { total: number; usable: number }>
+  is_self: boolean
+  is_leader: boolean
+}
+
+export interface ClusterOverview {
+  self: { node_id: string; node_name: string; role: string; role_label: string; is_leader: boolean; version: string }
+  /** 当前主机的机器编号 */
+  leader: string
+  offline_seconds: number
+  auto_dispatch: boolean
+  nodes: ClusterNode[]
+  /** 还没分配机器的账号：平台 -> 数量 */
+  unassigned_accounts: Record<string, { total: number; usable: number }>
+}
+
+export const clusterApi = {
+  overview: () => api.get<ClusterOverview>('/api/cluster'),
+  setAccept: (nodeId: string, on: boolean) =>
+    api.put<null>(`/api/cluster/nodes/${encodeURIComponent(nodeId)}/accept`, undefined, { on }),
+  remove: (nodeId: string) => api.del<null>(`/api/cluster/nodes/${encodeURIComponent(nodeId)}`),
 }
 
 // ===================== 系统设置 =====================

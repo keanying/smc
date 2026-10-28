@@ -210,11 +210,13 @@ CREATE TABLE IF NOT EXISTS `src_opinion_social_account` (
   `last_check_time`   DATETIME         NULL DEFAULT NULL,
   `last_error`        VARCHAR(500)     NULL DEFAULT NULL,
   `enabled`           TINYINT      NOT NULL DEFAULT 1,
+  `node_id`           VARCHAR(100) NOT NULL DEFAULT '' COMMENT '账号所在机器（浏览器 profile 在哪台机器上）；空=未分配',
   `create_time`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_account` (`channel`, `account_name`),
-  KEY `idx_account_pick` (`channel`, `status`, `enabled`)
+  KEY `idx_account_pick` (`channel`, `status`, `enabled`),
+  KEY `idx_account_node` (`node_id`, `channel`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='社媒平台账号';
 
 -- 系统设置：页面上改的配置存这里，优先级高于 config.yaml
@@ -260,10 +262,14 @@ CREATE TABLE IF NOT EXISTS `src_opinion_crawl_task` (
   `stat_updated_comments` INT        NOT NULL DEFAULT 0,
   `error`               TEXT             NULL DEFAULT NULL,
   `created_by`          VARCHAR(100)     NULL DEFAULT NULL,
+  `node_id`             VARCHAR(100) NOT NULL DEFAULT '' COMMENT '派给哪台机器跑（最近一次）',
+  `dispatched_at`       DATETIME         NULL DEFAULT NULL COMMENT '最近一次派发时间',
+  `cancel_requested`    TINYINT      NOT NULL DEFAULT 0 COMMENT '取消请求：任务在别的机器上跑时由那台机器读到后停止',
   `create_time`         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time`         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_task_task_id` (`task_id`),
+  KEY `idx_task_node` (`node_id`),
   KEY `idx_task_status` (`status`, `create_time`),
   KEY `idx_task_schedule` (`schedule_enabled`, `next_run_time`),
   KEY `idx_task_scenic` (`scenic_id`)
@@ -461,3 +467,33 @@ CREATE TABLE IF NOT EXISTS `src_opinion_metric_run` (
   UNIQUE KEY `uk_metric_run` (`run_id`),
   KEY `idx_metric_run_started` (`started_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='指标计算运行记录';
+
+-- -------------------------------------------------------------------
+-- 集群：多台机器共用一个库，主机派任务、从机跑任务
+-- -------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `src_opinion_cluster_node` (
+  `node_id`       VARCHAR(100) NOT NULL                COMMENT '机器编号（config: cluster.node_id，默认主机名）',
+  `node_name`     VARCHAR(100) NOT NULL DEFAULT ''     COMMENT '显示名',
+  `role`          VARCHAR(20)  NOT NULL DEFAULT 'all'  COMMENT 'all 主+从 / master 主 / worker 从',
+  `advertise_url` VARCHAR(300) NOT NULL DEFAULT ''     COMMENT '别的机器访问本机的地址',
+  `host`          VARCHAR(200) NOT NULL DEFAULT ''     COMMENT '主机名',
+  `pid`           INT          NOT NULL DEFAULT 0      COMMENT '进程号',
+  `version`       VARCHAR(50)  NOT NULL DEFAULT ''     COMMENT '程序版本',
+  `max_running`   INT          NOT NULL DEFAULT 0      COMMENT '最多同时跑几个任务',
+  `running_count` INT          NOT NULL DEFAULT 0      COMMENT '正在跑几个任务',
+  `stats`         TEXT             NULL                COMMENT '浏览器占用、内存等，JSON',
+  `accept_tasks`  TINYINT      NOT NULL DEFAULT 1      COMMENT '是否接新任务（页面上可关，维护机器时用）',
+  `started_at`    DATETIME         NULL DEFAULT NULL   COMMENT '本次启动时间',
+  `heartbeat_at`  DATETIME         NULL DEFAULT NULL   COMMENT '最近一次心跳（数据库时间）',
+  `create_time`   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`node_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='集群机器';
+
+CREATE TABLE IF NOT EXISTS `src_opinion_cluster_lease` (
+  `lease_name`  VARCHAR(50)  NOT NULL                COMMENT '租约名，目前只有 master',
+  `holder`      VARCHAR(100) NOT NULL DEFAULT ''     COMMENT '持有者机器编号',
+  `expires_at`  DATETIME     NOT NULL                COMMENT '到期时间（数据库时间），持有者每次心跳续期',
+  `update_time` TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`lease_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='集群租约：谁是当前的主机';

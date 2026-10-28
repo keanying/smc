@@ -111,7 +111,7 @@ async def test_cancelling_a_waiting_task_drops_the_resume(repos):
     await repos.tasks.mark_waiting(task_id, resume, "排队等账号")
 
     sched = TaskScheduler.__new__(TaskScheduler)
-    sched.tasks, sched._cancel_events = repos.tasks, {}
+    sched.tasks, sched._cancel_events, sched.cluster = repos.tasks, {}, None
     await sched.cancel(task_id)
 
     task = await repos.tasks.get(task_id)

@@ -46,7 +46,12 @@ async def save_settings(payload: SettingIn, state: AppState = Depends(get_state)
     if payload.section == "labeling":
         from ..labeling import get_manager
         await get_manager(state.config).reset()
-    return ok(state.config.redacted().get(payload.section), "设置已保存并立即生效")
+    # 集群：别的机器下一次心跳时读到这份新设置并同步（cluster/service.py 的 _sync_settings）
+    from ..cluster import get_cluster
+    cluster = get_cluster()
+    if cluster is not None:
+        await cluster.refresh_settings_digest()
+    return ok(state.config.redacted().get(payload.section), "设置已保存，所有机器几秒内生效")
 
 
 @router.post("/notify/test")

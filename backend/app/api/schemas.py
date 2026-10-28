@@ -112,6 +112,8 @@ class AccountIn(BaseModel):
     #: 轮换锁时长（小时）。0 = 跟随系统设置里的全局值（默认 12 小时）。
     #: 上限 14 天：再大基本是填错了，等于把这个号永久雪藏。
     rotate_lock_hours: int = Field(0, ge=0, le=24 * 14)
+    #: 集群：账号放在哪台机器上（在那台扫码登录，登录态存在那台的硬盘上）。空 = 当前这台
+    node_id: str = Field("", max_length=100)
 
     @field_validator("channel")
     @classmethod

@@ -19,7 +19,7 @@ import threading
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 from ..core.config import Config
@@ -55,6 +55,8 @@ class MetricsManager:
         self._loop_task: Optional[asyncio.Task] = None
         self._next_fire: Optional[datetime] = None
         self._next_fire_cron: str = ""
+        #: 集群里只有当前主机按定时触发计算，别的机器到点不动（不然每台各推一遍）
+        self.leader_check: Callable[[], bool] = lambda: True
 
     # ------------------------------------------------------------------ 开关 / 配置
     @property
@@ -441,8 +443,9 @@ class MetricsManager:
             logger.info("[指标] %d 条上次没跑完的计算记录已标为中断", n)
 
     # ------------------------------------------------------------------ 定时
-    async def start(self) -> None:
-        await self.recover()
+    async def start(self, recover: bool = True) -> None:
+        if recover:
+            await self.recover()
         if self._loop_task is None:
             self._loop_task = asyncio.create_task(self._schedule_loop())
 
@@ -473,6 +476,8 @@ class MetricsManager:
                 if fire is None or self._now() < fire:
                     continue
                 self._next_fire = None          # 下一次从现在往后算
+                if not self.leader_check():
+                    continue
                 if self._run_id:
                     logger.warning("[指标] 定时到了，但上一次计算还没结束（%s），这一次跳过",
                                    self._run_id)

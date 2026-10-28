@@ -28,18 +28,32 @@ _NOT_COOLING = "(cooldown_until IS NULL OR cooldown_until <= NOW())"
 
 
 class AccountRepository:
-    def __init__(self, db: Database, rotation: Any = None):
+    def __init__(self, db: Database, rotation: Any = None, node_id: str = ""):
         self.db = db
         #: 账号轮换锁（core/account_rotation.py）。为 None 时挑号退回原来的
         #: last_check_time 排序——测试里的半成品 repo 和老调用点都走这条路。
         self.rotation = rotation
+        #: 本机的集群编号。设了之后挑号只在**本机的号**（和还没分配机器的号）里挑：
+        #: 号的登录态在它所在机器的硬盘上，别的机器拿来用就是没登录。
+        self.node_id = node_id
+
+    def _local(self, clauses: List[str], args: List[Any]) -> None:
+        if self.node_id:
+            clauses.append("node_id IN (%s, '')")
+            args.append(self.node_id)
 
     async def list(
         self, *, channel: str = "", status: str = "", group: str = "",
+        node: str = "", local_only: bool = False,
         page: int = 1, page_size: int = 50,
     ) -> Dict[str, Any]:
         clauses: List[str] = []
         args: List[Any] = []
+        if local_only:
+            self._local(clauses, args)
+        if node:
+            clauses.append("node_id = %s")
+            args.append(node)
         if channel:
             clauses.append("channel = %s")
             args.append(channel)
@@ -58,7 +72,7 @@ class AccountRepository:
             f"SELECT id, channel, account_name, nickname, avatar, uid, login_type, "
             f"account_group, status, cooldown_until, cooldown_reason, "
             f"rotate_lock_hours, "
-            f"profile_dir, cookie_updated_at, last_check_time, last_error, enabled, "
+            f"profile_dir, cookie_updated_at, last_check_time, last_error, enabled, node_id, "
             f"create_time, update_time FROM `src_opinion_social_account` {where} "
             f"ORDER BY channel ASC, id DESC LIMIT %s OFFSET %s",
             [*args, int(page_size), max(0, (page - 1) * page_size)],
@@ -89,8 +103,8 @@ class AccountRepository:
             """
             INSERT INTO `src_opinion_social_account`
                 (channel, account_name, nickname, login_type, account_group,
-                 status, profile_dir, enabled, rotate_lock_hours)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 status, profile_dir, enabled, rotate_lock_hours, node_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 nickname = VALUES(nickname), login_type = VALUES(login_type),
                 account_group = VALUES(account_group),
@@ -104,6 +118,7 @@ class AccountRepository:
                 data.get("status", AccountStatus.NEVER_LOGIN.value),
                 data.get("profile_dir"), int(data.get("enabled", 1)),
                 max(0, int(data.get("rotate_lock_hours") or 0)),
+                str(data.get("node_id") or "")[:100],
             ],
         )
 
@@ -176,6 +191,7 @@ class AccountRepository:
         clauses = ["channel = %s", "enabled = 1", "status = %s",
                    _NOT_COOLING]
         args: List[Any] = [channel, AccountStatus.ACTIVE.value]
+        self._local(clauses, args)
         if group:
             clauses.append("account_group = %s")
             args.append(group)
@@ -230,6 +246,7 @@ class AccountRepository:
             return [preferred]
         clauses = ["channel = %s", "enabled = 1", "status = %s", _NOT_COOLING]
         args: List[Any] = [channel, AccountStatus.ACTIVE.value]
+        self._local(clauses, args)
         if group:
             clauses.append("account_group = %s")
             args.append(group)
@@ -269,6 +286,8 @@ class AccountRepository:
         """
         clauses = ["channel = %s", "enabled = 1", "status = %s"]
         args: List[Any] = [channel, AccountStatus.ACTIVE.value]
+        if not preferred:
+            self._local(clauses, args)
         if preferred:
             clauses.append("account_name = %s")
             args.append(preferred)
@@ -285,12 +304,51 @@ class AccountRepository:
                 "resume_at": row.get("resume_at")}
 
     async def list_active(self, channel: str) -> List[Dict]:
+        clauses = ["channel = %s", "enabled = 1", "status = %s", _NOT_COOLING]
+        args: List[Any] = [channel, AccountStatus.ACTIVE.value]
+        self._local(clauses, args)
         return await self.db.fetch_all(
             f"SELECT * FROM `src_opinion_social_account` "
-            f"WHERE channel = %s AND enabled = 1 AND status = %s AND {_NOT_COOLING} "
-            f"ORDER BY last_check_time ASC",
-            [channel, AccountStatus.ACTIVE.value],
+            f"WHERE {' AND '.join(clauses)} ORDER BY last_check_time ASC",
+            args,
         )
+
+    # ---------------- 集群 ----------------
+    async def usable_by_node(self) -> List[Dict[str, Any]]:
+        """每台机器、每个平台、每个分组现在能用的号有几个（启用、已登录、不在冷却）。主机派任务用。"""
+        return await self.db.fetch_all(
+            f"SELECT node_id, channel, account_group, COUNT(*) AS c "
+            f"FROM `src_opinion_social_account` "
+            f"WHERE enabled = 1 AND status = %s AND {_NOT_COOLING} "
+            f"GROUP BY node_id, channel, account_group",
+            [AccountStatus.ACTIVE.value],
+        )
+
+    async def count_by_node(self) -> List[Dict[str, Any]]:
+        """每台机器、每个平台的号：总数 / 能用的。集群页展示用。"""
+        return await self.db.fetch_all(
+            f"SELECT node_id, channel, COUNT(*) AS total, "
+            f"SUM(CASE WHEN enabled = 1 AND status = %s AND {_NOT_COOLING} THEN 1 ELSE 0 END) AS usable "
+            f"FROM `src_opinion_social_account` GROUP BY node_id, channel",
+            [AccountStatus.ACTIVE.value],
+        )
+
+    async def node_of(self, channel: str, account_name: str) -> Optional[str]:
+        """账号在哪台机器上。账号不存在返回 None，没分配返回 ''。"""
+        row = await self.db.fetch_one(
+            "SELECT node_id FROM `src_opinion_social_account` WHERE channel = %s AND account_name = %s",
+            [channel, account_name])
+        return None if row is None else str(row["node_id"] or "")
+
+    async def unassigned(self) -> List[Dict[str, Any]]:
+        return await self.db.fetch_all(
+            "SELECT channel, account_name, profile_dir FROM `src_opinion_social_account` "
+            "WHERE node_id = ''")
+
+    async def set_node(self, channel: str, account_name: str, node_id: str) -> int:
+        return await self.db.execute(
+            "UPDATE `src_opinion_social_account` SET node_id = %s WHERE channel = %s AND account_name = %s",
+            [node_id[:100], channel, account_name])
 
     @staticmethod
     def cookies_of(account: Dict[str, Any]) -> List[Dict]:

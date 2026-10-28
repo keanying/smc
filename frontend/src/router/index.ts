@@ -29,6 +29,8 @@ const router = createRouter({
       meta: { title: '指标计算' } },
     { path: '/accounts', name: 'accounts', component: () => import('../views/AccountsView.vue'),
       meta: { title: '账号管理' } },
+    { path: '/cluster', name: 'cluster', component: () => import('../views/ClusterView.vue'),
+      meta: { title: '集群' } },
     { path: '/settings', name: 'settings', component: () => import('../views/SettingsView.vue'),
       meta: { title: '系统设置' } },
   ],

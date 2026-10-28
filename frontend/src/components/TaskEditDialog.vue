@@ -90,6 +90,16 @@
         <el-switch v-model="form.schedule_enabled" />
       </el-form-item>
 
+      <el-form-item v-if="isCluster">
+        <template #label>
+          运行机器<InfoTip content="默认由主机自动挑：有这个平台能用的号、又有空位的机器。指定了就只在这台跑，那台离线时任务会一直等。" />
+        </template>
+        <el-select v-model="form.node_id" clearable placeholder="自动分配（推荐）" style="width: 240px">
+          <el-option v-for="n in workerNodes" :key="n.node_id" :value="n.node_id"
+                     :label="`${n.node_name}${n.online ? '' : '（离线）'}`" />
+        </el-select>
+      </el-form-item>
+
       <el-form-item v-if="nextRuns.length" label="下次执行">
         <el-tag v-for="(t, i) in nextRuns" :key="i" type="info" effect="plain" class="mono" style="margin: 0 6px 4px 0">
           {{ t }}
@@ -114,6 +124,7 @@
 </template>
 
 <script setup lang="ts">
+import { isCluster, loadCluster, workerNodes } from '../composables/cluster'
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { taskApi, type ChannelOption, type Task } from '../api'
@@ -142,6 +153,8 @@ const form = reactive({
   schedule_at: '' as string | null,
   cron_expression: '',
   schedule_enabled: true,
+  /** 集群：指定在哪台机器跑；'' = 主机自动分配 */
+  node_id: '',
 })
 /**
  * 平台单选的读写视图。form.channels 仍是数组（接口按数组收），
@@ -174,7 +187,9 @@ function splitInterval(seconds?: number | null) {
 function onOpen() {
   const task = props.task
   if (!task) return
+  loadCluster()
   form.task_name = task.task_name
+  form.node_id = String(task.params?.node_id || '')
   form.channels = [...(task.channels || [])]
   form.schedule_type = task.schedule_type
   form.schedule_at = task.schedule_at ? String(task.schedule_at).replace(' ', 'T').slice(0, 19) : ''
@@ -223,7 +238,12 @@ async function save() {
     const payload: Record<string, unknown> = {
       task_name: form.task_name.trim(),
       channels: form.channels,
-      params: paramsForm.value?.build() ?? params.value,
+      params: {
+        ...(paramsForm.value?.build() ?? params.value),
+        // 采集参数表单只认它自己的字段：任务级的账号分组、指定机器要原样带回去，不然一编辑就丢了
+        ...(props.task.params?.account_group ? { account_group: props.task.params.account_group } : {}),
+        ...(form.node_id ? { node_id: form.node_id } : {}),
+      },
       schedule_type: form.schedule_type,
       schedule_enabled: form.schedule_type === 'once' ? false : form.schedule_enabled,
     }

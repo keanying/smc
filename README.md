@@ -55,6 +55,7 @@ Web 界面部署，任务支持 一次 / 定时 / 间隔 / cron 四种调度。
 | `test_dedup.py` | 8 | 跨关键字去重、重复作品不重复采评论、单条评论失败不拖垮整个平台 |
 | `test_resilience.py` | 12 | 单条数据解析失败跳过、关键字级重试、取消任务收尾、定时体检避让 |
 | `test_media_proxy.py` | 22 | 图片代理：绕开防盗链，以及不能变成通用代理（SSRF）|
+| `test_cluster.py` | 20 | 集群：派任务规则、租约选主与接手、任务认领与取消抢跑、只清本机任务、掉线收尾、设置同步、请求转发 |
 
 ---
 
@@ -119,6 +120,12 @@ SMC_MYSQL_PASSWORD=xxx
 SMC_PROXY_ENABLED=true
 SMC_PLATFORMS__CTRIP__MAX_PAGES=50
 ```
+
+### 集群（多台机器）
+
+多台机器连同一个 MySQL 和 Redis 就能组成集群：主机派任务，从机跑任务；只有一台时它既是主也是从，不用配置。
+每台机器在自己的 `config.yaml` 写 `cluster` 段（`role` / `node_id` / `advertise_url`，见 `config/config.example.yaml`），
+账号在哪台登录就归哪台，任务自动派到有号、有空位的机器。详见 `docs/产品说明.md` 的「8.2 集群部署」和「集群」页。
 
 ### 代理
 

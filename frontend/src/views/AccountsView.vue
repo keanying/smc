@@ -53,6 +53,9 @@
       <el-select v-model="query.status" placeholder="全部状态" clearable style="width: 140px" @change="load">
         <el-option v-for="(label, value) in ACCOUNT_STATUS_LABELS" :key="value" :label="label" :value="value" />
       </el-select>
+      <el-select v-if="isCluster" v-model="query.node" placeholder="全部机器" clearable style="width: 140px" @change="load">
+        <el-option v-for="n in workerNodes" :key="n.node_id" :label="n.node_name" :value="n.node_id" />
+      </el-select>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
       <span class="filter-count muted">共 {{ accounts.length }} 个账号</span>
     </div>
@@ -74,6 +77,16 @@
       <el-table-column label="分组" width="110">
         <template #default="{ row }">
           <span class="group-chip">{{ row.account_group || 'default' }}</span>
+        </template>
+      </el-table-column>
+      <!-- 集群：账号的登录态存在哪台机器上；采集只会派到那台 -->
+      <el-table-column v-if="isCluster" label="机器" width="120">
+        <template #default="{ row }">
+          <span v-if="!row.node_id" class="muted">{{ needsLogin(row.channel) ? '未分配' : '任意' }}</span>
+          <span v-else class="node-cell">
+            <span class="node-dot" :class="nodeOf(row.node_id)?.online ? 'ok' : 'bad'" />
+            {{ nodeLabel(row.node_id) }}
+          </span>
         </template>
       </el-table-column>
       <el-table-column label="登录态" width="100">
@@ -202,6 +215,15 @@
           >
             <el-option v-for="g in groups" :key="g.name" :label="g.name" :value="g.name" />
             <el-option label="default（默认组）" value="default" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="isCluster && needsLogin(form.channel)">
+          <template #label>
+            机器<InfoTip content="账号放在哪台机器上：在那台机器上扫码登录，登录态存在那台的硬盘上，这个号的采集任务也只会派到那台。迁到别的机器后要重新登录。" />
+          </template>
+          <el-select v-model="form.node_id" style="width: 100%" placeholder="选一台机器">
+            <el-option v-for="n in workerNodes" :key="n.node_id" :value="n.node_id"
+                       :label="`${n.node_name}${n.online ? '' : '（离线）'}`" :disabled="!n.online && !editingRow" />
           </el-select>
         </el-form-item>
         <el-form-item label="备注昵称">
@@ -383,6 +405,9 @@ import {
   ACCOUNT_STATUS_LABELS, ACCOUNT_STATUS_TYPES, CHANNEL_COLORS,
   channelLabel, formatTime,
 } from '../constants'
+import {
+  defaultAccountNode, isCluster, loadCluster, nodeLabel, nodeOf, workerNodes,
+} from '../composables/cluster'
 import LoginBrowser from '../components/LoginBrowser.vue'
 import CookieDialog from '../components/CookieDialog.vue'
 import ProbeDialog from '../components/ProbeDialog.vue'
@@ -401,17 +426,20 @@ const cookieVisible = ref(false)
 const cookieTarget = reactive({ channel: '', accountName: '' })
 const probeVisible = ref(false)
 const probeTarget = reactive({ channel: '', accountName: '' })
-const query = reactive({ channel: '', status: '', group: '' })
+const query = reactive({ channel: '', status: '', group: '', node: '' })
 const form = reactive({
   channel: 'douyin', account_name: '', nickname: '', account_group: 'default',
-  rotate_lock_hours: 0,
+  rotate_lock_hours: 0, node_id: '',
 })
 /** 正在编辑的账号；null = 添加。平台和账号标识是主键，编辑时不能改 */
 const editingRow = ref<Account | null>(null)
 
 function openAdd() {
   editingRow.value = null
-  Object.assign(form, { account_name: '', nickname: '', account_group: 'default', rotate_lock_hours: 0 })
+  Object.assign(form, {
+    account_name: '', nickname: '', account_group: 'default', rotate_lock_hours: 0,
+    node_id: defaultAccountNode(),
+  })
   addDialog.value = true
 }
 
@@ -420,6 +448,7 @@ function openEdit(row: Account) {
   Object.assign(form, {
     channel: row.channel, account_name: row.account_name, nickname: row.nickname || '',
     account_group: row.account_group || 'default', rotate_lock_hours: row.rotate_lock_hours || 0,
+    node_id: row.node_id || '',
   })
   addDialog.value = true
 }
@@ -434,6 +463,10 @@ const probeAllReports = ref<ProbeReport[]>([])
 const expandedProbes = ref<Set<string>>(new Set())
 
 const loginChannels = computed(() => channels.value.filter((c) => c.need_login))
+
+function needsLogin(channel: string): boolean {
+  return channels.value.find((c) => c.value === channel)?.need_login ?? true
+}
 
 function rowKey(row: Account): string {
   return `${row.channel}:${row.account_name}`
@@ -634,14 +667,27 @@ async function save() {
     // 编辑也走这个接口：后端按 平台+账号 upsert，登录态/Cookie 不动。
     // ⚠️ enabled、login_type 必须原样带回去，否则停用的号一编辑就被悄悄启用了
     const editing = editingRow.value
+    // 集群里改了机器 = 迁移：登录态带不过去，先确认
+    const moving = !!editing && isCluster.value && form.node_id !== (editing.node_id || '')
+    if (moving) {
+      await ElMessageBox.confirm(
+        `把账号迁到「${nodeLabel(form.node_id)}」？登录态在原来那台机器的硬盘上，带不过去，迁完要在新机器上重新登录。`,
+        '迁移账号', { type: 'warning', confirmButtonText: '迁移' },
+      )
+    }
     await accountApi.create({
       channel: form.channel,
       account_name: form.account_name.trim(),
       nickname: form.nickname || null,
       account_group: form.account_group || 'default',
       rotate_lock_hours: form.rotate_lock_hours || 0,
+      // 添加时：请求会被转到选中的机器上执行，账号就落在那台
+      node_id: editing ? (editing.node_id || '') : (isCluster.value ? form.node_id : ''),
       ...(editing ? { enabled: editing.enabled, login_type: editing.login_type } : {}),
     })
+    if (moving && editing) {
+      await accountApi.moveNode(editing.channel, editing.account_name, form.node_id)
+    }
     addDialog.value = false
     await Promise.all([load(), loadGroups()])
     if (editing) {
@@ -785,6 +831,7 @@ function toggleProbeDetail(channel: string) {
 
 onMounted(() => {
   load()
+  loadCluster()
   loadGroups()
   loadChannels()
   loadQuota()
@@ -792,6 +839,10 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.node-cell { display: inline-flex; align-items: center; gap: 6px; }
+.node-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.node-dot.ok { background: #22c55e; }
+.node-dot.bad { background: #ef4444; }
 .header-actions {
   display: flex;
   gap: 8px;

@@ -49,6 +49,9 @@
         <el-menu-item index="/accounts">
           <el-icon><User /></el-icon><span>账号管理</span>
         </el-menu-item>
+        <el-menu-item index="/cluster">
+          <el-icon><Connection /></el-icon><span>集群</span>
+        </el-menu-item>
         <el-menu-item index="/settings">
           <el-icon><Setting /></el-icon><span>系统设置</span>
         </el-menu-item>
@@ -67,7 +70,17 @@
               <span class="health-dot sm" :class="redisOk ? 'ok' : 'bad'" />
               {{ redisText }}
             </span>
-            <template v-if="health.scheduler">
+            <!-- 多台机器时显示整个集群的合计，点一下去集群页看每台的情况 -->
+            <template v-if="health.cluster && health.cluster.nodes_online > 1">
+              <span class="meta-sep" />
+              <el-tooltip :content="clusterTip" placement="bottom">
+                <router-link to="/cluster" class="meta-item meta-link">
+                  集群 {{ health.cluster.nodes_online }} 台 · 运行中任务
+                  {{ health.cluster.running }}/{{ health.cluster.max_running }}
+                </router-link>
+              </el-tooltip>
+            </template>
+            <template v-else-if="health.scheduler">
               <span class="meta-sep" />
               <span class="meta-item">
                 运行中任务 {{ health.scheduler.running_count }}/{{ health.scheduler.max_running }}
@@ -113,7 +126,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  Collection, Setting, TrendCharts,
+  Collection, Connection, Setting, TrendCharts,
 } from '@element-plus/icons-vue'
 import { settingsApi } from '../api'
 import { loadFeatures, metricsEnabled } from '../composables/features'
@@ -148,6 +161,12 @@ const redisText = computed(() => {
   if (!h) return 'Redis 检查中'
   if (h.redis_enabled === false) return 'Redis 未启用'
   return h.redis_is_real ? 'Redis 已连接' : 'Redis 连不上（已退化为进程内缓存）'
+})
+
+const clusterTip = computed(() => {
+  const c = health.value?.cluster
+  if (!c) return ''
+  return `本机：${c.node_name}${c.is_leader ? '（当前主机）' : ''}；在线 ${c.nodes_online} 台机器`
 })
 
 const browserBusy = computed(() => {
@@ -278,6 +297,8 @@ onUnmounted(() => window.clearInterval(timer))
   display: inline-block;
 }
 .health-dot.sm { width: 6px; height: 6px; }
+.meta-link { color: inherit; text-decoration: none; }
+.meta-link:hover { color: var(--el-color-primary); }
 .health-dot.ok { background: #22c55e; }
 .health-dot.bad { background: #ef4444; }
 
