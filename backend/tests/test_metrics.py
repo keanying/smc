@@ -338,3 +338,60 @@ async def test_unfinished_runs_are_marked_failed_after_restart(env):
     await env.manager.recover()
     run = await env.manager.get_run("mr-old")
     assert run["status"] == "failed" and "重启" in run["error"]
+
+
+@pytest.mark.asyncio
+async def test_drill_keyword_filter_uses_only_enabled_main_and_aux_words_on_comment_text(env):
+    """下钻表「只收含采集关键字的评论」：
+
+    · 只看评论内容（不看作品标题）；词 = 启用的主关键字 + 附关键字。过滤关键字、停用的词都不算——
+      引擎自带的查法把 filter_word 整张表（含过滤关键字）都当成采集关键字，含「很差」这类
+      要丢的词的评论反而会进下钻表。
+    · 大盘表 wordcloud_map 里的词也要写进下钻表：看板上点词云要能下钻到评论。
+    """
+    from app.metrics.common import yesterday
+
+    scenics = await _seed(env.db)
+    sc = scenics[0]
+    await env.db.execute_many(
+        "INSERT INTO src_opinion_scenic_keyword (scenic_id, keyword, enabled) VALUES (%s, %s, %s)",
+        [(sc, "景色", 1), (sc, "人多", 0)])
+    await env.db.execute_many(
+        "INSERT INTO src_opinion_scenic_filter_word (scenic_id, kind, word, enabled) "
+        "VALUES (%s, %s, %s, %s)",
+        [(sc, "aux", "门票", 1), (sc, "aux", "排队", 0), (sc, "exclude", "很差", 1)])
+
+    await env.manager.init_tables()
+    await env.manager.save_config({
+        "scenics": [sc],
+        "params": {"lookback_days": 30, "rerun_days": 0, "drill_keyword_filter": True,
+                   "drill_mask_content": False},
+    })
+    day = yesterday()
+    run = await env.manager.start_run(start_date=day)
+    done = await _wait(env.manager, run["run_id"])
+    assert done["status"] == "success", (done["error"], done["log"][-1500:])
+    note = next(n for n in done["summary"][0]["notes"] if n.startswith("下钻明细按关键字过滤"))
+    assert "景色" in note and "门票" in note and "很差" not in note and "人多" not in note
+
+    rows = await env.db.fetch_all(
+        "SELECT content_snippet, emotion_word, emotion_type FROM "
+        "ads_trf_social_opinion_drill_analysis_di WHERE scenic_id = %s", [sc])
+    macro = await env.db.fetch_all(
+        "SELECT wordcloud_map FROM ads_trf_social_opinion_macro_gran_metric_di "
+        "WHERE scenic_id = %s AND travel_date = %s", [sc, int(day)])
+    group = {"positiveWord": "positive", "neutralWord": "neutral", "negativeWord": "negative"}
+    cloud = {(w["word"], group[k]) for m in macro for k, ws in json.loads(m["wordcloud_map"]).items()
+             for w in ws}
+    td_cloud = {(w["word"], group[k]) for m in await env.db.fetch_all(
+        "SELECT wordcloud_map FROM ads_trf_social_opinion_macro_gran_metric_di "
+        "WHERE scenic_id = %s AND travel_date = %s AND time_granularity = 'td'", [sc, int(day)])
+        for k, ws in json.loads(m["wordcloud_map"]).items() for w in ws}
+    assert rows and cloud
+
+    bad = [r for r in rows if "景色" not in r["content_snippet"] and "门票" not in r["content_snippet"]
+           and (r["emotion_word"], r["emotion_type"]) not in cloud]
+    assert not bad, f"收进了既不含启用关键字、词也不在大盘词云里的行：{bad[:3]}"
+    pairs = {(r["emotion_word"], r["emotion_type"]) for r in rows}
+    assert td_cloud <= pairs, f"当天词云里的词在下钻表里找不到：{sorted(td_cloud - pairs)[:5]}"
+    assert " 去掉 0 行" not in note, "样例里有不该收的行，过滤应该去掉一些"

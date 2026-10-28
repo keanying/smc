@@ -181,11 +181,13 @@
                 <el-form-item label="下钻明细" class="param-item" @mouseenter="hl = ['drill']" @mouseleave="hl = []">
                   <el-switch v-model="cfg.params.enable_drill_analysis" />
                   <template v-if="cfg.params.enable_drill_analysis">
-                    <el-checkbox v-model="cfg.params.drill_keyword_filter" class="inline-check">只收含采集关键字的评论</el-checkbox>
+                    <el-checkbox v-model="cfg.params.drill_keyword_filter" class="inline-check">只收评论内容含关键字的</el-checkbox>
                     <el-checkbox v-model="cfg.params.drill_mask_content" class="inline-check">评论摘要只露关键词</el-checkbox>
                   </template>
                   <ParamNote text="词 → 评论 → 作品的下钻明细" :tables="['drill']" :tips="[
-                    '只收含采集关键字：评论原文里出现本景区主关键字或附关键字的才收',
+                    '只收评论内容含关键字的：只看评论自己的内容，不看帖子 / 笔记 / 作品的标题',
+                    '关键字 = 本景区启用的主关键字 + 附关键字；过滤关键字、停用的关键字不算',
+                    '大盘 KPI 词云（wordcloud_map）里的词也会写进下钻表，看板上点词云能下钻到评论',
                     '评论摘要只露关键词：命中的关键词保留，其余内容换成 **',
                   ]" />
                 </el-form-item>
