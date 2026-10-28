@@ -34,3 +34,6 @@ frontend/dist/
 
 # Node 桥接脚本（运行时生成）
 backend/libs/_bridge.cjs
+
+# 引擎跑测试时生成的日志
+backend/vendor/*/logs/
