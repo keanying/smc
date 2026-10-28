@@ -1,3 +1,9 @@
+-- 景区社媒采集系统 · Copyright (c) 2026 keanying
+-- SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
+-- 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
+-- 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
+-- 首次运行即表示已阅读并同意根目录 LICENSE，使用风险与法律责任由使用者自行承担。
+
 -- 看板下钻列表接口（客户 2026-10）：点词云 / 热力图地域 / 渠道 → 列出评论，分页。
 --
 -- 参数与大盘表接口一致：:scenicId（必填）、:qTime（= 大盘表 travel_date，yyyyMMdd）、:timeTag（= 大盘表 time_granularity）。

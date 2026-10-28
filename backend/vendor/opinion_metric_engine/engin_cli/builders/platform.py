@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
+# 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
+# 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
+# 首次运行即表示已阅读并同意根目录 LICENSE，使用风险与法律责任由使用者自行承担。
+
 """ads_trf_social_opinion_comment_platform_di —— 平台评论分布及排行表。
 
 只做机械搬运：铺网格 → 补齐每日明细并滚动 → 汇总全平台 → 调 domain 算指标。

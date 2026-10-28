@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: LicenseRef-ShilongLee-Crawler-NC-1.0
+// 第三方代码：原样复制自 ShilongLee/Crawler，版权归原作者
+// （版权所有 (c) 2024 lishilong0101@gmail.com），按其《非商业使用许可证 1.0》授权，禁止商用。
+// 随「景区社媒采集系统」分发时同时受根目录 LICENSE 约束，见 THIRD_PARTY_NOTICES.md。
+
 // All the content in this article is only for learning and communication use, not for any other purpose, strictly prohibited for commercial use and illegal use, otherwise all the consequences are irrelevant to the author!
 // copy from https://github.com/ShilongLee/Crawler/tree/main/lib/js thanks for ShilongLee
 function rc4_encrypt(plaintext, key) {

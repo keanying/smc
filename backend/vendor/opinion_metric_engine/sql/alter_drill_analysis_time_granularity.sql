@@ -1,3 +1,9 @@
+-- 景区社媒采集系统 · Copyright (c) 2026 keanying
+-- SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
+-- 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
+-- 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
+-- 首次运行即表示已阅读并同意根目录 LICENSE，使用风险与法律责任由使用者自行承担。
+
 -- 下钻表新增 time_granularity、调整查询索引（客户 2026-10）
 --
 -- 已经建过下钻表的库执行一次即可；新建表直接用 ads_drill_analysis_ddl.sql。下游推送目标表同样要加列。

@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
+# 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
+# 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
+# 首次运行即表示已阅读并同意根目录 LICENSE，使用风险与法律责任由使用者自行承担。
+
 """操作录制器：你在浏览器里正常操作，它把「你干了什么」和「页面因此变成什么样」全程记下来。
 
 ## 和 probe_page.py 的分工
