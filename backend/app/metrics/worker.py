@@ -132,6 +132,99 @@ def push_tables(st, tables: Dict[str, Any], cfg: Dict[str, Any], scenic: str = "
     return push_all(shaped, settings=pst)
 
 
+def fetch_drill_keywords(db, scenics: List[str]) -> Dict[str, List[str]]:
+    """下钻表「只收含采集关键字的评论」用的词：本景区**启用的**主关键字 + 附关键字。
+
+    ⚠️ 不能用引擎自己的 fetch_scenic_keywords：它把 src_opinion_scenic_filter_word 整张表
+       都当成采集关键字，不看 kind 也不看 enabled——smc 这张表里还放着「过滤关键字」
+       （代运营、加微信这类，命中就该丢的词），照它的查法，含这些词的评论反而会被收进下钻表；
+       停用的关键字也照样生效。所以在这里按 smc 的表结构查好，直接交给引擎。
+    """
+    from engin_cli.source import _keyword_map
+
+    codes = [str(s).strip() for s in scenics if str(s).strip()]
+    if not codes:
+        return {}
+    marks = ",".join(["%s"] * len(codes))
+    src = db.cfg.src_db()
+    sql = (f"SELECT scenic_id, keyword AS word FROM `{src}`.`src_opinion_scenic_keyword` "
+           f"WHERE scenic_id IN ({marks}) AND enabled = 1\n"
+           f"UNION\n"
+           f"SELECT scenic_id, word FROM `{src}`.`src_opinion_scenic_filter_word` "
+           f"WHERE scenic_id IN ({marks}) AND kind = 'aux' AND enabled = 1")
+    return _keyword_map(db.query_df(sql, codes + codes))
+
+
+TABLE_DRILL = "ads_trf_social_opinion_drill_analysis_di"
+TABLE_MACRO = "ads_trf_social_opinion_macro_gran_metric_di"
+
+
+def wordcloud_pairs(macro) -> set:
+    """大盘表 wordcloud_map 里出现过的 (词, 情感类型)。情感类型和下钻表 emotion_type 同一套。"""
+    from engin_cli.metric_calc_domain import MACRO_WORD_GROUP_KEY, SENTIMENT_TYPE
+
+    group_type = {key: SENTIMENT_TYPE[s] for s, key in MACRO_WORD_GROUP_KEY.items()}
+    pairs = set()
+    if macro is None or macro.empty or "wordcloud_map" not in macro.columns:
+        return pairs
+    for raw in macro["wordcloud_map"].dropna().unique():
+        try:
+            groups = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        for key, etype in group_type.items():
+            for item in groups.get(key) or []:
+                word = str((item or {}).get("word") or "").strip()
+                if word:
+                    pairs.add((word, etype))
+    return pairs
+
+
+def comments_with_keywords(db, scenic: str, comment_ids, words: List[str]) -> set:
+    """这些评论里，评论内容含任一关键字的（不分大小写，和引擎的判定一致；只看评论，不看作品标题）。"""
+    lowered = [w.lower() for w in words if w]
+    ids = sorted({str(c) for c in comment_ids if str(c)})
+    hit: set = set()
+    if not lowered or not ids:
+        return hit
+    src = db.cfg.src_db()
+    for i in range(0, len(ids), 1000):
+        chunk = ids[i:i + 1000]
+        df = db.query_df(
+            f"SELECT comment_id, content FROM `{src}`.`src_opinion_social_work_comment_di` "
+            f"WHERE scenic_id = %s AND comment_id IN ({','.join(['%s'] * len(chunk))})",
+            [scenic] + chunk)
+        for cid, content in zip(df["comment_id"], df["content"]):
+            text = str(content or "").lower()
+            if any(w in text for w in lowered):
+                hit.add(str(cid))
+    return hit
+
+
+def filter_drill(db, scenic: str, tables: Dict[str, Any]) -> str:
+    """「只收含采集关键字的评论」：下钻表留下
+        ① 评论内容含本景区启用的主 / 附关键字的评论（这条评论的全部词行），以及
+        ② 词（+ 情感）出现在大盘表 wordcloud_map 里的词行——看板上点词云要能下钻到评论。
+    原地改 tables，返回一句给日志看的说明。"""
+    drill = tables.get(TABLE_DRILL)
+    if drill is None or drill.empty:
+        return ""
+    words = fetch_drill_keywords(db, [scenic]).get(scenic, [])
+    passing = comments_with_keywords(db, scenic, drill["comment_id"], words)
+    cloud = wordcloud_pairs(tables.get(TABLE_MACRO))
+    by_kw = drill["comment_id"].astype(str).isin(passing)
+    by_cloud = [(str(w), str(t)) in cloud
+                for w, t in zip(drill["emotion_word"], drill["emotion_type"])]
+    import pandas as pd
+    by_cloud = pd.Series(by_cloud, index=drill.index)
+    tables[TABLE_DRILL] = drill[by_kw | by_cloud].reset_index(drop=True)
+    head = (f"下钻明细按关键字过滤（只看评论内容）：{'、'.join(words[:10])}"
+            f"{' 等 ' + str(len(words)) + ' 个' if len(words) > 10 else ''}" if words
+            else "下钻明细按关键字过滤：这个景区没有启用的主关键字 / 附关键字")
+    return (f"{head}；保留 {int((by_kw | by_cloud).sum())} 行（评论含关键字 {int(by_kw.sum())} 行，"
+            f"另因词在大盘词云里 {int((by_cloud & ~by_kw).sum())} 行），去掉 {int((~(by_kw | by_cloud)).sum())} 行")
+
+
 def run(job: Dict[str, Any]) -> int:
     _load_engine()
     logging.basicConfig(level=logging.INFO, stream=sys.stderr,
@@ -164,12 +257,27 @@ def run(job: Dict[str, Any]) -> int:
             t1 = time.time()
             item: Dict[str, Any] = {"scenic": sc, "index": i, "total": len(scenics)}
             try:
-                res = run_pipeline(st, dates, scenic_codes=[sc], db=db)
+                drill_note = ""
+                if st.drill_keyword_filter and st.enable_drill_analysis:
+                    # 下钻表要按「评论含关键字 ∪ 大盘词云里的词」过滤，而引擎是先出下钻表、
+                    # 后出大盘表的，没法在它里面做。所以：先全量算、不落库 → 在这里过滤下钻表
+                    # → 再用引擎自己的 load_all 落库（同样是按景区 + 日期先删后写、一个事务）
+                    res = run_pipeline(replace(st, drill_keyword_filter=False, write_db=False),
+                                       dates, scenic_codes=[sc], db=db)
+                    drill_note = filter_drill(db, sc, res.tables)
+                    if st.write_db:          # 和引擎一致：校验有告警也照常落库
+                        from engin_cli.loader import load_all
+                        res.load_results = load_all(db, res.tables, settings=st,
+                                                    scenics=[sc], dates=sorted(dates))
+                else:
+                    res = run_pipeline(st, dates, scenic_codes=[sc], db=db)
                 item.update(
                     ok=res.ok, errors=res.errors[:5], notes=res.notes[:20],
                     tables={t: int(len(df)) for t, df in res.tables.items()},
                     loads=[{"table": r.table, "rows": r.rows, "deleted": r.deleted}
                            for r in res.load_results])
+                if drill_note:
+                    item["notes"].append(drill_note)
                 if push_on and res.ok:
                     rep = push_tables(st, res.tables, cfg, sc)
                     if sc in (cfg.get("scenic_push") or {}):

@@ -15,3 +15,8 @@ smc 运行时设置 `OPINION_IGNORE_LOCAL_SETTINGS=1`，配置全部由 smc 传�
 
 上游 `tests/test_metrics.py` 引用的是改名前的包 `opinion_etl`，在上游就跑不起来；
 `tests/test_domain_single_source.py` 的 9 条口径守卫在上游同样失败（`metrics.py` 里有重复公式），与 smc 无关。
+
+smc 这边绕开的一处上游行为：下钻表「只收含采集关键字的评论」时，上游 `source.fetch_scenic_keywords`
+把 `src_opinion_scenic_filter_word` 整张表（含 kind=exclude 的过滤关键字）、以及停用的关键字都当成采集关键字。
+smc 不用它：`app/metrics/worker.py` 的 `fetch_drill_keywords` 只取启用的主关键字 + 附关键字，
+并且把大盘表 `wordcloud_map` 里的词也留在下钻表里（`filter_drill`）。引擎代码未改。
