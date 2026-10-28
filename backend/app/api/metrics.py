@@ -69,6 +69,15 @@ async def init_tables(state: AppState = Depends(get_state)):
         raise bad_request(f"建表失败：{exc}")
 
 
+@router.get("/push/preview")
+async def push_preview(table: str = Query("drill"), state: AppState = Depends(get_state)):
+    """按当前配置组一个推送请求给人看（不发送），对着下游的接口样例核对格式。"""
+    try:
+        return ok(await _manager(state).push_preview(table))
+    except Exception as exc:  # noqa: BLE001
+        raise bad_request(str(exc))
+
+
 @router.post("/runs")
 async def start_run(payload: dict = Body(default={}), state: AppState = Depends(get_state)):
     """手动计算。start_date / end_date 是 yyyyMMdd，不填 = 昨天；scenics 不填 = 配置里的景区。"""

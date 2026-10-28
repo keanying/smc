@@ -31,6 +31,20 @@ TABLES: List[Dict[str, str]] = [
 ]
 TABLE_NAMES = [t["table"] for t in TABLES]
 
+#: 推送时各表的默认主键（pkId）——对齐下游数据网关（quickBiData/dataSync/crossDomainSync）
+#: 实际收的口径，来自上游线上配置和客户给的报文样例。和引擎自己的 DEFAULT_PUSH_PK 不一样
+#: （引擎的下钻表默认只用 detail_uk），以这里为准；页面上每张表还能再改。
+DEFAULT_PUSH_PK: Dict[str, List[str]] = {
+    "core": ["scenic_spot_code", "publish_time", "travel_date"],
+    "platform": ["scenic_spot_code", "platform_code", "publish_time", "travel_date"],
+    "dimension": ["scenic_spot_code", "dimension_level1", "dimension_level2", "dimension_level3",
+                  "publish_time", "travel_date"],
+    "content": ["scenic_spot_code", "emotion_type", "emotion_word", "publish_time", "travel_date"],
+    "drill": ["scenic_id", "emotion_word", "emotion_type", "channel", "work_id", "comment_id",
+              "publish_time", "travel_date"],
+    "macro": ["scenic_id", "channel", "time_granularity", "publish_time", "travel_date"],
+}
+
 #: 建表语句文件（引擎自带）。ads_word_detail_ddl.sql 是下钻表的旧版本，不用
 DDL_FILES = ["ads_ddl_reference.sql", "ads_drill_analysis_ddl.sql", "ads_macro_gran_metric_ddl.sql"]
 
@@ -58,8 +72,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "push": {
         "enabled": False,
         "url": "",
-        "token_header": "Authorization",
-        "token_prefix": "Bearer ",
+        # 下游网关的鉴权是 `xpftkey: pfk_xxx`——自定义请求头、不带前缀。
+        # 换成 `Authorization: Bearer xxx` 这类就改这两项
+        "token_header": "xpftkey",
+        "token_prefix": "",
         "token": "",                    # 密钥，不回显
         "body_fields": {"table": "tableName", "pk": "pkId", "data": "data"},
         "extra_fields": {},
@@ -141,9 +157,13 @@ def normalize(raw: Optional[Dict[str, Any]], *, previous: Optional[Dict[str, Any
         raise ValueError(f"推送地址要以 http:// 或 https:// 开头：{out['url']}")
     if out["enabled"] and not out["url"]:
         raise ValueError("打开了推送，但没填推送地址")
-    out["token_header"] = str(push.get("token_header") or "Authorization").strip()
-    out["token_prefix"] = str(push.get("token_prefix") if push.get("token_prefix") is not None
-                              else "Bearer ")
+    out["token_header"] = str(push.get("token_header") or "").strip() \
+        or cfg["push"]["token_header"]
+    if not re.match(r"^[A-Za-z0-9_-]+$", out["token_header"]):
+        raise ValueError(f"鉴权请求头名不合法：{out['token_header']}")
+    # 前缀可以是空串（= 不加前缀），所以不能用 `or` 兜默认值
+    prefix = push.get("token_prefix")
+    out["token_prefix"] = cfg["push"]["token_prefix"] if prefix is None else str(prefix)
     token = str(push.get("token") or "")
     if token in ("", _SECRET_MASK) and previous:
         token = str(((previous.get("push") or {}).get("token")) or "")

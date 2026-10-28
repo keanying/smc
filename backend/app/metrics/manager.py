@@ -96,7 +96,8 @@ class MetricsManager:
             info = self._catalog.get(t["table"]) or {}
             notes = comments.get(t["table"]) or {}
             out.append({
-                **t, "comment": notes.get("comment", ""), "pk": info.get("pk", []),
+                **t, "comment": notes.get("comment", ""),
+                "pk": mc.DEFAULT_PUSH_PK.get(t["key"]) or info.get("pk", []),
                 "columns": [{"name": c, "comment": (notes.get("columns") or {}).get(c, "")}
                             for c in info.get("columns", [])],
             })
@@ -163,6 +164,54 @@ class MetricsManager:
             await self.db.execute(qualified)
             out.append({"table": table, "result": "已创建"})
         return out
+
+    # ------------------------------------------------------------------ 报文预览
+    async def push_preview(self, key: str) -> Dict[str, Any]:
+        """按当前配置组一个真实的推送请求给人看（不发送）：地址、请求头（令牌打码）、报文。
+
+        数据取 ADS 表里最新的一行，按配置裁剪 / 改字段名、换主键名——和真正推送时同一套规则；
+        表里还没数据就用空值占位。用来对着下游给的接口样例核对格式。
+        """
+        table = next((t for t in mc.TABLES if t["key"] == key), None)
+        if table is None:
+            raise ValueError(f"没有这张表：{key}")
+        cfg = await self.get_config()
+        push, tc = cfg["push"], cfg["tables"][key]
+        columns = next((c["columns"] for c in await self.catalog() if c["key"] == key), [])
+        names = [c["name"] for c in columns]
+
+        row: Dict[str, Any] = {}
+        note = ""
+        status = {s["key"]: s for s in await self.table_status()}
+        if status[key]["exists"]:
+            found = await self.db.fetch_one(
+                f"SELECT * FROM `{status[key]['database']}`.`{table['table']}` "
+                f"ORDER BY id DESC LIMIT 1")
+            row = {c: _jsonable(found.get(c)) for c in names} if found else {}
+        if not row:
+            row = {c: None for c in names}
+            note = "表里还没有数据，字段值用空值占位"
+
+        fields = tc.get("fields") or []
+        if fields:
+            rename = {f["column"]: f["name"] for f in fields}
+            row = {rename[f["column"]]: row.get(f["column"]) for f in fields}
+        else:
+            rename = {}
+        pk = [rename.get(c, c) for c in (tc.get("pk") or mc.DEFAULT_PUSH_PK.get(key, []))]
+        body = {push["body_fields"]["table"]: tc.get("push_name") or table["table"],
+                push["body_fields"]["pk"]: pk, push["body_fields"]["data"]: [row],
+                **(push.get("extra_fields") or {})}
+        headers = {"Content-Type": "application/json"}
+        if push.get("token"):
+            headers[push["token_header"]] = f"{push['token_prefix']}{_mask(push['token'])}"
+        text = json.dumps(body, ensure_ascii=False, indent=2)
+        curl = (f"curl --location --request POST '{push['url'] or '（未填推送地址）'}' \\\n"
+                + "".join(f"--header '{k}: {v}' \\\n" for k, v in headers.items())
+                + f"--data-raw '{text}'")
+        return {"url": push["url"], "headers": headers, "body": body, "curl": curl,
+                "note": note, "has_token": bool(push.get("token")),
+                "push": tc.get("push", True), "enabled": push["enabled"]}
 
     # ------------------------------------------------------------------ 运行
     @property
@@ -418,6 +467,26 @@ class _RunState:
     def summary_copy(self) -> List[Dict[str, Any]]:
         with self._lock:
             return list(self.summary)
+
+
+def _mask(secret: str) -> str:
+    """令牌只露头尾几位，够认出是哪一个，又不至于泄露。"""
+    if len(secret) <= 8:
+        return "****"
+    return f"{secret[:6]}****{secret[-2:]}"
+
+
+def _jsonable(v: Any) -> Any:
+    """库里读出来的值 → 推送报文里的样子（和引擎 pusher._jsonable 一致：数字仍是数字，时间是字符串）。"""
+    from decimal import Decimal
+
+    if isinstance(v, Decimal):
+        return float(v)
+    if isinstance(v, datetime):
+        return v.strftime("%Y-%m-%d %H:%M:%S")
+    if hasattr(v, "isoformat"):
+        return v.isoformat()
+    return v
 
 
 def _yesterday(now: datetime) -> str:

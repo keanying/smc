@@ -867,6 +867,7 @@ export const metricsApi = {
   tables: () => api.get<{ key: string; table: string; label: string; database: string;
     exists: boolean; approx_rows: number }[]>('/api/metrics/tables'),
   initTables: () => api.post<{ table: string; result: string }[]>('/api/metrics/tables/init'),
+  pushPreview: (table: string) => api.get<Record<string, any>>('/api/metrics/push/preview', { table }),
   run: (payload: { start_date?: string; end_date?: string; scenics?: string[]; no_push?: boolean }) =>
     api.post<MetricRun>('/api/metrics/runs', payload),
   runs: (page = 1, pageSize = 20) =>

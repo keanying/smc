@@ -106,31 +106,42 @@
       <!-- ==================== 景区与参数 ==================== -->
       <el-tab-pane label="景区与参数" name="params">
         <el-row :gutter="16">
-          <el-col :xs="24" :lg="14">
+          <el-col :xs="24" :lg="15">
+            <!-- 景区和参数是同一次计算的设置：放进一张卡片，从上往下就是「算谁 → 怎么取数 → 什么口径 → 出哪些表 → 存哪」 -->
             <el-card shadow="never" class="block">
               <template #header>
-                <span class="lbl">计算的景区<InfoTip content="不选 = 每次计算取数区间里有评论的全部景区" /></span>
+                <div class="card-head">
+                  <span>计算配置</span>
+                  <span class="muted head-hint">鼠标移到某一项上，右侧会标出它影响的表</span>
+                </div>
               </template>
-              <el-select v-model="cfg.scenics" multiple filterable clearable class="w-full"
-                         placeholder="全部有评论的景区">
-                <el-option v-for="s in scenicOptions" :key="s.scenic_id"
-                           :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id" />
-              </el-select>
-            </el-card>
+              <el-form label-width="110px" class="param-form">
+                <div class="form-group-title">范围</div>
+                <el-form-item label="景区" class="param-item" @mouseenter="hl = ALL_TABLES" @mouseleave="hl = []">
+                  <el-select v-model="cfg.scenics" multiple filterable clearable class="w-full"
+                             placeholder="全部有评论的景区">
+                    <el-option v-for="s in scenicOptions" :key="s.scenic_id"
+                               :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id" />
+                  </el-select>
+                  <ParamNote text="不选 = 每次计算取数区间里有评论的全部景区" tables="all" />
+                </el-form-item>
 
-            <el-card shadow="never" class="block">
-              <template #header>计算参数</template>
-              <el-form label-width="150px" class="param-form">
-                <el-form-item>
-                  <template #label><span class="lbl">取数回溯<InfoTip content="往前读多少天的评论参与计算。近 90 日环比要 180 天历史，历史不够时长窗口会退化成「已有历史累计」" /></span></template>
+                <div class="form-group-title">取数</div>
+                <el-form-item label="取数回溯" class="param-item" @mouseenter="hl = ALL_TABLES" @mouseleave="hl = []">
                   <el-input-number v-model="cfg.params.lookback_days" :min="7" :max="1100" /><span class="unit">天</span>
+                  <ParamNote text="往前读多少天的评论参与计算" tables="all" :tips="[
+                    '近 N 日环比要 2N 天历史：近 90 日环比需要 180 天',
+                    '历史不够时，长窗口退化成「已有历史累计」，几个周期的得分可能一样（不是错）',
+                  ]" />
                 </el-form-item>
-                <el-form-item>
-                  <template #label><span class="lbl">往前重跑<InfoTip content="评论会晚到约 1 天，每次计算顺带把目标日期之前几天也重算一遍。0 = 不重跑" /></span></template>
+                <el-form-item label="往前重跑" class="param-item" @mouseenter="hl = ALL_TABLES" @mouseleave="hl = []">
                   <el-input-number v-model="cfg.params.rerun_days" :min="0" :max="60" /><span class="unit">天</span>
+                  <ParamNote text="每次计算顺带重算目标日期之前几天" tables="all" :tips="[
+                    '评论会晚到约 1 天，不重跑的话前几天的数据停在「当时没采齐」的样子',
+                    '0 = 不重跑',
+                  ]" />
                 </el-form-item>
-                <el-form-item>
-                  <template #label><span class="lbl">缺数回补<InfoTip content="某渠道某天一条评论都没有时：复制往前最近一天的明细再算（保证趋势连续）；或者就记 0" /></span></template>
+                <el-form-item label="缺数回补" class="param-item" @mouseenter="hl = ALL_TABLES" @mouseleave="hl = []">
                   <el-radio-group v-model="cfg.params.backfill_mode">
                     <el-radio-button value="fill">复制最近一天</el-radio-button>
                     <el-radio-button value="off">记 0</el-radio-button>
@@ -140,54 +151,81 @@
                     <el-input-number v-model="cfg.params.backfill_lookback" :min="0" :max="365" size="small" class="num-sm" />
                     <span class="unit">天</span>
                   </template>
+                  <ParamNote text="某个平台某天一条评论都没有时怎么算" tables="all" :tips="[
+                    '复制最近一天：复制往前最近一个有评论那天的明细再算，趋势不断档',
+                    '记 0：当天按 0 条评论算',
+                    '往前找不到（超过天数）的，这一天就是 0',
+                  ]" />
                 </el-form-item>
-                <el-form-item>
-                  <template #label><span class="lbl">得分权重<InfoTip content="得分 = 5 ×（好评率×正面 + 中评率×中性 + 差评率×负面）。改了之后历史分数不会自动变，要重算历史日期" /></span></template>
+
+                <div class="form-group-title">口径</div>
+                <el-form-item label="得分权重" class="param-item" @mouseenter="hl = ['core', 'dimension', 'macro']" @mouseleave="hl = []">
                   <div class="weights">
                     <span>正面</span><el-input-number v-model="cfg.params.score_weights.positive" :min="0" :max="1" :step="0.05" :precision="2" size="small" class="num-sm" />
                     <span>中性</span><el-input-number v-model="cfg.params.score_weights.neutral" :min="0" :max="1" :step="0.05" :precision="2" size="small" class="num-sm" />
                     <span>负面</span><el-input-number v-model="cfg.params.score_weights.negative" :min="0" :max="1" :step="0.05" :precision="2" size="small" class="num-sm" />
                   </div>
+                  <ParamNote text="得分 = 5 ×（好评率×正面 + 中评率×中性 + 差评率×负面）"
+                             :tables="['core', 'dimension', 'macro']" :tips="[
+                    '默认 1.00 / 0.90 / 0.50，得分在 2.5 ~ 5 分之间',
+                    '改了之后历史分数不会自动变，要把历史日期重新计算一遍',
+                  ]" />
                 </el-form-item>
-                <el-form-item>
-                  <template #label><span class="lbl">关键词保留<InfoTip content="关键词云表每天每种情感只留热度前 N 个词，0 = 全部保留（表会很大）" /></span></template>
+                <el-form-item label="关键词保留" class="param-item" @mouseenter="hl = ['content']" @mouseleave="hl = []">
                   <el-input-number v-model="cfg.params.content_top_words" :min="0" :max="100000" /><span class="unit">个</span>
+                  <ParamNote text="关键词云每天每种情感只留热度前 N 个词" :tables="['content']"
+                             :tips="['0 = 全部保留：表会比其他几张加起来还大']" />
                 </el-form-item>
-                <el-form-item label="下钻明细表">
+
+                <div class="form-group-title">产出</div>
+                <el-form-item label="下钻明细" class="param-item" @mouseenter="hl = ['drill']" @mouseleave="hl = []">
                   <el-switch v-model="cfg.params.enable_drill_analysis" />
                   <template v-if="cfg.params.enable_drill_analysis">
                     <el-checkbox v-model="cfg.params.drill_keyword_filter" class="inline-check">只收含采集关键字的评论</el-checkbox>
                     <el-checkbox v-model="cfg.params.drill_mask_content" class="inline-check">评论摘要只露关键词</el-checkbox>
                   </template>
+                  <ParamNote text="词 → 评论 → 作品的下钻明细" :tables="['drill']" :tips="[
+                    '只收含采集关键字：评论原文里出现本景区主关键字或附关键字的才收',
+                    '评论摘要只露关键词：命中的关键词保留，其余内容换成 **',
+                  ]" />
                 </el-form-item>
-                <el-form-item label="大盘 KPI 表">
+                <el-form-item label="大盘 KPI" class="param-item" @mouseenter="hl = ['macro']" @mouseleave="hl = []">
                   <el-switch v-model="cfg.params.enable_macro_metric" />
+                  <ParamNote text="各周期（今日、近 7 日、本月…）× 各渠道的 KPI" :tables="['macro']" />
                 </el-form-item>
-                <el-form-item>
-                  <template #label><span class="lbl">写入 ADS 表<InfoTip content="关掉 = 只计算 + 推送，不写本地库" /></span></template>
+
+                <div class="form-group-title">存储</div>
+                <el-form-item label="写入 ADS 表" class="param-item" @mouseenter="hl = ALL_TABLES" @mouseleave="hl = []">
                   <el-switch v-model="cfg.params.write_db" />
+                  <ParamNote text="关掉 = 只计算 + 推送，不写本地库" tables="all" />
                 </el-form-item>
-                <el-form-item>
-                  <template #label><span class="lbl">ADS 库<InfoTip content="指标表放在哪个库，留空 = 和采集数据同一个库" /></span></template>
+                <el-form-item label="ADS 库" class="param-item" @mouseenter="hl = ALL_TABLES" @mouseleave="hl = []">
                   <el-input v-model="cfg.params.ads_database" placeholder="同采集库" class="short-input" />
+                  <ParamNote text="指标表放在哪个库，留空 = 和采集数据同一个库" tables="all" />
                 </el-form-item>
               </el-form>
             </el-card>
           </el-col>
 
-          <el-col :xs="24" :lg="10">
-            <el-card shadow="never" class="block">
+          <el-col :xs="24" :lg="9">
+            <el-card shadow="never" class="block ads-panel">
               <template #header>
                 <div class="card-head">
-                  <span class="lbl">ADS 表<InfoTip content="按引擎自带的建表语句建表，已有的不动。表结构以引擎为准" /></span>
+                  <span class="lbl">产出的 ADS 表<InfoTip content="按引擎自带的建表语句建表，已有的不动。表结构以引擎为准" /></span>
                   <el-button size="small" :loading="initing" @click="initTables">建表</el-button>
                 </div>
               </template>
-              <div v-for="t in tableStatus" :key="t.key" class="ads-row">
+              <div v-for="t in tableStatus" :key="t.key" class="ads-row"
+                   :class="{ 'is-hl': hl.includes(t.key), 'is-dim': hl.length && !hl.includes(t.key),
+                             'is-off': !producing(t.key) }">
                 <span class="ads-name">{{ t.label }}</span>
                 <span class="mono muted ads-table">{{ t.table }}</span>
-                <el-tag v-if="t.exists" size="small" type="success">约 {{ t.approx_rows }} 行</el-tag>
-                <el-tag v-else size="small" type="info">未建</el-tag>
+                <el-tag v-if="!producing(t.key)" size="small" type="info">不产出</el-tag>
+                <el-tag v-else-if="t.exists" size="small" type="success">约 {{ t.approx_rows }} 行</el-tag>
+                <el-tag v-else size="small" type="warning">未建</el-tag>
+              </div>
+              <div class="muted ads-foot">
+                {{ hl.length ? `这一项影响 ${hl.length === 6 ? '全部 6 张表' : hl.length + ' 张表'}` : '下钻明细、大盘 KPI 可以在左侧「产出」里关掉' }}
               </div>
             </el-card>
           </el-col>
@@ -231,17 +269,29 @@
             <el-form-item label="推送地址">
               <el-input v-model="cfg.push.url" placeholder="https://…/data/sync" />
             </el-form-item>
-            <el-form-item>
-              <template #label><span class="lbl">鉴权<InfoTip content="请求头名 + 前缀 + 令牌，例如 Authorization: Bearer sk_xxx。令牌保存后不回显" /></span></template>
+            <el-form-item label="鉴权">
               <div class="auth-row">
-                <el-input v-model="cfg.push.token_header" placeholder="请求头" class="auth-header" />
-                <el-input v-model="cfg.push.token_prefix" placeholder="前缀" class="auth-prefix" />
-                <el-input v-model="cfg.push.token" type="password" show-password
-                          :placeholder="cfg.push.has_token ? '已填写，留空 = 不修改' : '令牌'" />
+                <div class="auth-cell auth-header">
+                  <span class="cell-label">请求头名</span>
+                  <el-input v-model="cfg.push.token_header" placeholder="xpftkey" />
+                </div>
+                <div class="auth-cell auth-prefix">
+                  <span class="cell-label">前缀（可空）</span>
+                  <el-input v-model="cfg.push.token_prefix" placeholder="不加" />
+                </div>
+                <div class="auth-cell">
+                  <span class="cell-label">令牌</span>
+                  <el-input v-model="cfg.push.token" type="password" show-password
+                            :placeholder="cfg.push.has_token ? '已填写，留空 = 不修改' : 'pfk_…'" />
+                </div>
+              </div>
+              <div class="auth-result">
+                实际发送：<code>{{ authPreview }}</code>
+                <span class="muted">（Bearer 方式：请求头填 Authorization、前缀填「Bearer 」）</span>
               </div>
             </el-form-item>
             <el-form-item>
-              <template #label><span class="lbl">报文字段名<InfoTip content='请求体里「表名 / 主键 / 数据」三个字段叫什么，默认 {"tableName", "pkId", "data"}' /></span></template>
+              <template #label><span class="lbl">报文字段名<InfoTip content="请求体里表名、主键、数据三个字段叫什么。默认 tableName / pkId / data" /></span></template>
               <div class="body-row">
                 <span>表名</span><el-input v-model="cfg.push.body_fields.table" />
                 <span>主键</span><el-input v-model="cfg.push.body_fields.pk" />
@@ -267,6 +317,13 @@
             <el-form-item>
               <template #label><span class="lbl">成功标志字段<InfoTip content="响应体是 JSON 且有这个字段时，它为 false 就算这批失败（网关把业务失败写在 200 里）。留空 = 只看 HTTP 状态码" /></span></template>
               <el-input v-model="cfg.push.success_field" placeholder="status" class="short-input" />
+            </el-form-item>
+            <el-form-item label="核对报文">
+              <el-select v-model="previewTable" class="preview-select">
+                <el-option v-for="t in TABLE_OPTIONS" :key="t.key" :label="t.label" :value="t.key" />
+              </el-select>
+              <el-button :loading="previewing" @click="openPreview">预览报文</el-button>
+              <span class="muted preview-hint">按已保存的配置组一个真实请求（不发送），对着下游的接口样例核对</span>
             </el-form-item>
           </el-form>
         </el-card>
@@ -343,6 +400,25 @@
       </el-tab-pane>
     </el-tabs>
 
+    <!-- 报文预览 -->
+    <el-dialog v-model="previewOpen" title="推送报文预览" width="760px">
+      <template v-if="preview">
+        <el-alert v-if="!preview.enabled" type="warning" :closable="false" show-icon
+                  title="推送还没开启，这只是按当前配置组出来的样子" class="block" />
+        <el-alert v-else-if="!preview.push" type="warning" :closable="false" show-icon
+                  title="这张表设置了「不推送」" class="block" />
+        <el-alert v-if="preview.note" type="info" :closable="false" show-icon :title="preview.note" class="block" />
+        <el-alert v-if="!preview.has_token" type="warning" :closable="false" show-icon
+                  title="还没填令牌，请求里不会带鉴权头" class="block" />
+        <pre class="log-terminal preview-code">{{ preview.curl }}</pre>
+        <div class="muted preview-hint">令牌只显示头尾几位；数据取这张表最新的一行。</div>
+      </template>
+      <template #footer>
+        <el-button @click="copyPreview">复制</el-button>
+        <el-button type="primary" @click="previewOpen = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 运行详情 -->
     <el-drawer v-model="drawer" size="62%" :title="detail ? `计算 ${detail.run_id}` : ''" destroy-on-close>
       <template v-if="detail">
@@ -393,6 +469,7 @@ import { ElMessage } from 'element-plus'
 import {
   metricsApi, type MetricCatalogTable, type MetricRun, type MetricsConfig,
 } from '../api'
+import ParamNote from '../components/ParamNote.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -511,6 +588,15 @@ async function cancelRun(row: MetricRun) {
 }
 
 // ---------------- 参数 / ADS 表 ----------------
+/** 鼠标停在哪个参数上，右侧高亮它影响的表 */
+const ALL_TABLES = ['core', 'platform', 'dimension', 'content', 'drill', 'macro']
+const hl = ref<string[]>([])
+/** 这张表这次会不会算：下钻、大盘能在「产出」里关掉 */
+function producing(key: string): boolean {
+  if (key === 'drill') return !!cfg.value?.params.enable_drill_analysis
+  if (key === 'macro') return !!cfg.value?.params.enable_macro_metric
+  return true
+}
 async function loadTables() {
   tableStatus.value = await metricsApi.tables()
 }
@@ -524,6 +610,42 @@ async function initTables() {
     await loadTables()
   } finally {
     initing.value = false
+  }
+}
+
+// ---------------- 鉴权 / 报文预览 ----------------
+const TABLE_OPTIONS = [
+  { key: 'core', label: '核心指标' }, { key: 'platform', label: '平台分布' },
+  { key: 'dimension', label: '维度得分' }, { key: 'content', label: '关键词云' },
+  { key: 'drill', label: '下钻明细' }, { key: 'macro', label: '大盘 KPI' },
+]
+const authPreview = computed(() => {
+  const p = cfg.value?.push
+  if (!p) return ''
+  const token = p.token ? `${p.token.slice(0, 6)}****` : (p.has_token ? '（已填写的令牌）' : '（令牌）')
+  return `${p.token_header || 'xpftkey'}: ${p.token_prefix || ''}${token}`
+})
+const previewTable = ref('drill')
+const previewing = ref(false)
+const previewOpen = ref(false)
+const preview = ref<Record<string, any> | null>(null)
+
+async function openPreview() {
+  previewing.value = true
+  try {
+    preview.value = await metricsApi.pushPreview(previewTable.value)
+    previewOpen.value = true
+  } finally {
+    previewing.value = false
+  }
+}
+
+async function copyPreview() {
+  try {
+    await navigator.clipboard.writeText(preview.value?.curl || '')
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.warning('浏览器不让复制，手动选中复制吧')
   }
 }
 
@@ -650,13 +772,32 @@ onUnmounted(() => window.clearInterval(timer))
 .mid-input { width: 420px; max-width: 100%; }
 .inline-check { margin-left: 16px; }
 .weights { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.ads-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--smc-border); }
+.ads-panel { position: sticky; top: 0; }
+.ads-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin: 0 -10px; border-bottom: 1px solid var(--smc-border); border-radius: 6px; transition: background-color .15s, opacity .15s; }
+.ads-row.is-hl { background: var(--el-color-primary-light-9); }
+.ads-row.is-hl .ads-name { color: var(--el-color-primary); font-weight: 600; }
+.ads-row.is-dim { opacity: .4; }
+.ads-row.is-off .ads-name { color: var(--smc-text-secondary); }
+.ads-foot { margin-top: 10px; font-size: 12px; }
+.head-hint { font-size: 12px; font-weight: 400; }
+.param-item { border-radius: 6px; transition: background-color .15s; }
+.param-item:hover { background: var(--el-fill-color-lighter); }
 .ads-row:last-child { border-bottom: none; }
 .ads-name { width: 72px; flex-shrink: 0; }
 .ads-table { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
 .cron-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .cron-input { width: 160px; }
-.auth-row { display: grid; grid-template-columns: 160px 110px 1fr; gap: 8px; width: 100%; }
+.auth-row { display: grid; grid-template-columns: 170px 130px 1fr; gap: 8px; width: 100%; }
+.auth-cell { display: flex; flex-direction: column; gap: 2px; }
+.cell-label { font-size: 12px; line-height: 18px; color: var(--smc-text-secondary); }
+.auth-result { width: 100%; margin-top: 6px; font-size: 12px; line-height: 18px; }
+.auth-result code { padding: 1px 6px; border-radius: 4px; background: var(--el-fill-color-light); }
+.form-group-title { margin: 6px 0 12px; padding-left: 8px; border-left: 3px solid var(--el-color-primary); font-size: 13px; font-weight: 600; }
+.form-group-title:not(:first-child) { margin-top: 22px; }
+.param-form :deep(.el-form-item) { margin-bottom: 16px; }
+.preview-select { width: 140px; margin-right: 8px; }
+.preview-hint { margin-left: 8px; font-size: 12px; }
+.preview-code { max-height: 460px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
 .body-row { display: grid; grid-template-columns: auto 1fr auto 1fr auto 1fr; align-items: center; gap: 8px; width: 100%; }
 .extra-list { width: 100%; }
 .extra-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; margin-bottom: 8px; }

@@ -24,7 +24,10 @@ from dataclasses import replace
 from typing import Any, Dict, List, Optional
 
 from .common import EVENT_PREFIX, date_list
-from .config import ENGINE_DIR, TABLES
+from .config import DEFAULT_PUSH_PK as _SMC_PK, ENGINE_DIR, TABLES
+
+#: smc 这边的默认主键（对齐下游网关），按表名查
+DEFAULT_PK_BY_TABLE = {t["table"]: _SMC_PK[t["key"]] for t in TABLES if t["key"] in _SMC_PK}
 
 
 def emit(event: str, **data: Any) -> None:
@@ -106,8 +109,8 @@ def push_tables(st, tables: Dict[str, Any], cfg: Dict[str, Any]):
         tc = by_table.get(table)
         if tc is None or not tc.get("push", True):
             continue
-        shaped[table], pk_map[table] = shape_for_push(
-            table, df, tc, DEFAULT_PUSH_PK.get(table, []))
+        default_pk = DEFAULT_PK_BY_TABLE.get(table) or DEFAULT_PUSH_PK.get(table, [])
+        shaped[table], pk_map[table] = shape_for_push(table, df, tc, default_pk)
         if tc.get("push_name"):
             names[table] = tc["push_name"]
     headers = {}
