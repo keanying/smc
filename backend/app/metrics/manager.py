@@ -593,7 +593,8 @@ def _describe(event: Dict[str, Any]) -> str:
         rows = sum((event.get("tables") or {}).values())
         timing = event.get("timing") or {}
         stages = "、".join(f"{label} {timing[k]}s" for k, label in (
-            ("compute", "计算"), ("drill_filter", "下钻过滤"), ("load", "写库"), ("push", "推送"))
+            ("compute", "计算"), ("drill_filter", "下钻过滤"), ("load", "写库"), ("push", "推送"),
+            ("mock", "演示数据"))
             if k in timing)
         text = head + f"✓ 产出 {rows} 行（{event.get('elapsed')}s" + (f"：{stages}" if stages else "") + "）"
         pushes = event.get("push") or []
@@ -601,6 +602,15 @@ def _describe(event: Dict[str, Any]) -> str:
             bad = [p for p in pushes if not p.get("ok") and not p.get("skipped")]
             text += "，推送 " + ("✓" if not bad else
                                 "✗ " + "；".join(f"{p['table']}：{p['error']}" for p in bad[:3]))
+        for m in event.get("mock") or []:
+            label = f"\n    └ 演示数据 → {m.get('to_name')}（{m.get('to_scenic')}）："
+            if m.get("skipped") and not m.get("push"):
+                text += label + f"没推（{m['skipped']}）"
+            elif m.get("ok"):
+                text += label + f"✓ 推送 {m.get('rows', 0)} 行"
+            else:
+                bad = [p for p in m.get("push") or [] if not p.get("ok") and not p.get("skipped")]
+                text += label + "✗ " + "；".join(f"{p['table']}：{p['error']}" for p in bad[:3])
         return text
     if kind == "end":
         if event.get("error"):

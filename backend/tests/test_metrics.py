@@ -439,3 +439,66 @@ async def test_mock_copies_a_scenics_results_to_another_code_and_only_pushes(env
         "SELECT COUNT(*) AS c FROM ads_trf_social_opinion_comment_core_di WHERE scenic_spot_code = %s",
         [dst])
     assert local["c"] == 0, "演示数据不写本地库"
+
+
+def test_mock_targets_are_validated():
+    ok = mc.normalize({"mock_targets": [
+        {"from_scenic": "S1", "to_scenic": "D1", "to_name": "演示", "tables": ["drill", "core"]},
+        {"from_scenic": "", "to_scenic": "", "to_name": ""},          # 空行忽略
+    ]})
+    assert ok["mock_targets"] == [{"from_scenic": "S1", "to_scenic": "D1", "to_name": "演示",
+                                   "tables": ["core", "drill"], "enabled": True}]
+    for bad, words in [
+        ({"from_scenic": "S1", "to_scenic": "S1", "to_name": "x", "tables": ["core"]}, "一样"),
+        ({"from_scenic": "S1", "to_scenic": "D1", "to_name": "x", "tables": []}, "至少选一张"),
+        ({"from_scenic": "S1", "to_scenic": "D1", "to_name": "", "tables": ["core"]}, "都要填"),
+    ]:
+        with pytest.raises(ValueError, match=words):
+            mc.normalize({"mock_targets": [bad]})
+    with pytest.raises(ValueError, match="重复"):
+        mc.normalize({"mock_targets": [
+            {"from_scenic": "S1", "to_scenic": "D1", "to_name": "x", "tables": ["core"]},
+            {"from_scenic": "S2", "to_scenic": "D1", "to_name": "y", "tables": ["core"]}]})
+    with pytest.raises(ValueError, match="要计算的真实景区"):
+        mc.normalize({"scenics": ["S1", "D1"], "mock_targets": [
+            {"from_scenic": "S1", "to_scenic": "D1", "to_name": "x", "tables": ["core"]}]})
+
+
+@pytest.mark.asyncio
+async def test_demo_targets_are_pushed_right_after_their_source_scenic(env):
+    """演示数据随计算：源景区推送成功后，用这次的结果换成目标编号再推；不写本地库。"""
+    from app.metrics.common import yesterday
+
+    scenics = await _seed(env.db)
+    src, dst = scenics[0], "PFTSCA09999999"
+    await env.manager.init_tables()
+    await env.manager.save_config({
+        "scenics": [src], "params": {"lookback_days": 30, "rerun_days": 1},
+        "push": {"enabled": True, "url": env.receiver.url},
+        "mock_targets": [{"from_scenic": src, "to_scenic": dst, "to_name": "演示景区",
+                          "tables": ["core", "drill"]}],
+    })
+    done = await _wait(env.manager, (await env.manager.start_run(start_date=yesterday()))["run_id"])
+    assert done["status"] == "success", (done["error"], done["log"][-1500:])
+    assert done["summary"][0]["mock"][0]["ok"]
+
+    order = []
+    for r in env.receiver.requests:
+        body = r["body"]
+        code = body["data"][0].get("scenic_spot_code") or body["data"][0].get("scenic_id")
+        order.append((body["tableName"], code))
+    first_mock = next(i for i, (_, c) in enumerate(order) if c == dst)
+    assert all(c == src for _, c in order[:first_mock]), "主景区先推完，再推演示数据"
+    assert {t for t, c in order if c == dst} == {
+        "ads_trf_social_opinion_comment_core_di", "ads_trf_social_opinion_drill_analysis_di"}
+    dates_src = {str(x["travel_date"]) for r in env.receiver.requests
+                 if r["body"]["tableName"].endswith("core_di")
+                 for x in r["body"]["data"] if x["scenic_spot_code"] == src}
+    dates_dst = {str(x["travel_date"]) for r in env.receiver.requests
+                 if r["body"]["tableName"].endswith("core_di")
+                 for x in r["body"]["data"] if x["scenic_spot_code"] == dst}
+    assert dates_src == dates_dst and len(dates_dst) == 2, "日期和主景区一样，含往前重跑"
+    local = await env.db.fetch_one(
+        "SELECT COUNT(*) AS c FROM ads_trf_social_opinion_comment_core_di WHERE scenic_spot_code = %s",
+        [dst])
+    assert local["c"] == 0, "演示数据不写本地库"

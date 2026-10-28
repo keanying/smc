@@ -92,6 +92,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # 按景区单独指定推哪几张表：{景区 ID: [表简写, ...]}。
     #   不在这里的景区 = 按上面每张表的 push 开关；在这里的景区 = 只推列出来的（空列表 = 都不推）
     "scenic_push": {},
+    # 演示数据（随计算自动推送）：源景区算完、推送成功后，把它这次的结果换成目标景区的
+    # 编号 / 名称再推一遍。[{from_scenic, to_scenic, to_name, tables: [表简写], enabled}]
+    "mock_targets": [],
 }
 
 _CRON_FIELDS = 5
@@ -231,6 +234,40 @@ def normalize(raw: Optional[Dict[str, Any]], *, previous: Optional[Dict[str, Any
         if bad:
             raise ValueError(f"景区 {scenic}：不认识的表 {'、'.join(map(str, bad))}")
         cfg["scenic_push"][scenic] = [k for k in keys if k in picked]   # 按固定顺序、去重
+
+    targets = raw.get("mock_targets") or []
+    if not isinstance(targets, list):
+        raise ValueError("演示数据的配置必须是列表")
+    seen_to: set = set()
+    cfg["mock_targets"] = []
+    for i, t in enumerate(targets, 1):
+        t = t or {}
+        src = str(t.get("from_scenic") or "").strip()
+        dst = str(t.get("to_scenic") or "").strip()
+        name = str(t.get("to_name") or "").strip()
+        if not (src or dst or name):
+            continue                                  # 页面上加了一行又没填，忽略
+        where = f"演示数据第 {i} 行"
+        if not src or not dst or not name:
+            raise ValueError(f"{where}：源景区、目标景区编号、目标景区名称都要填")
+        if src == dst:
+            raise ValueError(f"{where}：目标编号和源景区一样，会用演示数据覆盖真实景区")
+        if dst in seen_to:
+            raise ValueError(f"{where}：目标编号 {dst} 重复了")
+        if dst in cfg["scenics"]:
+            raise ValueError(f"{where}：{dst} 是要计算的真实景区，不能拿来放演示数据")
+        seen_to.add(dst)
+        picked = t.get("tables") or []
+        bad = [k for k in picked if k not in keys]
+        if bad:
+            raise ValueError(f"{where}：不认识的表 {'、'.join(map(str, bad))}")
+        if not picked:
+            raise ValueError(f"{where}：至少选一张表")
+        cfg["mock_targets"].append({
+            "from_scenic": src, "to_scenic": dst, "to_name": name,
+            "tables": [k for k in keys if k in picked],
+            "enabled": bool(t.get("enabled", True)),
+        })
     return cfg
 
 

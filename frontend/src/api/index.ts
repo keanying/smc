@@ -833,6 +833,8 @@ export interface MetricsConfig {
   tables: Record<string, MetricTableCfg>
   /** 按景区单独指定推哪几张表（表简写）；不在这里的景区按各表的 push 开关 */
   scenic_push: Record<string, string[]>
+  /** 演示数据（随计算自动推送）：源景区推送成功后，按目标编号 / 名称再推一遍 */
+  mock_targets: { from_scenic: string; to_scenic: string; to_name: string; tables: string[]; enabled: boolean }[]
 }
 
 export interface MetricCatalogTable {
