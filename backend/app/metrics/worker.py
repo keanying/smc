@@ -180,24 +180,35 @@ def wordcloud_pairs(macro) -> set:
     return pairs
 
 
-def comments_with_keywords(db, scenic: str, comment_ids, words: List[str]) -> set:
-    """这些评论里，评论内容含任一关键字的（不分大小写，和引擎的判定一致；只看评论，不看作品标题）。"""
+def comments_with_keywords(db, scenic: str, keys, words: List[str]) -> set:
+    """这些评论（(渠道, 评论 ID)）里，评论内容含任一关键字的。
+
+    不分大小写，和引擎的判定一致；只看评论自己的内容，不看作品标题。
+    ⚠️ 按渠道分组查：带上 channel 才能走 idx_comments_label_key (channel, scenic_id, comment_id)；
+       只按 scenic_id + comment_id 查是全表扫描，每 1000 条一次，评论表大了就很慢。
+    """
     lowered = [w.lower() for w in words if w]
-    ids = sorted({str(c) for c in comment_ids if str(c)})
+    by_channel: Dict[str, set] = {}
+    for ch, cid in keys:
+        if str(cid):
+            by_channel.setdefault(str(ch), set()).add(str(cid))
     hit: set = set()
-    if not lowered or not ids:
+    if not lowered:
         return hit
     src = db.cfg.src_db()
-    for i in range(0, len(ids), 1000):
-        chunk = ids[i:i + 1000]
-        df = db.query_df(
-            f"SELECT comment_id, content FROM `{src}`.`src_opinion_social_work_comment_di` "
-            f"WHERE scenic_id = %s AND comment_id IN ({','.join(['%s'] * len(chunk))})",
-            [scenic] + chunk)
-        for cid, content in zip(df["comment_id"], df["content"]):
-            text = str(content or "").lower()
-            if any(w in text for w in lowered):
-                hit.add(str(cid))
+    for ch, id_set in by_channel.items():
+        ids = sorted(id_set)
+        for i in range(0, len(ids), 1000):
+            chunk = ids[i:i + 1000]
+            df = db.query_df(
+                f"SELECT comment_id, content FROM `{src}`.`src_opinion_social_work_comment_di` "
+                f"WHERE channel = %s AND scenic_id = %s "
+                f"AND comment_id IN ({','.join(['%s'] * len(chunk))})",
+                [ch, scenic] + chunk)
+            for cid, content in zip(df["comment_id"], df["content"]):
+                text = str(content or "").lower()
+                if any(w in text for w in lowered):
+                    hit.add((ch, str(cid)))
     return hit
 
 
@@ -210,12 +221,13 @@ def filter_drill(db, scenic: str, tables: Dict[str, Any]) -> str:
     if drill is None or drill.empty:
         return ""
     words = fetch_drill_keywords(db, [scenic]).get(scenic, [])
-    passing = comments_with_keywords(db, scenic, drill["comment_id"], words)
+    keys = list(zip(drill["channel"].astype(str), drill["comment_id"].astype(str)))
+    passing = comments_with_keywords(db, scenic, set(keys), words)
     cloud = wordcloud_pairs(tables.get(TABLE_MACRO))
-    by_kw = drill["comment_id"].astype(str).isin(passing)
+    import pandas as pd
+    by_kw = pd.Series([k in passing for k in keys], index=drill.index)
     by_cloud = [(str(w), str(t)) in cloud
                 for w, t in zip(drill["emotion_word"], drill["emotion_type"])]
-    import pandas as pd
     by_cloud = pd.Series(by_cloud, index=drill.index)
     tables[TABLE_DRILL] = drill[by_kw | by_cloud].reset_index(drop=True)
     head = (f"下钻明细按关键字过滤（只看评论内容）：{'、'.join(words[:10])}"
@@ -257,20 +269,29 @@ def run(job: Dict[str, Any]) -> int:
             t1 = time.time()
             item: Dict[str, Any] = {"scenic": sc, "index": i, "total": len(scenics)}
             try:
+                # 分段计时：计算 / 下钻过滤 / 写库 / 推送 各花了多久，慢的时候一眼看出慢在哪
+                timing: Dict[str, float] = {}
+                item["timing"] = timing
+                # 引擎里只算不落库，落库由这里调引擎自己的 load_all 做（同样按景区 + 日期
+                # 先删后写、一个事务）——这样写库的耗时能单独量出来；
+                # 下钻表要按「评论含关键字 ∪ 大盘词云里的词」过滤时也只能这样：
+                # 引擎是先出下钻表、后出大盘表的，没法在它里面做
                 drill_note = ""
-                if st.drill_keyword_filter and st.enable_drill_analysis:
-                    # 下钻表要按「评论含关键字 ∪ 大盘词云里的词」过滤，而引擎是先出下钻表、
-                    # 后出大盘表的，没法在它里面做。所以：先全量算、不落库 → 在这里过滤下钻表
-                    # → 再用引擎自己的 load_all 落库（同样是按景区 + 日期先删后写、一个事务）
-                    res = run_pipeline(replace(st, drill_keyword_filter=False, write_db=False),
-                                       dates, scenic_codes=[sc], db=db)
+                filtering = st.drill_keyword_filter and st.enable_drill_analysis
+                t_stage = time.time()
+                res = run_pipeline(replace(st, drill_keyword_filter=False, write_db=False),
+                                   dates, scenic_codes=[sc], db=db)
+                timing["compute"] = round(time.time() - t_stage, 1)
+                if filtering:
+                    t_stage = time.time()
                     drill_note = filter_drill(db, sc, res.tables)
-                    if st.write_db:          # 和引擎一致：校验有告警也照常落库
-                        from engin_cli.loader import load_all
-                        res.load_results = load_all(db, res.tables, settings=st,
-                                                    scenics=[sc], dates=sorted(dates))
-                else:
-                    res = run_pipeline(st, dates, scenic_codes=[sc], db=db)
+                    timing["drill_filter"] = round(time.time() - t_stage, 1)
+                if st.write_db:              # 和引擎一致：校验有告警也照常落库
+                    from engin_cli.loader import load_all
+                    t_stage = time.time()
+                    res.load_results = load_all(db, res.tables, settings=st,
+                                                scenics=[sc], dates=sorted(dates))
+                    timing["load"] = round(time.time() - t_stage, 1)
                 item.update(
                     ok=res.ok, errors=res.errors[:5], notes=res.notes[:20],
                     tables={t: int(len(df)) for t, df in res.tables.items()},
@@ -279,7 +300,9 @@ def run(job: Dict[str, Any]) -> int:
                 if drill_note:
                     item["notes"].append(drill_note)
                 if push_on and res.ok:
+                    t_stage = time.time()
                     rep = push_tables(st, res.tables, cfg, sc)
+                    timing["push"] = round(time.time() - t_stage, 1)
                     if sc in (cfg.get("scenic_push") or {}):
                         item["notes"].append("按景区单独配置推送：" + (
                             "、".join(push_keys_for(cfg, sc)) or "这个景区不推送"))
