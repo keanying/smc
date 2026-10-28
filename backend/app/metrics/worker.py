@@ -319,17 +319,64 @@ def run(job: Dict[str, Any]) -> int:
                         # 地址连不上：后面的景区推也是白等，只算、只落库
                         push_on = False
                         item["notes"].append("推送地址连不上，后面的景区只计算不推送")
+                # 演示数据：这个景区是某些演示景区的源 → 主景区推送成功后，跟着推它们
+                targets = [t for t in cfg.get("mock_targets") or []
+                           if t.get("enabled", True) and t["from_scenic"] == sc]
+                if targets:
+                    if not (res.ok and item.get("push_ok")):
+                        why = ("主景区计算有错" if not res.ok else
+                               "主景区推送没成功" if item.get("push_ok") is False else
+                               "本次不推送")
+                        item["notes"].append(f"演示数据（{len(targets)} 个）没推：{why}")
+                        item["mock"] = [{"to_scenic": t["to_scenic"], "to_name": t["to_name"],
+                                         "ok": False, "skipped": why} for t in targets]
+                    else:
+                        t_stage = time.time()
+                        item["mock"] = push_mock_targets(st, res.tables, cfg, targets)
+                        timing["mock"] = round(time.time() - t_stage, 1)
+                        item["mock_ok"] = all(m["ok"] for m in item["mock"])
             except Exception as exc:            # noqa: BLE001 —— 一个景区炸了不拖累其他景区
                 logging.getLogger(__name__).exception("景区 %s 计算异常", sc)
                 item.update(ok=False, errors=[f"{type(exc).__name__}: {exc}"])
             item["elapsed"] = round(time.time() - t1, 1)
-            if not item.get("ok") or item.get("push_ok") is False:
+            if not item.get("ok") or item.get("push_ok") is False or item.get("mock_ok") is False:
                 failed += 1
             emit("scenic", **item)
         emit("end", ok=failed == 0, failed=failed, elapsed=round(time.time() - t0, 1))
         return 0 if failed == 0 else 1
     finally:
         db.close()
+
+
+def push_mock_targets(st, tables: Dict[str, Any], cfg: Dict[str, Any],
+                      targets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """把主景区这次算出来的结果换到各演示景区名下推出去（不写本地库）。
+
+    用的是**这次内存里的结果**（含往前重跑的那几天、下钻过滤后的下钻表），
+    所以演示景区和主景区推出去的数据是同一份；换编号用引擎自己的 retarget
+    （编号 / 名称换掉，下钻表 detail_uk 按新景区重算，etl_time 记成现在）。
+    """
+    from datetime import datetime as _dt
+
+    from engin_cli.mock import retarget
+
+    now = _dt.now()
+    out = []
+    for t in targets:
+        keys = list(t["tables"])
+        names = {m["table"] for m in TABLES if m["key"] in keys}
+        copied = {tb: retarget(tb, df, t["to_scenic"], t["to_name"], now)
+                  for tb, df in tables.items() if tb in names and df is not None and not df.empty}
+        if not copied:
+            out.append({"to_scenic": t["to_scenic"], "to_name": t["to_name"], "ok": True,
+                        "rows": 0, "push": [], "skipped": "这几张表这次没有数据"})
+            continue
+        rep = push_tables(st, copied, cfg, t["to_scenic"], only_keys=keys)
+        out.append({"to_scenic": t["to_scenic"], "to_name": t["to_name"], "ok": rep.ok,
+                    "rows": int(sum(r.rows for r in rep.results)),
+                    "push": [{"table": r.table, "rows": r.rows, "ok": r.ok,
+                              "skipped": r.skipped, "error": r.error} for r in rep.results]})
+    return out
 
 
 def run_mock(job: Dict[str, Any]) -> int:

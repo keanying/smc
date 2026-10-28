@@ -53,55 +53,6 @@
           </div>
         </el-card>
 
-        <!-- 演示数据：把一个景区已经算好的结果复制给另一个景区编号，推给下游（不写本地库） -->
-        <el-card shadow="never" class="block">
-          <template #header>
-            <span class="lbl">演示数据<InfoTip :width="340">
-              <ul class="tip-list">
-                <li>把一个景区<b>已经算好</b>的指标结果，换成另一个景区的编号和名称，推给下游；不写本地库</li>
-                <li>用于下游要看一个还没开始采集的景区的效果</li>
-                <li>下钻明细的 detail_uk 按新景区重算，不会和原景区的数据撞</li>
-                <li>推送按「推送」「推送表」里的地址、表名、主键、字段；推哪几张表以这里勾的为准</li>
-              </ul>
-            </InfoTip></span>
-          </template>
-          <div class="mock-grid">
-            <div class="mock-field">
-              <span class="cell-label">从哪个景区复制</span>
-              <el-select v-model="mock.from_scenic" filterable placeholder="选景区（要已经算过）">
-                <el-option v-for="s in scenicOptions" :key="s.scenic_id"
-                           :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id" />
-              </el-select>
-            </div>
-            <div class="mock-field">
-              <span class="cell-label">复制给（景区编号）</span>
-              <el-input v-model="mock.to_scenic" placeholder="如 PFTSCA01018088" @blur="fillMockName" />
-            </div>
-            <div class="mock-field">
-              <span class="cell-label">景区名称</span>
-              <el-input v-model="mock.to_name" placeholder="如 泰宁九龙潭生态旅游区" />
-            </div>
-            <div class="mock-field">
-              <span class="cell-label">日期区间</span>
-              <el-date-picker v-model="mock.dates" type="daterange" value-format="YYYYMMDD" format="YYYY-MM-DD"
-                              range-separator="至" start-placeholder="开始" end-placeholder="结束" :clearable="false" />
-            </div>
-          </div>
-          <div class="mock-row">
-            <span class="cell-label">推哪几张表</span>
-            <el-checkbox-group v-model="mock.tables">
-              <el-checkbox v-for="t in TABLE_OPTIONS" :key="t.key" :value="t.key">{{ t.label }}</el-checkbox>
-            </el-checkbox-group>
-          </div>
-          <div class="mock-row">
-            <el-checkbox v-model="mock.dry_run">只组报文不发送（先验证）</el-checkbox>
-            <div class="spacer" />
-            <el-button type="primary" :loading="mocking" :disabled="!!status?.running_run_id" @click="startMock">
-              <AppIcon v-if="!mocking" name="publish" :size="14" class="btn-icon" />复制并推送
-            </el-button>
-          </div>
-        </el-card>
-
         <el-card shadow="never">
           <template #header>
             <div class="card-head">
@@ -261,7 +212,7 @@
             </el-card>
           </el-col>
 
-          <el-col :xs="24" :lg="9">
+          <el-col :xs="24" :lg="9" class="ads-col">
             <el-card shadow="never" class="block ads-panel">
               <template #header>
                 <div class="card-head">
@@ -499,6 +450,117 @@
           </el-collapse-item>
         </el-collapse>
       </el-tab-pane>
+
+      <!-- ==================== 演示数据 ==================== -->
+      <el-tab-pane label="演示数据" name="mock">
+        <el-card shadow="never" class="block">
+          <template #header>
+            <div class="card-head">
+              <span class="lbl">随计算自动推送<InfoTip :width="360">
+                <ul class="tip-list">
+                  <li>每次计算（定时或手动）里，源景区算完、并且它自己推送成功后，把它这次的结果换成目标景区的编号和名称，再推一遍</li>
+                  <li>日期和主景区这次推的一样（含往前重跑的那几天）；只推送，不写本地库</li>
+                  <li>主景区推送失败、或这次选了「本次不推送」，演示数据也不推，运行日志里写明原因</li>
+                  <li>源景区要在这次计算的范围里：「计算的景区」不为空时，源景区要在里面</li>
+                </ul>
+              </InfoTip></span>
+              <el-button size="small" @click="addMockTarget">添加</el-button>
+            </div>
+          </template>
+          <el-table :data="cfg.mock_targets" size="small" class="data-table">
+            <el-table-column label="源景区" min-width="200">
+              <template #default="{ row }">
+                <el-select v-model="row.from_scenic" filterable size="small" placeholder="选景区" class="w-full">
+                  <el-option v-for="s in scenicOptions" :key="s.scenic_id"
+                             :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id" />
+                </el-select>
+                <div v-if="row.from_scenic && cfg.scenics.length && !cfg.scenics.includes(row.from_scenic)" class="row-warn">
+                  不在「计算的景区」里，不会触发
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="目标景区编号" min-width="170">
+              <template #default="{ row }">
+                <el-input v-model="row.to_scenic" size="small" placeholder="如 PFTSCA01018088"
+                          @blur="checkMockTarget(row)" />
+                <div v-if="mockRisk[row.to_scenic]" class="row-warn">{{ mockRisk[row.to_scenic] }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="目标景区名称" min-width="180">
+              <template #default="{ row }">
+                <el-input v-model="row.to_name" size="small" placeholder="如 泰宁九龙潭生态旅游区" />
+              </template>
+            </el-table-column>
+            <el-table-column label="推哪几张表" min-width="240">
+              <template #default="{ row }">
+                <el-select v-model="row.tables" multiple collapse-tags collapse-tags-tooltip size="small" class="w-full">
+                  <el-option v-for="t in TABLE_OPTIONS" :key="t.key" :label="t.label" :value="t.key" />
+                </el-select>
+              </template>
+            </el-table-column>
+            <el-table-column label="启用" width="70" align="center">
+              <template #default="{ row }"><el-switch v-model="row.enabled" size="small" /></template>
+            </el-table-column>
+            <el-table-column label="" width="56" align="center">
+              <template #default="{ $index }">
+                <IconAction icon="delete" tip="删除" @click="cfg.mock_targets.splice($index, 1)" />
+              </template>
+            </el-table-column>
+            <template #empty><el-empty description="还没有演示景区，点右上角「添加」" :image-size="64" /></template>
+          </el-table>
+          <div class="muted hint">改完记得点右上角「保存配置」。</div>
+        </el-card>
+
+        <!-- 演示数据：把一个景区已经算好的结果复制给另一个景区编号，推给下游（不写本地库） -->
+        <el-card shadow="never" class="block">
+          <template #header>
+            <span class="lbl">手动推一次<InfoTip :width="340">
+              <ul class="tip-list">
+                <li>把一个景区<b>已经算好</b>的指标结果，换成另一个景区的编号和名称，推给下游；不写本地库</li>
+                <li>用于下游要看一个还没开始采集的景区的效果</li>
+                <li>下钻明细的 detail_uk 按新景区重算，不会和原景区的数据撞</li>
+                <li>推送按「推送」「推送表」里的地址、表名、主键、字段；推哪几张表以这里勾的为准</li>
+              </ul>
+            </InfoTip></span>
+          </template>
+          <div class="mock-grid">
+            <div class="mock-field">
+              <span class="cell-label">从哪个景区复制</span>
+              <el-select v-model="mock.from_scenic" filterable placeholder="选景区（要已经算过）">
+                <el-option v-for="s in scenicOptions" :key="s.scenic_id"
+                           :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id" />
+              </el-select>
+            </div>
+            <div class="mock-field">
+              <span class="cell-label">复制给（景区编号）</span>
+              <el-input v-model="mock.to_scenic" placeholder="如 PFTSCA01018088" @blur="fillMockName" />
+            </div>
+            <div class="mock-field">
+              <span class="cell-label">景区名称</span>
+              <el-input v-model="mock.to_name" placeholder="如 泰宁九龙潭生态旅游区" />
+            </div>
+            <div class="mock-field">
+              <span class="cell-label">日期区间</span>
+              <el-date-picker v-model="mock.dates" type="daterange" value-format="YYYYMMDD" format="YYYY-MM-DD"
+                              range-separator="至" start-placeholder="开始" end-placeholder="结束" :clearable="false" />
+            </div>
+          </div>
+          <div class="mock-row">
+            <span class="cell-label">推哪几张表</span>
+            <el-checkbox-group v-model="mock.tables">
+              <el-checkbox v-for="t in TABLE_OPTIONS" :key="t.key" :value="t.key">{{ t.label }}</el-checkbox>
+            </el-checkbox-group>
+          </div>
+          <div class="mock-row">
+            <el-checkbox v-model="mock.dry_run">只组报文不发送（先验证）</el-checkbox>
+            <div class="spacer" />
+            <el-button type="primary" :loading="mocking" :disabled="!!status?.running_run_id" @click="startMock">
+              <AppIcon v-if="!mocking" name="publish" :size="14" class="btn-icon" />复制并推送
+            </el-button>
+          </div>
+        </el-card>
+
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 报文预览 -->
@@ -549,7 +611,13 @@
                   {{ shortTable(p.table) }} {{ p.ok ? p.rows : '✗' }}
                 </span>
               </template>
-              <span v-else class="muted">—</span>
+              <span v-else-if="!row.mock" class="muted">—</span>
+              <div v-for="m in row.mock || []" :key="m.to_scenic" class="mock-line">
+                <span class="out-chip" :class="{ bad: !m.ok && !m.skipped, warn: m.skipped && !m.push }">
+                  演示 → {{ m.to_name }}
+                  {{ m.skipped && !m.push ? `没推：${m.skipped}` : (m.ok ? `${m.rows} 行` : '✗') }}
+                </span>
+              </div>
             </template>
           </el-table-column>
           <el-table-column label="用时" width="70">
@@ -649,7 +717,12 @@ function resultText(row: MetricRun): string {
   const ok = s.filter((x) => x.ok).length
   const rows = s.reduce((n, x) => n + Object.values(x.tables || {}).reduce((a: number, b: any) => a + Number(b), 0), 0)
   const pushBad = s.filter((x) => x.push_ok === false).length
-  return `${ok}/${s.length} 个景区成功，产出 ${rows} 行` + (row.push ? (pushBad ? `，${pushBad} 个推送失败` : '，已推送') : '')
+  const mocks = s.flatMap((x) => x.mock || [])
+  const mockText = mocks.length
+    ? `；演示数据 ${mocks.filter((m: any) => m.ok && !m.skipped).length}/${mocks.length} 个已推`
+    : ''
+  return `${ok}/${s.length} 个景区成功，产出 ${rows} 行`
+    + (row.push ? (pushBad ? `，${pushBad} 个推送失败` : '，已推送') : '') + mockText
 }
 
 async function loadRuns() {
@@ -801,7 +874,27 @@ function removeScenicPush(scenic: string) {
   cfg.value.scenic_push = next
 }
 
-// ---------------- 演示数据 ----------------
+// ---------------- 演示数据（随计算自动推送） ----------------
+/** 目标编号在本系统里有真实数据时的提醒，按编号缓存 */
+const mockRisk = reactive<Record<string, string>>({})
+function addMockTarget() {
+  cfg.value?.mock_targets.push({
+    from_scenic: '', to_scenic: '', to_name: '', enabled: true,
+    tables: TABLE_OPTIONS.map((t) => t.key),
+  })
+}
+async function checkMockTarget(row: { to_scenic: string; to_name: string }) {
+  const code = row.to_scenic.trim()
+  if (!code) return
+  const hit = scenicOptions.value.find((s) => s.scenic_id === code)
+  if (hit && !row.to_name) row.to_name = hit.scenic_name
+  const c = await metricsApi.mockCheck(code)
+  mockRisk[code] = (c.comments || c.ads_rows)
+    ? `本系统已有真实数据（评论 ${c.comments} 条、指标 ${c.ads_rows} 行），推出去会覆盖下游里它的数据`
+    : ''
+}
+
+// ---------------- 演示数据（手动推一次） ----------------
 const mocking = ref(false)
 const mock = reactive({
   from_scenic: '', to_scenic: '', to_name: '',
@@ -986,7 +1079,10 @@ onUnmounted(() => window.clearInterval(timer))
 .mid-input { width: 420px; max-width: 100%; }
 .inline-check { margin-left: 16px; }
 .weights { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.ads-panel { position: sticky; top: 0; }
+/* 右侧 ADS 表跟着滚动停在页签下面：粘在列上（列要 align-self: flex-start，不然列和行一样高，粘不住） */
+.ads-col { position: sticky; top: 100px; align-self: flex-start; }
+/* el-tabs 的内容区默认 overflow: hidden，里面的 sticky 全部失效 */
+.metric-tabs > :deep(.el-tabs__content) { overflow: visible; }
 .ads-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin: 0 -10px; border-bottom: 1px solid var(--smc-border); border-radius: 6px; transition: background-color .15s, opacity .15s; }
 .ads-row.is-hl { background: var(--el-color-primary-light-9); }
 .ads-row.is-hl .ads-name { color: var(--el-color-primary); font-weight: 600; }
@@ -1011,6 +1107,19 @@ onUnmounted(() => window.clearInterval(timer))
 .param-form :deep(.el-form-item) { margin-bottom: 16px; }
 .preview-select { width: 140px; margin-right: 8px; }
 .add-scenic { display: flex; align-items: center; gap: 8px; }
+.row-warn { margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--el-color-danger); }
+.mock-line { margin-top: 2px; }
+.out-chip.warn { color: var(--el-color-warning-dark-2); background: var(--el-color-warning-light-9); }
+/* 标题 + 页签固定在顶部（页面在 el-main 里滚动，它上面有 24px 内边距） */
+.metrics-view > .page-header {
+  position: sticky; top: -24px; z-index: 30;
+  margin: -24px 0 0; padding: 24px 0 10px;
+  background: var(--smc-bg);
+}
+.metric-tabs > :deep(.el-tabs__header) {
+  position: sticky; top: 40px; z-index: 29;
+  margin: 0 0 14px; background: var(--smc-bg);
+}
 .mock-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .mock-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .mock-field :deep(.el-date-editor) { width: 100% !important; }
