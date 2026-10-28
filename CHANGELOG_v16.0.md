@@ -40,8 +40,9 @@
 ## 四、改名 CloudSense 云听
 
 - 侧栏、登录页、浏览器标题、接口文档标题、README、产品说明、LICENSE、所有源文件头改成 CloudSense（云听）。
-- 标识：`frontend/public/logo.svg`（像素云 + 声波，原创）。你发来的两张 LOGO 带 sologo 的版权水印，
-  我没有去水印或照着重画；在 sologo 拿到正式授权的无水印文件后，替换 `logo.svg` 和 `favicon.svg` 即可。
+- 标识：`frontend/public/logo.png`，用你给的无水印透明底 LOGO，**原样使用**（不裁、不拉伸、不改色，只按高度等比缩放）。
+  深色侧栏上垫了一块白底，深蓝的「云听」才看得清；浏览器标签图标 `favicon.svg` 是把同一张图原样居中放进正方形透明画布。
+  以后换 LOGO：替换 `logo.png`，再重新生成 `favicon.svg`（或直接换成同名图片）。
 
 ## 五、升级
 

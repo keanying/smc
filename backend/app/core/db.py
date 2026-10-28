@@ -24,6 +24,11 @@ from .logging import get_logger
 
 logger = get_logger(__name__)
 
+# MySQL 8.0.20 起把 `ON DUPLICATE KEY UPDATE col = VALUES(col)` 标成"将来会删"，每条 upsert 都报一次警告。
+# 不改成新写法（`... AS new ... col = new.col`）：那是 8.0.19+ 才有的语法，MariaDB 不支持，
+# 老一点的 MySQL 也不支持；VALUES() 在现有版本里照常可用。只屏蔽这一条，其他警告照常显示。
+warnings.filterwarnings("ignore", message=r".*'VALUES function' is deprecated.*")
+
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
 
 
