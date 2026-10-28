@@ -10,9 +10,9 @@
   <div class="login-page">
     <div class="login-card">
       <div class="brand">
-        <img class="brand-img" src="/logo.svg" alt="CloudSense 云听" />
+        <img class="brand-img" src="/logo.png" alt="CloudSense 云听" />
         <div>
-          <div class="brand-title">CloudSense <span class="brand-cn">云听</span></div>
+          <div class="brand-title">CloudSense</div>
           <div class="brand-sub">景区社媒舆情采集与分析</div>
         </div>
       </div>
@@ -145,9 +145,9 @@ onMounted(async () => {
   padding: 32px 32px 24px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
 }
 .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
-.brand-img { width: 48px; height: 48px; }
+/* LOGO 原样使用，只按高度等比缩放 */
+.brand-img { height: 56px; width: auto; display: block; }
 .brand-title { font-size: 18px; font-weight: 700; letter-spacing: 0.3px; }
-.brand-cn { font-weight: 600; color: var(--el-color-primary); margin-left: 4px; }
 .brand-sub { font-size: 12px; color: var(--smc-text-secondary); letter-spacing: 0.5px; }
 .card-title { margin: 0 0 6px; font-size: 20px; }
 .card-desc { margin: 0 0 16px; font-size: 13px; line-height: 1.7; color: var(--smc-text-secondary); }

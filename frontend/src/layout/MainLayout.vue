@@ -10,10 +10,11 @@
   <el-container class="app-shell">
     <el-aside width="216px" class="aside-menu">
       <div class="logo">
-        <img class="logo-img" src="/logo.svg" alt="CloudSense 云听" />
+        <!-- LOGO 原样使用（深色侧栏上垫一块白底，深蓝的「云听」才看得清），只按高度等比缩放 -->
+        <span class="logo-tile"><img class="logo-img" src="/logo.png" alt="CloudSense 云听" /></span>
         <div class="logo-text">
           <div class="logo-title">CloudSense</div>
-          <div class="logo-sub">云听 · 景区社媒舆情</div>
+          <div class="logo-sub">景区社媒舆情</div>
         </div>
       </div>
       <el-menu
@@ -268,10 +269,18 @@ onUnmounted(() => window.clearInterval(timer))
   gap: 10px;
   padding: 0 18px;
 }
-.logo-img {
-  width: 34px;
-  height: 34px;
+.logo-tile {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: #fff;
   flex-shrink: 0;
+}
+.logo-img {
+  display: block;
+  height: 30px;
+  width: auto;
 }
 .logo-title {
   color: #f3f5f9;
