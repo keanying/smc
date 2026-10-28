@@ -468,40 +468,52 @@
             </div>
           </template>
           <el-table :data="cfg.mock_targets" size="small" class="data-table">
-            <el-table-column label="源景区" min-width="200">
+            <el-table-column label="源景区" min-width="190">
               <template #default="{ row }">
-                <el-select v-model="row.from_scenic" filterable size="small" placeholder="选景区" class="w-full">
-                  <el-option v-for="s in scenicOptions" :key="s.scenic_id"
-                             :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id" />
-                </el-select>
-                <div v-if="row.from_scenic && cfg.scenics.length && !cfg.scenics.includes(row.from_scenic)" class="row-warn">
-                  不在「计算的景区」里，不会触发
+                <!-- 提醒放在控件右边的小图标里（悬停看说明），不另起一行，免得把这一行撑高、和别的列错位 -->
+                <div class="cell-line">
+                  <el-select v-model="row.from_scenic" filterable size="small" placeholder="选景区" class="cell-grow">
+                    <el-option v-for="s in scenicOptions" :key="s.scenic_id"
+                               :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id" />
+                  </el-select>
+                  <span class="cell-warn-slot">
+                    <el-tooltip v-if="row.from_scenic && cfg.scenics.length && !cfg.scenics.includes(row.from_scenic)"
+                                content="不在「景区与参数 → 计算的景区」里，计算时不会算它，这一行不会触发" placement="top">
+                      <el-icon class="cell-warn"><WarningFilled /></el-icon>
+                    </el-tooltip>
+                  </span>
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="目标景区编号" min-width="170">
+            <el-table-column label="目标景区编号" min-width="160">
               <template #default="{ row }">
-                <el-input v-model="row.to_scenic" size="small" placeholder="如 PFTSCA01018088"
-                          @blur="checkMockTarget(row)" />
-                <div v-if="mockRisk[row.to_scenic]" class="row-warn">{{ mockRisk[row.to_scenic] }}</div>
+                <div class="cell-line">
+                  <el-input v-model="row.to_scenic" size="small" placeholder="如 PFTSCA01018088"
+                            class="cell-grow" @blur="checkMockTarget(row)" />
+                  <span class="cell-warn-slot">
+                    <el-tooltip v-if="mockRisk[row.to_scenic]" :content="mockRisk[row.to_scenic]" placement="top">
+                      <el-icon class="cell-warn"><WarningFilled /></el-icon>
+                    </el-tooltip>
+                  </span>
+                </div>
               </template>
             </el-table-column>
-            <el-table-column label="目标景区名称" min-width="180">
+            <el-table-column label="目标景区名称" min-width="150">
               <template #default="{ row }">
                 <el-input v-model="row.to_name" size="small" placeholder="如 泰宁九龙潭生态旅游区" />
               </template>
             </el-table-column>
-            <el-table-column label="推哪几张表" min-width="240">
+            <el-table-column label="推哪几张表" min-width="200">
               <template #default="{ row }">
                 <el-select v-model="row.tables" multiple collapse-tags collapse-tags-tooltip size="small" class="w-full">
                   <el-option v-for="t in TABLE_OPTIONS" :key="t.key" :label="t.label" :value="t.key" />
                 </el-select>
               </template>
             </el-table-column>
-            <el-table-column label="启用" width="70" align="center">
+            <el-table-column label="启用" width="60" align="center">
               <template #default="{ row }"><el-switch v-model="row.enabled" size="small" /></template>
             </el-table-column>
-            <el-table-column label="" width="56" align="center">
+            <el-table-column label="" width="60" align="center">
               <template #default="{ $index }">
                 <IconAction icon="delete" tip="删除" @click="cfg.mock_targets.splice($index, 1)" />
               </template>
@@ -1107,7 +1119,11 @@ onUnmounted(() => window.clearInterval(timer))
 .param-form :deep(.el-form-item) { margin-bottom: 16px; }
 .preview-select { width: 140px; margin-right: 8px; }
 .add-scenic { display: flex; align-items: center; gap: 8px; }
-.row-warn { margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--el-color-danger); }
+.cell-line { display: flex; align-items: center; gap: 6px; }
+.cell-grow { flex: 1; min-width: 0; }
+/* 图标位固定留出来：有没有提醒，同一列的输入框都一样宽 */
+.cell-warn-slot { flex: 0 0 16px; display: inline-flex; align-items: center; }
+.cell-warn { font-size: 16px; color: var(--el-color-danger); cursor: help; }
 .mock-line { margin-top: 2px; }
 .out-chip.warn { color: var(--el-color-warning-dark-2); background: var(--el-color-warning-light-9); }
 /* 标题 + 页签固定在顶部（页面在 el-main 里滚动，它上面有 24px 内边距） */
