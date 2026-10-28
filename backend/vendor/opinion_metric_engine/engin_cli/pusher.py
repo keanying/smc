@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+# 景区社媒采集系统 · Copyright (c) 2026 keanying
+# SPDX-License-Identifier: LicenseRef-SMC-NCLL-1.0
+# 按《SMC 非商业学习许可证 1.0》授权：仅限学习与研究，禁止任何商业用途，
+# 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
+# 首次运行即表示已阅读并同意根目录 LICENSE，使用风险与法律责任由使用者自行承担。
+
 """数据推送 —— 跑批算完之后，把结果以 HTTP API 形式推给下游。
 
 全部可配置：开关、地址、请求头、报文字段名、每张表的 tableName 与 pkId、
