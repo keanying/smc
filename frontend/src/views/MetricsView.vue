@@ -1189,10 +1189,10 @@ onUnmounted(() => {
 .cell-warn { font-size: 16px; color: var(--el-color-danger); cursor: help; }
 .mock-line { margin-top: 2px; }
 .out-chip.warn { color: var(--el-color-warning-dark-2); background: var(--el-color-warning-light-9); }
-/* 标题 + 页签固定在顶部（页面在 el-main 里滚动，它上面有 24px 内边距） */
+/* 标题 + 页签固定在顶部（页面在 el-main 里滚动，它上面有 8px 内边距） */
 .metrics-view > .page-header {
-  position: sticky; top: -24px; z-index: 30;
-  margin: -24px 0 0; padding: 24px 0 10px;
+  position: sticky; top: -8px; z-index: 30;
+  margin: -8px 0 0; padding: 8px 0 10px;
   background: var(--smc-bg);
 }
 .metric-tabs > :deep(.el-tabs__header) {

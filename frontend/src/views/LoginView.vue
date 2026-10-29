@@ -136,13 +136,13 @@ onMounted(async () => {
 .login-page {
   min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px;
   background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(91, 108, 255, 0.35), transparent 60%),
-    radial-gradient(900px 500px at 110% 110%, rgba(34, 197, 94, 0.18), transparent 60%),
-    var(--smc-sidebar-bg, #141a2e);
+    radial-gradient(1000px 600px at 0% 0%, rgba(124, 111, 226, 0.35), transparent 60%),
+    radial-gradient(900px 500px at 100% 100%, rgba(244, 107, 143, 0.22), transparent 60%),
+    var(--smc-page-bg);
 }
 .login-card {
-  width: 100%; max-width: 400px; background: var(--el-bg-color); border-radius: 14px;
-  padding: 32px 32px 24px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  width: 100%; max-width: 420px; background: #fff; border-radius: 28px;
+  padding: 36px 36px 28px; box-shadow: 0 30px 70px rgba(60, 50, 140, 0.20);
 }
 .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
 /* LOGO 原样使用，只按高度等比缩放 */
@@ -151,6 +151,6 @@ onMounted(async () => {
 .brand-sub { font-size: 12px; color: var(--smc-text-secondary); letter-spacing: 0.5px; }
 .card-title { margin: 0 0 6px; font-size: 20px; }
 .card-desc { margin: 0 0 16px; font-size: 13px; line-height: 1.7; color: var(--smc-text-secondary); }
-.submit { width: 100%; margin-top: 4px; height: 38px; }
+.submit { width: 100%; margin-top: 4px; height: 42px; border-radius: 12px !important; }
 .foot { margin: 16px 0 0; font-size: 12px; text-align: center; }
 </style>

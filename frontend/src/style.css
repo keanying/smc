@@ -7,39 +7,53 @@
  */
 
 /* ===================================================================
-   景区社媒采集系统 —— 全局样式
-   设计基调：深色侧边栏 + 浅色内容区，卡片化、圆角、轻阴影、过渡动画。
-   设计变量集中在 :root，改主题色只动一处。
+   CloudSense 云听 —— 全局样式
+   设计基调：淡紫底上浮一块大圆角的白色"窗口"，左侧紫色渐变圆角侧栏；
+   卡片大圆角、无边框、柔和的紫调阴影；数字大而醒目。
+   设计变量集中在 :root，改主题色只动一处（--smc-primary 和 --el-color-primary-* 一组）。
    =================================================================== */
 :root {
-  /* 中性灰 + 单一强调色。"高级"靠留白和克制，不靠渐变、阴影和动效 */
-  --smc-primary: #4f6ef7;
-  --smc-primary-dark: #3f5ce0;
-  --smc-primary-light: #eef1fe;
-  --smc-sidebar-bg: #161b26;
-  --smc-bg: #f6f7f9;
+  /* 主色：紫。强调色：粉（醒目的数字卡片、提醒） */
+  --smc-primary: #6c5dd3;
+  --smc-primary-dark: #564aa9;
+  --smc-primary-light: #f0effb;
+  --smc-accent: #f46b8f;
+  --smc-accent-light: #ff9fb6;
+  --smc-gradient: linear-gradient(145deg, #7d6fe2 0%, #5d4ec9 100%);
+  --smc-gradient-accent: linear-gradient(145deg, #ff8fab 0%, #f2648a 100%);
+  --smc-sidebar-bg: #5d4ec9;
+  --smc-page-bg: #dcdff0;          /* 窗口外面的底色 */
+  --smc-bg: #f7f7fc;               /* 窗口里内容区的底色 */
   --smc-card-bg: #ffffff;
-  --smc-border: #eaecf0;
-  --smc-border-strong: #dfe2e8;
-  --smc-text: #1d2433;
-  --smc-text-secondary: #8a93a3;
-  --smc-text-tertiary: #b2b8c3;
-  --smc-radius-sm: 6px;
-  --smc-radius: 10px;
-  --smc-radius-lg: 14px;
-  --smc-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-  --smc-shadow-hover: 0 2px 8px rgba(16, 24, 40, 0.06);
-  --smc-shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.12);
-  --el-color-primary: #4f6ef7;
-  --el-border-radius-base: 6px;
-  --el-border-color: #e2e5ea;
-  --el-border-color-light: #eaecf0;
-  --el-border-color-lighter: #f0f1f4;
-  --el-text-color-primary: #1d2433;
-  --el-text-color-regular: #4a5263;
-  --el-text-color-secondary: #8a93a3;
-  --el-text-color-placeholder: #b2b8c3;
-  --el-fill-color-light: #f6f7f9;
+  --smc-border: #ecebf5;
+  --smc-border-strong: #dedcef;
+  --smc-text: #22203a;
+  --smc-text-secondary: #8d8aa8;
+  --smc-text-tertiary: #b8b6cc;
+  --smc-radius-sm: 10px;
+  --smc-radius: 18px;
+  --smc-radius-lg: 24px;
+  --smc-shadow: 0 6px 20px rgba(76, 64, 160, 0.06);
+  --smc-shadow-hover: 0 10px 28px rgba(76, 64, 160, 0.12);
+  --smc-shadow-lg: 0 24px 60px rgba(60, 50, 140, 0.18);
+  --el-color-primary: #6c5dd3;
+  --el-color-primary-light-3: #988ee0;
+  --el-color-primary-light-5: #b6aee9;
+  --el-color-primary-light-7: #d3cef2;
+  --el-color-primary-light-8: #e2dff6;
+  --el-color-primary-light-9: #f0effb;
+  --el-color-primary-dark-2: #564aa9;
+  --el-border-radius-base: 10px;
+  --el-border-radius-small: 8px;
+  --el-border-color: #e3e1f0;
+  --el-border-color-light: #ecebf5;
+  --el-border-color-lighter: #f2f1f8;
+  --el-text-color-primary: #22203a;
+  --el-text-color-regular: #4b4866;
+  --el-text-color-secondary: #8d8aa8;
+  --el-text-color-placeholder: #b8b6cc;
+  --el-fill-color-light: #f5f4fb;
+  --el-fill-color-lighter: #f9f8fd;
 }
 
 * { box-sizing: border-box; }
@@ -53,7 +67,7 @@ body {
     'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
   color: var(--smc-text);
-  background-color: var(--smc-bg);
+  background-color: var(--smc-page-bg);
   -webkit-font-smoothing: antialiased;
   font-feature-settings: 'tnum';
 }
@@ -70,8 +84,8 @@ body {
   min-height: 32px;
 }
 .page-title {
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 22px;
+  font-weight: 700;
   margin: 0;
   color: var(--smc-text);
   letter-spacing: 0.2px;
@@ -114,12 +128,12 @@ body {
   background: var(--smc-card-bg);
   border-radius: var(--smc-radius);
   padding: 20px 22px;
-  border: 1px solid var(--smc-border);
+  box-shadow: var(--smc-shadow);
   position: relative;
   overflow: hidden;
-  transition: border-color 0.2s ease;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
-.stat-card:hover { border-color: var(--smc-border-strong); }
+.stat-card:hover { box-shadow: var(--smc-shadow-hover); }
 .stat-card .stat-icon {
   position: absolute;
   right: 18px;
@@ -147,16 +161,16 @@ body {
 /* ---------------- 卡片（Element Plus 覆写） ---------------- */
 .el-card {
   border-radius: var(--smc-radius) !important;
-  border: 1px solid var(--smc-border) !important;
-  box-shadow: none !important;
+  border: none !important;
+  box-shadow: var(--smc-shadow) !important;
 }
 .el-card__header {
   border-bottom: 1px solid var(--smc-border) !important;
-  padding: 14px 20px !important;
+  padding: 16px 22px !important;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 15px;
 }
-.el-card__body { padding: 20px !important; }
+.el-card__body { padding: 22px !important; }
 
 /* ---------------- 表格（Element Plus 覆写） ----------------
    参照客户给的 hina-ui DataTable：圆角卡片 + 轻阴影、浅灰表头、
@@ -164,19 +178,19 @@ body {
    主列表在页面里加 `class="data-table"` 和 `max-height`，表头就固定在顶上，
    表体在框内滚动（Element Plus 的 max-height 本身就是吸顶表头）。 */
 .el-table {
-  --el-table-border-color: rgba(0, 0, 0, 0.08);
-  --el-table-border: 1px solid rgba(0, 0, 0, 0.08);
-  --el-table-header-bg-color: #f5f5f5;
-  --el-table-header-text-color: #525252;
-  --el-table-text-color: #171717;
-  --el-table-row-hover-bg-color: #fafafa;
+  --el-table-border-color: #f0eff7;
+  --el-table-border: 1px solid #f0eff7;
+  --el-table-header-bg-color: #f6f5fc;
+  --el-table-header-text-color: #6e6a92;
+  --el-table-text-color: #22203a;
+  --el-table-row-hover-bg-color: #faf9fe;
   --el-table-bg-color: #ffffff;
   --el-table-tr-bg-color: #ffffff;
   font-size: 14px;
   border-radius: var(--smc-radius);
   overflow: hidden;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.05);
+  border: none;
+  box-shadow: var(--smc-shadow);
 }
 /* 外层已经有边框/阴影的容器里，表格不再叠一层阴影 */
 .el-card .el-table, .el-dialog .el-table, .el-table .el-table, .el-collapse .el-table {
@@ -185,8 +199,8 @@ body {
 .el-table th.el-table__cell {
   font-weight: 500;
   font-size: 14px;
-  height: 45px;
-  background: #f5f5f5;
+  height: 46px;
+  background: #f6f5fc;
 }
 .el-table .el-table__cell { padding: 10px 0; }
 .el-table .cell { padding: 0 12px; line-height: 22px; }
@@ -201,7 +215,7 @@ body {
 .el-table__inner-wrapper::before { background-color: transparent; }
 .el-table .el-table__row--striped td.el-table__cell { background: #ffffff !important; }
 /* 滚出可视区时的边缘阴影：表体能左右滚时，固定列边上有一道柔和的分隔 */
-.el-table__fixed-right-patch { background: #f5f5f5; }
+.el-table__fixed-right-patch { background: #f6f5fc; }
 .el-table .el-table-fixed-column--right.is-first-column::before,
 .el-table .el-table-fixed-column--left.is-last-column::before {
   box-shadow: inset 10px 0 10px -10px rgba(0, 0, 0, 0.12);
@@ -209,18 +223,23 @@ body {
 .el-table__empty-text { color: var(--smc-text-secondary); }
 
 /* ---------------- 表单 ---------------- */
-.el-form-item__label { color: #5b6375 !important; }
+.el-form-item__label { color: #5f5b80 !important; }
 .el-dialog {
   border-radius: var(--smc-radius-lg) !important;
   box-shadow: var(--smc-shadow-lg) !important;
 }
 .el-dialog__header { padding-bottom: 8px; }
 .el-dialog__title { font-size: 16px; font-weight: 600; }
-.el-tag { border-radius: 4px; }
+.el-tag { border-radius: 8px; }
 .el-tabs__item { font-size: 14px; }
 
 /* ---------------- 按钮 ---------------- */
 .el-button { border-radius: var(--smc-radius-sm) !important; font-weight: 500; }
+.el-button--primary:not(.is-link):not(.is-text):not(.is-plain) {
+  box-shadow: 0 6px 16px rgba(108, 93, 211, 0.28);
+}
+.el-tabs__item.is-active { font-weight: 600; }
+.el-tabs__active-bar { height: 3px; border-radius: 3px; }
 .el-button--primary {
   --el-button-bg-color: var(--smc-primary);
   --el-button-border-color: var(--smc-primary);
@@ -232,23 +251,23 @@ body {
 
 /* ---------------- 说明气泡 ---------------- */
 .info-tip-popper.el-popper.is-dark {
-  background: #1f2532;
-  border-color: #1f2532;
+  background: #2a2648;
+  border-color: #2a2648;
 }
 .info-tip-popper.el-popper.is-dark .el-popper__arrow::before {
-  background: #1f2532;
-  border-color: #1f2532;
+  background: #2a2648;
+  border-color: #2a2648;
 }
 
 /* ---------------- 日志终端 ---------------- */
 .log-terminal {
-  background: #14181f;
+  background: #1d1a33;
   color: #d4d4d4;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.7;
   padding: 16px;
-  border-radius: var(--smc-radius-sm);
+  border-radius: 14px;
   height: 420px;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -316,18 +335,18 @@ body {
   gap: 4px;
   padding: 4px 10px;
   border-radius: 8px;
-  background: #eef2ff;
-  color: #4f5bd5;
+  background: var(--smc-primary-light);
+  color: var(--smc-primary);
   font-size: 12px;
   font-weight: 500;
   transition: all 0.2s ease;
 }
-.group-chip:hover { background: #e0e7ff; }
+.group-chip:hover { background: var(--el-color-primary-light-8); }
 
 /* ---------------- 滚动条 ---------------- */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: #d5d9e0; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #a8b4c8; }
+::-webkit-scrollbar-thumb { background: #d9d6ea; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #b7b2d6; }
 ::-webkit-scrollbar-track { background: transparent; }
 
 /* ---------------- 工具类 ---------------- */
