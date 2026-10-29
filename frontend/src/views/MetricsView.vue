@@ -119,7 +119,7 @@
         <el-row :gutter="16">
           <el-col :xs="24" :lg="15">
             <!-- 景区和参数是同一次计算的设置：放进一张卡片，从上往下就是「算谁 → 怎么取数 → 什么口径 → 出哪些表 → 存哪」 -->
-            <el-card shadow="never" class="block">
+            <el-card shadow="never" class="block calc-card">
               <template #header>
                 <div class="card-head">
                   <span>计算配置</span>
@@ -1155,7 +1155,14 @@ onUnmounted(() => {
 .inline-check { margin-left: 16px; }
 .weights { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 /* 右侧 ADS 表跟着滚动停在页签下面：粘在列上（列要 align-self: flex-start，不然列和行一样高，粘不住） */
-.ads-col { position: sticky; top: 100px; align-self: flex-start; }
+.ads-col { position: sticky; top: 79px; align-self: flex-start; }
+/* 「计算配置」卡片的标题栏也停在页签下面，和右边「产出的 ADS 表」对齐。
+   el-card 默认 overflow: hidden，会让里面的 sticky 失效，这张卡单独放开 */
+.calc-card { overflow: visible; }
+.calc-card > :deep(.el-card__header) {
+  position: sticky; top: 79px; z-index: 6;
+  background: #fff; border-radius: var(--smc-radius) var(--smc-radius) 0 0;
+}
 /* el-tabs 的内容区默认 overflow: hidden，里面的 sticky 全部失效 */
 .metric-tabs > :deep(.el-tabs__content) { overflow: visible; }
 .ads-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin: 0 -10px; border-bottom: 1px solid var(--smc-border); border-radius: 6px; transition: background-color .15s, opacity .15s; }

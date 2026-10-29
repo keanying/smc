@@ -7,7 +7,7 @@
 -->
 
 <template>
-  <!-- 淡紫底上浮一块大圆角的白色"窗口"，左边是紫色渐变的圆角侧栏 -->
+  <!-- 铺满窗口；左边是紫色渐变的圆角侧栏 -->
   <div class="app-frame">
   <el-container class="app-shell">
     <el-aside width="188px" class="aside-menu">
@@ -261,21 +261,15 @@ onUnmounted(() => window.clearInterval(timer))
 </script>
 
 <style scoped>
-/* 外框：淡紫底，四周留白，窗口浮在上面 */
+/* 铺满整个浏览器窗口，四周不留边 */
 .app-frame {
   height: 100vh;
-  padding: 16px;
-  background:
-    radial-gradient(900px 500px at 0% 0%, rgba(124, 111, 226, 0.18), transparent 60%),
-    radial-gradient(800px 500px at 100% 100%, rgba(244, 107, 143, 0.10), transparent 60%),
-    var(--smc-page-bg);
+  background: var(--smc-bg);
 }
 .app-shell {
   height: 100%;
   background: var(--smc-bg);
-  border-radius: 28px;
   overflow: hidden;
-  box-shadow: 0 24px 60px rgba(60, 50, 140, 0.16), 0 2px 6px rgba(60, 50, 140, 0.06);
 }
 
 .aside-menu {
