@@ -600,20 +600,29 @@
           </el-col>
         </el-row>
       </el-tab-pane>
+
+      <!-- 用户：登录本系统的人。登录关掉（auth.enabled=false）时没有这个分页 -->
+      <el-tab-pane v-if="authEnabled" label="用户管理" name="users" lazy>
+        <UserManagement />
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { metricsEnabled } from '../composables/features'
+import { authEnabled } from '../composables/auth'
+import UserManagement from '../components/UserManagement.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { labelingApi, settingsApi } from '../api'
 import { channelLabel } from '../constants'
 
-const tab = ref('proxy')
+// ?tab=users 这样带进来时直接打开那一页（旧的 /users 地址会跳到这里）
+const route = useRoute()
+const tab = ref(String(route.query.tab || 'proxy'))
 const loading = ref(false)
 const saving = ref(false)
 const testing = ref(false)

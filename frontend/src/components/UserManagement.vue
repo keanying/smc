@@ -7,18 +7,18 @@
 -->
 
 <template>
+  <!-- 系统设置 → 用户管理 -->
   <div>
-    <div class="page-header">
-      <h2 class="page-title">
-        用户管理
+    <div class="users-toolbar">
+      <span class="muted intro">
+        登录本系统的人（不是社媒平台账号）
         <InfoTip :width="360">
-          登录本系统的人（不是社媒平台账号）。<br>
           <b>管理员</b>：全部功能，含用户管理、系统设置、集群管理；<br>
           <b>操作员</b>：日常操作（景区、任务、账号、复核、指标计算），不能管用户、改系统设置、管集群；<br>
           <b>只读</b>：只能看。<br>
           复核人、任务创建人记的是登录用户的显示名。
         </InfoTip>
-      </h2>
+      </span>
       <div class="header-actions">
         <el-button :icon="Refresh" @click="load">刷新</el-button>
         <el-button type="primary" :icon="Plus" @click="openAdd">添加用户</el-button>
@@ -268,6 +268,8 @@ onMounted(load)
 </script>
 
 <style scoped>
+.users-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.intro { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
 .header-actions { display: flex; align-items: center; gap: 12px; }
 .user-cell { display: flex; align-items: center; gap: 10px; }
 .avatar {

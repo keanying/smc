@@ -19,7 +19,7 @@
 
       <template v-if="needsSetup">
         <h2 class="card-title">创建管理员</h2>
-        <p class="card-desc">第一次使用，先创建一个管理员账号。之后其他人的账号由管理员在「用户管理」里添加。</p>
+        <p class="card-desc">第一次使用，先创建一个管理员账号。之后其他人的账号由管理员在「系统设置 → 用户管理」里添加。</p>
         <el-form ref="setupRef" :model="setupForm" :rules="setupRules" label-position="top"
                  @submit.prevent="submitSetup">
           <el-form-item label="用户名" prop="username">
