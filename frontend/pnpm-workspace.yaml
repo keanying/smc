@@ -5,5 +5,5 @@
 # 首次运行即表示已阅读并同意根目录 LICENSE，使用风险与法律责任由使用者自行承担。
 
 allowBuilds:
-  esbuild: set this to true or false
-  vue-demi: set this to true or false
+  esbuild: false
+  vue-demi: false

@@ -130,7 +130,7 @@ labeling:
 # 队列（不依赖业务表；redis = 生产，memory = 单机/联调）
 # ---------------------------------------------------------------------------
 queue:
-  backend: ${QUEUE_BACKEND:memory}    # redis | memory
+  backend: ${QUEUE_BACKEND:redis}    # redis | memory
   # 入队时若队列已满的行为：block = 阻塞等待，drop = 丢弃并计数
   full_policy: block
   max_size: 100000
