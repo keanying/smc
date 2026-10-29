@@ -220,6 +220,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ArrowDown, ArrowUp, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import {
@@ -245,8 +246,10 @@ const compactHeader = ref(false)
 /** 展开了评论的作品，key 是 平台+作品ID+景区 */
 const openComments = reactive(new Set<string>())
 
+// 从概览页点某个景区卡片跳过来时带着 ?scenic_id=…，直接筛好
+const route = useRoute()
 const query = reactive({
-  scenic_id: '', channel: '', keyword: '',
+  scenic_id: String(route.query.scenic_id || ''), channel: '', keyword: '',
   include_synthetic: true, page: 1, page_size: 20,
 })
 
