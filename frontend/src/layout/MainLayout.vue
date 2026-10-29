@@ -53,10 +53,7 @@
         <el-menu-item index="/cluster">
           <el-icon><Connection /></el-icon><span>集群</span>
         </el-menu-item>
-        <!-- 用户管理、系统设置只有管理员能用 -->
-        <el-menu-item v-if="isAdmin && authEnabled" index="/users">
-          <el-icon><UserFilled /></el-icon><span>用户管理</span>
-        </el-menu-item>
+        <!-- 系统设置（含用户管理）只有管理员能用 -->
         <el-menu-item v-if="isAdmin" index="/settings">
           <el-icon><Setting /></el-icon><span>系统设置</span>
         </el-menu-item>
@@ -149,11 +146,11 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import {
-  ArrowDown, Collection, Connection, Setting, TrendCharts, UserFilled,
+  ArrowDown, Collection, Connection, Setting, TrendCharts,
 } from '@element-plus/icons-vue'
 import { authApi, settingsApi } from '../api'
 import { loadFeatures, metricsEnabled } from '../composables/features'
-import { authEnabled, currentUser, isAdmin, loadAuth } from '../composables/auth'
+import { currentUser, isAdmin, loadAuth } from '../composables/auth'
 import ChangePasswordDialog from '../components/ChangePasswordDialog.vue'
 
 const route = useRoute()
