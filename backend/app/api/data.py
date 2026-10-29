@@ -21,6 +21,12 @@ from ..db import tables
 router = APIRouter(prefix="/api/data", tags=["数据中心"])
 
 
+@router.get("/trend")
+async def trend(days: int = 14, state: AppState = Depends(get_state)):
+    """最近几天每天采到的作品数、评论数（按采集时间），概览页趋势图。"""
+    return ok(await state.data.daily_trend(days))
+
+
 @router.get("/overview")
 async def overview(state: AppState = Depends(get_state)):
     """按景区 + 平台聚合的作品数/评论数，数据中心首屏。"""

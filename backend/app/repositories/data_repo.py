@@ -328,6 +328,26 @@ class DataRepository:
     #: 采集刚写完一批之后，这份缓存还能再用多久（秒）。见 invalidate_overview_cache。
     FRESH_AFTER_WRITE_SECONDS = 5
 
+    async def daily_trend(self, days: int) -> List[Dict[str, Any]]:
+        """最近 days 天每天采到多少作品、多少评论（按采集时间），概览页的趋势图用。没有数据的日子补 0。"""
+        from datetime import date, timedelta
+
+        days = max(1, min(90, int(days)))
+        start = date.today() - timedelta(days=days - 1)
+        works = await self.db.fetch_all(
+            f"SELECT DATE(crawl_time) AS d, COUNT(*) AS c FROM `{tables.WORKS}` "
+            f"WHERE crawl_time >= %s GROUP BY DATE(crawl_time)", [start])
+        comments = await self.db.fetch_all(
+            f"SELECT DATE(crawl_time) AS d, COUNT(*) AS c FROM `{tables.COMMENTS}` "
+            f"WHERE crawl_time >= %s GROUP BY DATE(crawl_time)", [start])
+        w = {str(r["d"]): int(r["c"]) for r in works}
+        c = {str(r["d"]): int(r["c"]) for r in comments}
+        out = []
+        for i in range(days):
+            d = str(start + timedelta(days=i))
+            out.append({"date": d, "works": w.get(d, 0), "comments": c.get(d, 0)})
+        return out
+
     async def scenic_overview(self, *, use_cache: bool = True) -> List[Dict[str, Any]]:
         """景区 × 平台 的作品/评论数量概览，数据中心首屏用。
 

@@ -499,8 +499,16 @@ export const liveApi = {
 
 // ===================== 数据中心 =====================
 
+export interface TrendPoint {
+  date: string
+  works: number
+  comments: number
+}
+
 export const dataApi = {
   overview: () => api.get<OverviewRow[]>('/api/data/overview'),
+  /** 最近几天每天采到的作品 / 评论数（按采集时间） */
+  trend: (days = 14) => api.get<TrendPoint[]>('/api/data/trend', { days }),
   works: (params: Record<string, unknown>) => api.get<Paged<Work>>('/api/data/works', params),
   /** 删除作品，连同它的全部评论；之后的采集不会再把它加回来 */
   removeWork: (id: number) =>

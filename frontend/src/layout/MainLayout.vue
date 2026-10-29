@@ -7,8 +7,11 @@
 -->
 
 <template>
+  <!-- 淡紫底上浮一块大圆角的白色"窗口"，左边是紫色渐变的圆角侧栏 -->
+  <div class="app-frame">
   <el-container class="app-shell">
-    <el-aside width="216px" class="aside-menu">
+    <el-aside width="232px" class="aside-menu">
+      <div class="aside-pill">
       <div class="logo">
         <!-- LOGO 原样使用（深色侧栏上垫一块白底，深蓝的「云听」才看得清），只按高度等比缩放 -->
         <span class="logo-tile"><img class="logo-img" src="/logo.png" alt="CloudSense 云听" /></span>
@@ -22,7 +25,7 @@
         :default-active="route.path"
         class="side-menu"
         background-color="transparent"
-        text-color="#9aa5bd"
+        text-color="rgba(255,255,255,0.72)"
         active-text-color="#ffffff"
       >
         <el-menu-item index="/">
@@ -58,9 +61,16 @@
           <el-icon><Setting /></el-icon><span>系统设置</span>
         </el-menu-item>
       </el-menu>
+      <!-- 侧栏底部：退出登录 -->
+      <div v-if="currentUser" class="aside-foot">
+        <button class="aside-exit" type="button" title="退出登录" @click="onUserCommand('logout')">
+          <el-icon><SwitchButton /></el-icon><span>退出登录</span>
+        </button>
+      </div>
+      </div>
     </el-aside>
     <el-container>
-      <el-header height="56px" class="app-header">
+      <el-header height="68px" class="app-header">
         <div class="header-title">
           <span class="crumb-root">云听</span>
           <span class="crumb-sep">/</span>
@@ -139,6 +149,7 @@
       <ChangePasswordDialog v-model="passwordVisible" />
     </el-container>
   </el-container>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -146,7 +157,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import {
-  ArrowDown, Collection, Connection, Setting, TrendCharts,
+  ArrowDown, Collection, Connection, Setting, SwitchButton, TrendCharts,
 } from '@element-plus/icons-vue'
 import { authApi, settingsApi } from '../api'
 import { loadFeatures, metricsEnabled } from '../composables/features'
@@ -250,29 +261,55 @@ onUnmounted(() => window.clearInterval(timer))
 </script>
 
 <style scoped>
-.app-shell { height: 100vh; }
+/* 外框：淡紫底，四周留白，窗口浮在上面 */
+.app-frame {
+  height: 100vh;
+  padding: 16px;
+  background:
+    radial-gradient(900px 500px at 0% 0%, rgba(124, 111, 226, 0.18), transparent 60%),
+    radial-gradient(800px 500px at 100% 100%, rgba(244, 107, 143, 0.10), transparent 60%),
+    var(--smc-page-bg);
+}
+.app-shell {
+  height: 100%;
+  background: var(--smc-bg);
+  border-radius: 28px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(60, 50, 140, 0.16), 0 2px 6px rgba(60, 50, 140, 0.06);
+}
 
 .aside-menu {
-  background: var(--smc-sidebar-bg);
+  padding: 14px 0 14px 14px;
+  background: transparent;
+  z-index: 10;
+}
+/* 紫色渐变的圆角侧栏 */
+.aside-pill {
+  height: 100%;
   display: flex;
   flex-direction: column;
-  z-index: 10;
+  border-radius: 24px;
+  background: var(--smc-gradient);
+  box-shadow: 0 16px 36px rgba(93, 78, 201, 0.32);
+  overflow: hidden;
 }
 
 .logo {
-  height: 60px;
+  height: 72px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 18px;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
 }
 .logo-tile {
   display: inline-flex;
   align-items: center;
   padding: 4px 6px;
-  border-radius: 8px;
+  border-radius: 10px;
   background: #fff;
   flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(40, 30, 110, 0.18);
 }
 .logo-img {
   display: block;
@@ -280,14 +317,14 @@ onUnmounted(() => window.clearInterval(timer))
   width: auto;
 }
 .logo-title {
-  color: #f3f5f9;
-  font-weight: 600;
-  font-size: 14px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
   letter-spacing: 0.4px;
   line-height: 1.3;
 }
 .logo-sub {
-  color: #5d6678;
+  color: rgba(255, 255, 255, 0.65);
   font-size: 10px;
   letter-spacing: 0.3px;
 }
@@ -295,37 +332,65 @@ onUnmounted(() => window.clearInterval(timer))
 .side-menu {
   border-right: none;
   flex: 1;
-  padding: 8px 10px;
+  padding: 12px 12px;
+  overflow-y: auto;
 }
 .side-menu :deep(.el-menu-item) {
-  height: 40px;
-  line-height: 40px;
-  margin: 2px 0;
-  border-radius: 8px;
+  height: 44px;
+  line-height: 44px;
+  margin: 3px 0;
+  padding: 0 10px !important;
+  border-radius: 14px;
   font-size: 13.5px;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
-.side-menu :deep(.el-menu-item .el-icon) { font-size: 16px; margin-right: 10px; }
+/* 图标放进一个小圆角方块里（参考图里选中项的样子） */
+.side-menu :deep(.el-menu-item .el-icon) {
+  font-size: 16px;
+  margin-right: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  transition: background-color 0.15s ease;
+}
 .side-menu :deep(.el-menu-item:hover) {
-  background: rgba(255, 255, 255, 0.05);
-  color: #dfe4ee;
+  background: rgba(255, 255, 255, 0.10);
+  color: #fff;
 }
 .side-menu :deep(.el-menu-item.is-active) {
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.18);
   color: #fff;
-  font-weight: 500;
-  position: relative;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
-.side-menu :deep(.el-menu-item.is-active)::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 11px;
-  bottom: 11px;
-  width: 3px;
-  border-radius: 2px;
-  background: var(--smc-primary);
+.side-menu :deep(.el-menu-item.is-active .el-icon) {
+  background: #fff;
+  color: var(--smc-primary);
+  box-shadow: 0 4px 10px rgba(40, 30, 110, 0.25);
 }
+.aside-foot {
+  padding: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+.aside-exit {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: none;
+  border-radius: 14px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.aside-exit .el-icon {
+  width: 30px; height: 30px; border-radius: 10px; font-size: 16px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.aside-exit:hover { background: rgba(255, 255, 255, 0.10); color: #fff; }
 
 .health-dot {
   width: 6px;
@@ -336,13 +401,14 @@ onUnmounted(() => window.clearInterval(timer))
 .health-dot.sm { width: 6px; height: 6px; }
 .meta-link { color: inherit; text-decoration: none; }
 .user-chip {
-  display: inline-flex; align-items: center; gap: 8px; cursor: pointer; margin-left: 16px;
-  padding: 4px 10px 4px 4px; border-radius: 18px; transition: background 0.15s;
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer; margin-left: 4px;
+  padding: 4px 12px 4px 4px; border-radius: 22px; transition: box-shadow 0.15s;
+  background: #fff; box-shadow: var(--smc-shadow);
 }
-.user-chip:hover { background: var(--el-fill-color-light); }
+.user-chip:hover { box-shadow: var(--smc-shadow-hover); }
 .user-avatar {
-  width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
-  background: var(--el-color-primary); color: #fff; font-size: 13px; font-weight: 600;
+  width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--smc-gradient); color: #fff; font-size: 14px; font-weight: 600;
 }
 .user-name { font-size: 13px; color: var(--el-text-color-primary); max-width: 120px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -372,31 +438,36 @@ onUnmounted(() => window.clearInterval(timer))
 }
 
 .app-header {
-  background: #fff;
-  border-bottom: 1px solid var(--smc-border);
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 28px;
 }
 .header-title { font-size: 13px; color: var(--smc-text); display: flex; align-items: center; gap: 8px; }
+.header-title > span:last-child { font-weight: 600; }
 .crumb-root { color: var(--smc-text-secondary); }
 .crumb-sep { color: var(--smc-text-tertiary); }
 .header-right { display: flex; align-items: center; gap: 12px; }
+/* 右上角的状态做成一条白色胶囊 */
 .header-meta {
   display: flex;
   align-items: center;
   gap: 12px;
   font-size: 12px;
   color: var(--smc-text-secondary);
+  background: #fff;
+  padding: 8px 16px;
+  border-radius: 20px;
+  box-shadow: var(--smc-shadow);
 }
 .meta-item { display: inline-flex; align-items: center; gap: 6px; }
 .meta-sep { width: 1px; height: 12px; background: var(--smc-border); }
 .meta-item.is-warn { color: #d97706; font-weight: 500; }
 
 .app-main {
-  background-color: var(--smc-bg);
-  padding: 24px 28px;
+  background-color: transparent;
+  padding: 8px 28px 28px;
   overflow-y: auto;
 }
 </style>

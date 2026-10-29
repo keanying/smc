@@ -201,6 +201,8 @@ EXTRA_INDEXES = [
      "(`scenic_id`, `channel`, `author_id`(191))"),
     # 作者列表固定按粉丝数倒序，这张表上原来一个相关索引都没有
     (AUTHORS, "idx_authors_fans", "(`fans_count`, `id`)"),
+    # 概览页的每日采集趋势：按采集时间取最近几天，评论表大了不走索引就是全表扫
+    (COMMENTS, "idx_comments_crawl_time", "(`crawl_time`)"),
     # 集群：从机每几秒查一次"派给我的任务"，主机按机器统计账号
     (TASK, "idx_task_node", "(`node_id`)"),
     (ACCOUNT, "idx_account_node", "(`node_id`, `channel`)"),
