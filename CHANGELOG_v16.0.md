@@ -41,8 +41,11 @@
 
 - 侧栏、登录页、浏览器标题、接口文档标题、README、产品说明、LICENSE、所有源文件头改成 CloudSense（云听）。
 - 标识：`frontend/public/logo.png`，用你给的无水印透明底 LOGO，**原样使用**（不裁、不拉伸、不改色，只按高度等比缩放）。
-  深色侧栏上垫了一块白底，深蓝的「云听」才看得清；浏览器标签图标 `favicon.svg` 是把同一张图原样居中放进正方形透明画布。
-  以后换 LOGO：替换 `logo.png`，再重新生成 `favicon.svg`（或直接换成同名图片）。
+  深色侧栏上垫了一块白底，深蓝的「云听」才看得清。
+- 浏览器标签图标：用同一张 LOGO 等比缩放、居中放进正方形透明底，生成 `favicon-32.png`、`favicon-192.png`、
+  `apple-touch-icon.png`、`favicon.ico`（Safari 不认 SVG 图标，所以用 PNG / ICO）。
+  `index.html` 里引用地址带 `?v=2`：浏览器对图标缓存得很死，不换地址会一直显示旧图标。
+  以后换 LOGO：替换 `logo.png`，重新生成这几个图标文件，并把 `?v=` 加 1。
 
 ## 五、升级
 
