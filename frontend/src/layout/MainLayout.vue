@@ -470,5 +470,8 @@ onUnmounted(() => window.clearInterval(timer))
   background-color: transparent;
   padding: 8px 28px 28px;
   overflow-y: auto;
+  /* 不显示滚动条（滚轮、触控板照常能滚）：贴着圆角窗口右边一长条，很扎眼 */
+  scrollbar-width: none;
 }
+.app-main::-webkit-scrollbar { display: none; }
 </style>

@@ -83,15 +83,15 @@
 
           <!-- 右边两张彩色小卡 -->
           <div class="side-cards">
-            <router-link class="mini-card is-violet" :to="{ path: '/tasks', query: { status: 'running' } }">
+            <div role="link" tabindex="0" class="mini-card is-violet" @click="go({ path: '/tasks', query: { status: 'running' } })" @keydown.enter="go({ path: '/tasks', query: { status: 'running' } })">
               <span class="mini-icon"><el-icon :size="22"><VideoPlay /></el-icon></span>
               <div>
                 <div class="mini-title">运行中任务</div>
                 <div class="mini-sub">共 {{ stats.tasks }} 个任务</div>
               </div>
               <span class="mini-num">{{ stats.runningTasks }}</span>
-            </router-link>
-            <router-link class="mini-card is-pink" to="/data">
+            </div>
+            <div role="link" tabindex="0" class="mini-card is-pink" @click="go('/data')" @keydown.enter="go('/data')">
               <div class="pink-top">
                 <span class="mini-icon light"><el-icon :size="20"><ChatDotRound /></el-icon></span>
                 <div class="mini-title">今日新增评论</div>
@@ -107,20 +107,17 @@
               <svg class="pink-wave" viewBox="0 0 200 60" preserveAspectRatio="none">
                 <path :d="sparkPath" fill="rgba(255,255,255,0.22)" />
               </svg>
-            </router-link>
+            </div>
           </div>
         </div>
 
         <!-- 采集量前三的景区 -->
         <div class="section-head">
           <span>采集量靠前的景区</span>
-          <router-link to="/scenics" class="more">全部景区</router-link>
+          <button type="button" class="more" @click="go('/scenics')">全部景区</button>
         </div>
         <div v-if="topScenics.length" class="scenic-row">
-          <router-link
-            v-for="(s, i) in topScenics" :key="s.scenic_id" class="scenic-card"
-            :to="{ path: '/data', query: { scenic_id: s.scenic_id } }"
-          >
+          <div role="link" tabindex="0" v-for="(s, i) in topScenics" :key="s.scenic_id" class="scenic-card" @click="go({ path: '/data', query: { scenic_id: s.scenic_id } })" @keydown.enter="go({ path: '/data', query: { scenic_id: s.scenic_id } })">
             <span class="scenic-badge" :class="`tone-${i}`"><el-icon :size="22"><LocationFilled /></el-icon></span>
             <div class="scenic-name">{{ s.scenic_name }}</div>
             <div class="scenic-sub">{{ s.channels.length }} 个平台 · 作品 {{ formatCount(s.total_works) }}</div>
@@ -133,7 +130,7 @@
               <span>{{ formatCount(s.total_comments) }} / {{ formatCount(stats.comments) }} 条</span>
               <span class="foot-chip">{{ lastCrawlText(s) }}</span>
             </div>
-          </router-link>
+          </div>
         </div>
         <el-empty v-else class="white-empty" description="还没有采集到数据" :image-size="72">
           <el-button type="primary" @click="$router.push('/scenics')">添加景区</el-button>
@@ -144,7 +141,7 @@
       <aside class="side-panel">
         <div class="panel-head">
           <span class="panel-title"><el-icon><Bell /></el-icon>最近动态</span>
-          <router-link :to="panelTab === 'tasks' ? '/tasks' : '/accounts'" class="more">全部</router-link>
+          <button type="button" class="more" @click="go(panelTab === 'tasks' ? '/tasks' : '/accounts')">全部</button>
         </div>
         <div class="segmented">
           <button type="button" :class="{ on: panelTab === 'tasks' }" @click="panelTab = 'tasks'">任务</button>
@@ -156,7 +153,7 @@
             还没有任务
             <el-button size="small" type="primary" @click="$router.push('/tasks/new')">新建任务</el-button>
           </div>
-          <router-link v-for="t in recentTasks" :key="t.task_id" :to="`/tasks/${t.task_id}`" class="feed-item">
+          <div role="link" tabindex="0" v-for="t in recentTasks" :key="t.task_id" class="feed-item" @click="go(`/tasks/${t.task_id}`)" @keydown.enter="go(`/tasks/${t.task_id}`)">
             <span class="feed-avatar" :style="{ background: CHANNEL_COLORS[t.channels?.[0] || ''] || 'var(--smc-primary)' }">
               {{ channelLabel(t.channels?.[0] || '').slice(0, 1) || '任' }}
             </span>
@@ -166,7 +163,7 @@
               <div class="feed-time">{{ relTime(t.last_run_time || t.create_time) }}</div>
             </div>
             <span class="feed-state" :class="`st-${t.status}`" />
-          </router-link>
+          </div>
         </div>
 
         <div v-else class="feed">
@@ -189,18 +186,15 @@
         <div class="panel-divider" />
         <div class="panel-head">
           <span class="panel-title"><el-icon><Connection /></el-icon>集群</span>
-          <router-link to="/cluster" class="more">查看</router-link>
+          <button type="button" class="more" @click="go('/cluster')">查看</button>
         </div>
         <div class="machines">
-          <router-link
-            v-for="n in clusterNodes" :key="n.node_id" class="machine"
-            :to="{ path: '/tasks', query: { node: n.node_id } }"
-          >
+          <div role="link" tabindex="0" v-for="n in clusterNodes" :key="n.node_id" class="machine" @click="go({ path: '/tasks', query: { node: n.node_id } })" @keydown.enter="go({ path: '/tasks', query: { node: n.node_id } })">
             <span class="m-dot" :class="n.online ? 'ok' : 'bad'" />
             <span class="m-name">{{ n.node_name }}</span>
             <el-tag v-if="n.is_leader" size="small" effect="dark" round>主机</el-tag>
             <span class="m-load">{{ n.online && n.role !== 'master' ? `${n.running_count}/${n.max_running}` : (n.online ? '协调' : '离线') }}</span>
-          </router-link>
+          </div>
           <div v-if="!clusterNodes.length" class="feed-empty">单机运行</div>
         </div>
       </aside>
@@ -210,6 +204,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter, type RouteLocationRaw } from 'vue-router'
 import {
   ArrowRight, Bell, ChatDotRound, Connection, LocationFilled, Refresh, VideoPlay,
 } from '@element-plus/icons-vue'
@@ -239,6 +234,12 @@ const CHANNEL_NOTES: Record<string, string> = {
   ctrip: '按 POI_ID 采景区点评',
   tongcheng: '按 sid 采景区点评',
   qunar: '按景区采点评',
+}
+
+// 卡片用点击跳转、不用 <a> 链接：<a> 鼠标一放上去浏览器左下角就冒出一串网址，很突兀
+const router = useRouter()
+function go(to: RouteLocationRaw) {
+  router.push(to)
 }
 
 const loading = ref(false)
@@ -483,6 +484,7 @@ onMounted(load)
 /* ---------- 右侧两张彩色卡 ---------- */
 .side-cards { display: flex; flex-direction: column; gap: 18px; }
 .mini-card {
+  cursor: pointer;
   border-radius: 24px; color: #fff; text-decoration: none; position: relative; overflow: hidden;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
@@ -518,10 +520,14 @@ onMounted(load)
   display: flex; align-items: center; justify-content: space-between;
   margin: 26px 2px 14px; font-size: 15px; font-weight: 700;
 }
-.more { font-size: 12px; font-weight: 500; color: var(--smc-primary); text-decoration: none; }
+.more {
+  font-size: 12px; font-weight: 500; color: var(--smc-primary); text-decoration: none;
+  border: none; background: none; padding: 0; cursor: pointer; font-family: inherit;
+}
 .more:hover { text-decoration: underline; }
 .scenic-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; padding-top: 22px; }
 .scenic-card {
+  cursor: pointer;
   position: relative; background: #fff; border-radius: 22px; padding: 38px 18px 16px;
   box-shadow: var(--smc-shadow); text-align: center; color: inherit; text-decoration: none;
   transition: box-shadow 0.18s ease, transform 0.18s ease;
@@ -570,6 +576,7 @@ onMounted(load)
   display: flex; align-items: center; gap: 12px; padding: 10px 6px; border-radius: 14px;
   color: inherit; text-decoration: none; transition: background 0.15s;
 }
+.feed-item:not(.static) { cursor: pointer; }
 .feed-item:hover:not(.static) { background: #f7f6fd; }
 .feed-avatar {
   width: 38px; height: 38px; border-radius: 50%; flex: 0 0 auto; color: #fff; font-weight: 700;
@@ -597,6 +604,7 @@ onMounted(load)
   border-radius: 18px; background: linear-gradient(160deg, #f4f3fc, #fbfaff);
 }
 .machine {
+  cursor: pointer;
   display: flex; align-items: center; gap: 8px; font-size: 13px; color: inherit; text-decoration: none;
   padding: 8px 10px; border-radius: 12px; background: #fff; box-shadow: 0 2px 8px rgba(76, 64, 160, 0.06);
 }
