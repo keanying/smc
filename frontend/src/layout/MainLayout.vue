@@ -71,11 +71,6 @@
     </el-aside>
     <el-container>
       <el-header height="68px" class="app-header">
-        <div class="header-title">
-          <span class="crumb-root">云听</span>
-          <span class="crumb-sep">/</span>
-          <span>{{ route.meta.title || '' }}</span>
-        </div>
         <div class="header-right">
           <span v-if="health" class="header-meta">
             <span class="meta-item">
@@ -439,11 +434,8 @@ onUnmounted(() => window.clearInterval(timer))
   justify-content: space-between;
   padding: 0 28px;
 }
-.header-title { font-size: 13px; color: var(--smc-text); display: flex; align-items: center; gap: 8px; }
-.header-title > span:last-child { font-weight: 600; }
-.crumb-root { color: var(--smc-text-secondary); }
-.crumb-sep { color: var(--smc-text-tertiary); }
-.header-right { display: flex; align-items: center; gap: 12px; }
+/* 顶栏只放右边的状态和当前用户（页面标题各页自己有，不再重复显示面包屑） */
+.header-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 /* 右上角的状态做成一条白色胶囊 */
 .header-meta {
   display: flex;
