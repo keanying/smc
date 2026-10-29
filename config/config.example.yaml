@@ -247,6 +247,13 @@ auth:
   lock_minutes: 10           # 锁多久
   cookie_secure: false       # 服务走 HTTPS 时打开
 
+# 版本：full=总部版（默认）/ scenic=景区版（装在景区盒子上：景区由总部分配，
+# 盒子自己加采集账号、自己采；看不到系统设置、集群、景区档案、景区管理、指标计算）。
+# 也可以用环境变量 SMC_EDITION_NAME=scenic
+edition:
+  name: full
+  box_name: ""               # 盒子名字，景区版左上角显示，如「灵山胜境 · 1 号盒子」
+
 # 集群：多台机器连同一个 MySQL 和 Redis，主机派任务、从机跑任务。
 # 这一段是每台机器自己的（不在页面上改）。只有一台机器时不用改，默认既是主也是从。
 cluster:

@@ -7,7 +7,7 @@
 """系统设置 API：代理、采集参数、浏览器、调度等在页面上可改。"""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from ..core.constants import ALL_CHANNELS, CHANNEL_LABELS
 from ..proxy.pool import KdlProxyPool
@@ -34,6 +34,9 @@ async def get_settings(state: AppState = Depends(get_state)):
 
 @router.put("")
 async def save_settings(payload: SettingIn, state: AppState = Depends(get_state)):
+    from .. import edition
+    if not edition.settings_allowed(edition.current(), payload.section, payload.values):
+        raise HTTPException(status_code=403, detail="景区版只能改账号额度，其他设置跟随盒子的配置文件")
     try:
         await state.settings.save_section(payload.section, payload.values, state.config)
     except ValueError as exc:

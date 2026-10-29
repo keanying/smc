@@ -1012,3 +1012,35 @@ export const metricsApi = {
     end_date: string; tables: string[]; dry_run: boolean }) =>
     api.post<MetricRun>('/api/metrics/mock', payload),
 }
+
+// ===================== 版本（总部版 / 景区版） =====================
+
+export interface EditionInfo {
+  /** full=总部版 / scenic=景区版（景区盒子） */
+  edition: 'full' | 'scenic'
+  label: string
+  box_name: string
+}
+
+/** 盒子上当前的分配：总部下发了哪些景区 */
+export interface EditionAssignment {
+  scenic_ids?: string[]
+  box_name?: string
+  exported_by?: string
+  exported_at?: string
+  imported_by?: string
+  imported_at?: string
+  scenics: ScenicOption[]
+}
+
+/** 总部导出的分配包（原样存成 .json 文件，拿到盒子上导入） */
+export type ScenicBundle = Record<string, unknown> & { kind: string; scenics: unknown[] }
+
+export const editionApi = {
+  info: () => api.get<EditionInfo>('/api/edition', undefined, true),
+  assignment: () => api.get<EditionAssignment>('/api/edition/assignment'),
+  exportBundle: (scenicIds: string[], boxName = '') =>
+    api.post<ScenicBundle>('/api/edition/bundle/export', { scenic_ids: scenicIds, box_name: boxName }),
+  importBundle: (bundle: unknown) =>
+    api.post<EditionAssignment & { dropped: string[] }>('/api/edition/bundle/import', bundle),
+}

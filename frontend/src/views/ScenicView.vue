@@ -14,6 +14,7 @@
         <InfoTip content="先建景区，再挂关键字和各平台采集目标；任务按景区维度组织数据。点行首箭头展开配置。" />
       </h2>
       <div>
+        <el-button :icon="Box" @click="openBundleDialog">分配到景区盒子</el-button>
         <el-button :icon="Upload" @click="csvVisible = true">CSV 导入</el-button>
         <el-button type="primary" :icon="Plus" @click="openScenicDialog()">新建景区</el-button>
       </div>
@@ -136,6 +137,31 @@
       </template>
     </el-dialog>
 
+    <!-- 分配到景区盒子：选景区导出分配包，拿到盒子（景区版）上导入 -->
+    <el-dialog v-model="bundleVisible" title="分配到景区盒子" width="560px">
+      <p class="bundle-desc">
+        选好分给这台盒子的景区，导出一个分配包（.json），在盒子的「概览 → 导入分配包」里导入。
+        景区连同启用的关键字、附加 / 过滤词、采集目标一起带过去；盒子上不能改，要调整就在这里改完重新导出。
+      </p>
+      <el-form label-width="84px">
+        <el-form-item label="景区">
+          <el-select v-model="bundleForm.scenic_ids" multiple filterable collapse-tags collapse-tags-tooltip
+                     :max-collapse-tags="4" placeholder="选一个或多个景区" style="width: 100%">
+            <el-option v-for="s in scenicOptions" :key="s.scenic_id"
+                       :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="盒子名称">
+          <el-input v-model="bundleForm.box_name" placeholder="如：灵山胜境 · 1 号盒子（可不填）" maxlength="40" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="bundleVisible = false">取消</el-button>
+        <el-button type="primary" :loading="exporting" :disabled="!bundleForm.scenic_ids.length"
+                   @click="exportBundle">导出分配包</el-button>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
@@ -143,8 +169,8 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus, Search, Upload, UploadFilled } from '@element-plus/icons-vue'
-import { scenicApi, type ChannelOption, type Scenic } from '../api'
+import { Box, Plus, Search, Upload, UploadFilled } from '@element-plus/icons-vue'
+import { editionApi, scenicApi, type ChannelOption, type Scenic, type ScenicOption } from '../api'
 import ScenicDetail from '../components/ScenicDetail.vue'
 
 const router = useRouter()
@@ -166,6 +192,35 @@ const form = reactive({
 const csvVisible = ref(false)
 const csvFiles = ref<any[]>([])
 const csvFile = ref<File | null>(null)
+
+// ---------------- 分配到景区盒子 ----------------
+const bundleVisible = ref(false)
+const exporting = ref(false)
+const scenicOptions = ref<ScenicOption[]>([])
+const bundleForm = reactive({ scenic_ids: [] as string[], box_name: '' })
+
+async function openBundleDialog() {
+  scenicOptions.value = await scenicApi.options()
+  bundleVisible.value = true
+}
+
+async function exportBundle() {
+  exporting.value = true
+  try {
+    const bundle = await editionApi.exportBundle(bundleForm.scenic_ids, bundleForm.box_name.trim())
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
+    const link = document.createElement('a')
+    const day = new Date().toISOString().slice(0, 10)
+    link.href = URL.createObjectURL(blob)
+    link.download = `云听分配包-${bundleForm.box_name.trim() || '景区盒子'}-${day}.json`
+    link.click()
+    URL.revokeObjectURL(link.href)
+    ElMessage.success(`已导出 ${bundleForm.scenic_ids.length} 个景区的分配包`)
+    bundleVisible.value = false
+  } finally {
+    exporting.value = false
+  }
+}
 
 async function loadScenics() {
   loading.value = true
@@ -257,6 +312,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.bundle-desc { margin: 0 0 16px; font-size: 13px; line-height: 1.7; color: var(--smc-text-secondary); }
 .expand-wrap { padding: 8px 24px 16px; }
 .row-actions { display: inline-flex; align-items: center; gap: 2px; }
 .row-actions > span { display: inline-flex; }
