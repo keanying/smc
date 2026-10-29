@@ -10,7 +10,7 @@
   <!-- 淡紫底上浮一块大圆角的白色"窗口"，左边是紫色渐变的圆角侧栏 -->
   <div class="app-frame">
   <el-container class="app-shell">
-    <el-aside width="232px" class="aside-menu">
+    <el-aside width="188px" class="aside-menu">
       <div class="aside-pill">
       <div class="logo">
         <!-- LOGO 原样使用（深色侧栏上垫一块白底，深蓝的「云听」才看得清），只按高度等比缩放 -->
@@ -279,7 +279,7 @@ onUnmounted(() => window.clearInterval(timer))
 }
 
 .aside-menu {
-  padding: 14px 0 14px 14px;
+  padding: 12px 0 12px 12px;
   background: transparent;
   z-index: 10;
 }
@@ -288,69 +288,70 @@ onUnmounted(() => window.clearInterval(timer))
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-radius: 24px;
+  border-radius: 20px;
   background: var(--smc-gradient);
   box-shadow: 0 16px 36px rgba(93, 78, 201, 0.32);
   overflow: hidden;
 }
 
 .logo {
-  height: 72px;
+  height: 60px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 16px;
+  gap: 8px;
+  padding: 0 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.14);
 }
 .logo-tile {
   display: inline-flex;
   align-items: center;
-  padding: 4px 6px;
-  border-radius: 10px;
+  padding: 3px 5px;
+  border-radius: 8px;
   background: #fff;
   flex-shrink: 0;
   box-shadow: 0 4px 10px rgba(40, 30, 110, 0.18);
 }
 .logo-img {
   display: block;
-  height: 30px;
+  height: 24px;
   width: auto;
 }
 .logo-title {
   color: #fff;
   font-weight: 700;
-  font-size: 15px;
+  font-size: 13px;
   letter-spacing: 0.4px;
   line-height: 1.3;
 }
 .logo-sub {
   color: rgba(255, 255, 255, 0.65);
-  font-size: 10px;
+  font-size: 9.5px;
+  white-space: nowrap;
   letter-spacing: 0.3px;
 }
 
 .side-menu {
   border-right: none;
   flex: 1;
-  padding: 12px 12px;
+  padding: 10px 8px;
   overflow-y: auto;
 }
 .side-menu :deep(.el-menu-item) {
-  height: 44px;
-  line-height: 44px;
-  margin: 3px 0;
-  padding: 0 10px !important;
-  border-radius: 14px;
-  font-size: 13.5px;
+  height: 36px;
+  line-height: 36px;
+  margin: 2px 0;
+  padding: 0 8px !important;
+  border-radius: 11px;
+  font-size: 13px;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 /* 图标放进一个小圆角方块里（参考图里选中项的样子） */
 .side-menu :deep(.el-menu-item .el-icon) {
-  font-size: 16px;
-  margin-right: 10px;
-  width: 30px;
-  height: 30px;
-  border-radius: 10px;
+  font-size: 14px;
+  margin-right: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
   transition: background-color 0.15s ease;
 }
 .side-menu :deep(.el-menu-item:hover) {
@@ -369,25 +370,25 @@ onUnmounted(() => window.clearInterval(timer))
   box-shadow: 0 4px 10px rgba(40, 30, 110, 0.25);
 }
 .aside-foot {
-  padding: 12px;
+  padding: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.14);
 }
 .aside-exit {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
+  gap: 8px;
+  padding: 6px 8px;
   border: none;
-  border-radius: 14px;
+  border-radius: 11px;
   background: transparent;
   color: rgba(255, 255, 255, 0.78);
-  font-size: 13.5px;
+  font-size: 13px;
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 .aside-exit .el-icon {
-  width: 30px; height: 30px; border-radius: 10px; font-size: 16px;
+  width: 24px; height: 24px; border-radius: 8px; font-size: 14px;
   background: rgba(255, 255, 255, 0.14);
 }
 .aside-exit:hover { background: rgba(255, 255, 255, 0.10); color: #fff; }
