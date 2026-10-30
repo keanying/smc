@@ -22,6 +22,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from ..collectors.base import AuthorItem, CommentItem, WorkItem, merge_words
 from ..core.db import Database
+from ..core.scope import in_scope, scope_sql
 from ..core.constants import ALL_CHANNELS
 from ..core.logging import get_logger
 from ..utils import normalize as nz
@@ -37,6 +38,7 @@ WORK_COLUMNS = [
     "image_list", "video_list", "likes", "collection_cnt", "comment_cnt",
     "shares", "location", "publish_time", "crawl_time",
     "extra_content", "source_keyword", "hit_keywords", "hit_aux_keywords", "task_id",
+    "source_box",
 ]
 # 重复命中时要刷新的列：计数类和内容类会变，创建来源不覆盖。
 # 命中关键字写的是**和库里已有的合并后**的值（见 save_works），不会被后来的关键字盖掉
@@ -51,7 +53,7 @@ COMMENT_COLUMNS = [
     "scenic_id", "scenic_name", "channel", "work_id", "comment_level",
     "comment_parent_id", "comment_id", "commenter_id", "image_list", "video_list",
     "location", "content", "likes", "extra_content", "publish_time", "crawl_time",
-    "commenter_name", "root_comment_id", "sub_comment_count", "task_id",
+    "commenter_name", "root_comment_id", "sub_comment_count", "task_id", "source_box",
 ]
 COMMENT_UPDATE_COLUMNS = [
     "scenic_name", "comment_level", "comment_parent_id", "commenter_id",
@@ -201,7 +203,7 @@ class DataRepository:
         work = await self.db.fetch_one(
             f"SELECT id, scenic_id, channel, work_id, title, description, work_uk "
             f"FROM `{tables.WORKS}` WHERE id = %s", [int(work_pk)])
-        if work is None:
+        if work is None or not in_scope(work["scenic_id"]):
             return None
         where = "scenic_id = %s AND channel = %s AND work_id = %s"
         args = [work["scenic_id"], work["channel"], work["work_id"]]
@@ -334,12 +336,14 @@ class DataRepository:
 
         days = max(1, min(90, int(days)))
         start = date.today() - timedelta(days=days - 1)
+        cond, cond_args = scope_sql()
+        extra = f" AND {cond}" if cond else ""
         works = await self.db.fetch_all(
             f"SELECT DATE(crawl_time) AS d, COUNT(*) AS c FROM `{tables.WORKS}` "
-            f"WHERE crawl_time >= %s GROUP BY DATE(crawl_time)", [start])
+            f"WHERE crawl_time >= %s{extra} GROUP BY DATE(crawl_time)", [start, *cond_args])
         comments = await self.db.fetch_all(
             f"SELECT DATE(crawl_time) AS d, COUNT(*) AS c FROM `{tables.COMMENTS}` "
-            f"WHERE crawl_time >= %s GROUP BY DATE(crawl_time)", [start])
+            f"WHERE crawl_time >= %s{extra} GROUP BY DATE(crawl_time)", [start, *cond_args])
         w = {str(r["d"]): int(r["c"]) for r in works}
         c = {str(r["d"]): int(r["c"]) for r in comments}
         out = []
@@ -458,6 +462,10 @@ class DataRepository:
     ) -> Tuple[str, List[Any]]:
         clauses: List[str] = []
         args: List[Any] = []
+        cond, cond_args = scope_sql()
+        if cond:
+            clauses.append(cond)
+            args.extend(cond_args)
         if scenic_id:
             clauses.append("scenic_id = %s")
             args.append(scenic_id)
@@ -502,6 +510,10 @@ class DataRepository:
         """
         clauses = ["channel = %s", "work_id = %s"]
         args: List[Any] = [channel, work_id]
+        cond, cond_args = scope_sql()
+        if cond:
+            clauses.append(cond)
+            args.extend(cond_args)
         if scenic_id:
             clauses.append("scenic_id = %s")
             args.append(scenic_id)
@@ -528,11 +540,13 @@ class DataRepository:
 
     async def comment_thread(self, channel: str, work_id: str, root_comment_id: str) -> List[Dict]:
         """一次取出整条会话（一级 + 其下所有层级），用于一键展开。"""
+        cond, cond_args = scope_sql()
         return await self.db.fetch_all(
             "SELECT * FROM `src_opinion_social_work_comment_di` "
             "WHERE channel = %s AND work_id = %s AND root_comment_id = %s "
-            "ORDER BY comment_level ASC, publish_time ASC",
-            [channel, work_id, root_comment_id],
+            + (f"AND {cond} " if cond else "")
+            + "ORDER BY comment_level ASC, publish_time ASC",
+            [channel, work_id, root_comment_id, *cond_args],
         )
 
     async def list_authors(
@@ -543,12 +557,18 @@ class DataRepository:
         clauses: List[str] = []
         args: List[Any] = []
         join = ""
-        if scenic_id:
+        cond, cond_args = scope_sql()
+        # 限了景区范围（盒子来查）时，作者也只看在这些景区下出过作品的
+        work_conds = [c for c in (cond, "scenic_id = %s" if scenic_id else "") if c]
+        if work_conds:
             join = (
                 "INNER JOIN (SELECT DISTINCT channel, author_id FROM `src_opinion_social_work_di` "
-                "WHERE scenic_id = %s) w ON w.channel = a.channel AND w.author_id = a.author_id"
+                f"WHERE {' AND '.join(work_conds)}) w "
+                "ON w.channel = a.channel AND w.author_id = a.author_id"
             )
-            args.append(scenic_id)
+            args.extend(cond_args)
+            if scenic_id:
+                args.append(scenic_id)
         if channel:
             clauses.append("a.channel = %s")
             args.append(channel)
@@ -575,6 +595,10 @@ class DataRepository:
 
         clauses: List[str] = []
         args: List[Any] = []
+        cond, cond_args = scope_sql()
+        if cond:
+            clauses.append(cond)
+            args.extend(cond_args)
         for column, value in filters.items():
             if value in (None, ""):
                 continue

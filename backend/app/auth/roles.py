@@ -31,6 +31,8 @@ def denied_reason(role: str, method: str, path: str, websocket: bool = False) ->
         return ""
     if path.startswith("/api/users"):
         return "用户管理只有管理员能用"
+    if path.startswith("/api/boxes"):
+        return "盒子管理只有管理员能用"
     if role == "viewer":
         if websocket:
             # 看日志、看实时画面可以；操作登录浏览器不行

@@ -1023,25 +1023,54 @@ export interface EditionInfo {
   box_name: string
 }
 
-/** 盒子上当前的分配：总部下发了哪些景区 */
+/** 盒子和主同步的状态 */
+export interface BoxSyncStatus {
+  master_configured: boolean
+  /** null = 还没同步过 */
+  ok: boolean | null
+  last_ok_at: string
+  last_error: string
+  box_id: string
+}
+
+/** 盒子上当前的分配：主分了哪些景区 */
 export interface EditionAssignment {
   scenic_ids?: string[]
   box_name?: string
-  exported_by?: string
-  exported_at?: string
-  imported_by?: string
   imported_at?: string
   scenics: ScenicOption[]
+  sync: BoxSyncStatus
 }
-
-/** 总部导出的分配包（原样存成 .json 文件，拿到盒子上导入） */
-export type ScenicBundle = Record<string, unknown> & { kind: string; scenics: unknown[] }
 
 export const editionApi = {
   info: () => api.get<EditionInfo>('/api/edition', undefined, true),
   assignment: () => api.get<EditionAssignment>('/api/edition/assignment'),
-  exportBundle: (scenicIds: string[], boxName = '') =>
-    api.post<ScenicBundle>('/api/edition/bundle/export', { scenic_ids: scenicIds, box_name: boxName }),
-  importBundle: (bundle: unknown) =>
-    api.post<EditionAssignment & { dropped: string[] }>('/api/edition/bundle/import', bundle),
+  /** 马上从主拉一次分配（管理员） */
+  sync: () => api.post<BoxSyncStatus>('/api/edition/sync'),
+}
+
+// ===================== 盒子管理（主） =====================
+
+export interface ScenicBox {
+  box_id: string
+  box_name: string
+  scenic_ids: string[]
+  scenics: ScenicOption[]
+  enabled: boolean
+  online: boolean
+  last_seen_at?: string | null
+  last_ip?: string
+  uploaded_works: number
+  uploaded_comments: number
+  create_time?: string
+}
+
+export const boxesApi = {
+  list: () => api.get<ScenicBox[]>('/api/boxes'),
+  create: (payload: { box_name: string; scenic_ids: string[] }) =>
+    api.post<{ box: ScenicBox; token: string }>('/api/boxes', payload),
+  update: (boxId: string, payload: { box_name?: string; scenic_ids?: string[]; enabled?: boolean }) =>
+    api.put<ScenicBox>(`/api/boxes/${boxId}`, payload),
+  resetToken: (boxId: string) => api.post<{ token: string }>(`/api/boxes/${boxId}/token`),
+  remove: (boxId: string) => api.del<null>(`/api/boxes/${boxId}`),
 }

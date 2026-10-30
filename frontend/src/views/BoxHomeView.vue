@@ -13,32 +13,38 @@
       <div>
         <h1 class="head-title">概览</h1>
         <p class="head-sub">
-          <template v-if="assigned.length">
-            总部分配了 {{ assigned.length }} 个景区<template v-if="assignment?.exported_at">
-              · {{ assignment.exported_at.slice(0, 16) }} 下发</template>
-          </template>
-          <template v-else>还没有分配景区</template>
+          <span class="sync-dot" :class="syncClass" />{{ syncText }}
+          <template v-if="assigned.length"> · 分到 {{ assigned.length }} 个景区</template>
         </p>
       </div>
       <div class="head-actions">
-        <el-button v-if="isAdmin" :icon="Upload" round @click="pickBundle">导入分配包</el-button>
+        <el-button v-if="isAdmin" :icon="Refresh" round :loading="syncing" @click="syncNow">立即同步</el-button>
         <el-button type="primary" :icon="Plus" round :disabled="!assigned.length" @click="go('/tasks/new')">
           新建任务
         </el-button>
       </div>
-      <input ref="fileInput" type="file" accept=".json,application/json" hidden @change="onBundleFile" />
     </div>
 
-    <!-- 还没分配：先导入总部下发的分配包 -->
+    <!-- 还没分到景区：没配主 / 连不上主 / 主还没给这台盒子分 -->
     <div v-if="!loading && !assigned.length" class="empty-card">
       <div class="empty-icon"><el-icon><LocationFilled /></el-icon></div>
-      <h3>先导入总部下发的景区分配包</h3>
-      <p>
-        景区由总部统一分配：总部在「景区管理」里勾选景区，点「分配到景区盒子」导出一个 .json 文件，
-        拿到这台盒子上导入。导入后就能建采集任务，景区的关键字、采集目标也都跟着分配包走。
-      </p>
-      <el-button v-if="isAdmin" type="primary" round :icon="Upload" @click="pickBundle">选择分配包文件</el-button>
-      <p v-else class="muted">请让盒子的管理员导入。</p>
+      <template v-if="!sync?.master_configured">
+        <h3>先把这台盒子连到主</h3>
+        <p>
+          景区由主统一分配，采到的数据也直接报给主存储和标注。请主的管理员在「盒子管理」里登记这台盒子，
+          把给的 <b>master_url</b> 和 <b>box_token</b> 写进盒子的 config/config.yaml（edition 段），重启盒子。
+        </p>
+      </template>
+      <template v-else-if="sync?.ok === false">
+        <h3>连不上主</h3>
+        <p>{{ sync.last_error }}</p>
+        <el-button v-if="isAdmin" type="primary" round :icon="Refresh" :loading="syncing" @click="syncNow">再试一次</el-button>
+      </template>
+      <template v-else>
+        <h3>主还没给这台盒子分景区</h3>
+        <p>请主的管理员在「盒子管理」里给这台盒子勾选景区，盒子一分钟内自动同步过来。</p>
+        <el-button v-if="isAdmin" type="primary" round :icon="Refresh" :loading="syncing" @click="syncNow">立即同步</el-button>
+      </template>
     </div>
 
     <div v-else class="grid">
@@ -180,15 +186,13 @@
           <p v-else class="muted side-empty">还没有标注结果。采集到评论后在这里看、改 AI 标注。</p>
         </div>
 
-        <!-- 分配信息 -->
+        <!-- 和主同步 -->
         <div class="side-card mint">
-          <div class="card-label">总部分配</div>
-          <div class="assign-row"><span>景区</span><b>{{ assigned.length }} 个</b></div>
-          <div v-if="assignment?.exported_by" class="assign-row"><span>下发人</span><b>{{ assignment.exported_by }}</b></div>
-          <div v-if="assignment?.imported_at" class="assign-row">
-            <span>导入时间</span><b>{{ assignment.imported_at.slice(0, 16) }}</b>
-          </div>
-          <p class="muted side-empty">景区、关键字、采集目标由总部维护；要调整请联系总部重新下发。</p>
+          <div class="card-label">数据存在主上</div>
+          <div class="assign-row"><span>和主同步</span><b>{{ sync?.ok === false ? '连不上' : sync?.ok ? '正常' : '等待中' }}</b></div>
+          <div v-if="sync?.last_ok_at" class="assign-row"><span>上次同步</span><b>{{ sync.last_ok_at.slice(5, 16) }}</b></div>
+          <div class="assign-row"><span>分到的景区</span><b>{{ assigned.length }} 个</b></div>
+          <p class="muted side-empty">采到的数据直接报给主，标注由主来做；这里看到和改的都是主上的数据。景区、关键字、采集目标由主维护。</p>
         </div>
       </div>
     </div>
@@ -198,8 +202,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter, type RouteLocationRaw } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowRight, LocationFilled, Plus, Upload } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { ArrowRight, LocationFilled, Plus, Refresh } from '@element-plus/icons-vue'
 import {
   accountApi, dataApi, editionApi, labelingApi, taskApi,
   type Account, type ChannelOption, type EditionAssignment, type LabelStats, type OverviewRow,
@@ -326,34 +330,27 @@ function setDays(d: number) {
   loadTrend()
 }
 
-// ---------------- 分配包 ----------------
-const fileInput = ref<HTMLInputElement>()
+// ---------------- 和主同步 ----------------
+const sync = computed(() => assignment.value?.sync)
+const syncing = ref(false)
+const syncClass = computed(() => (sync.value?.ok ? 'ok' : sync.value?.ok === false ? 'bad' : 'idle'))
+const syncText = computed(() => {
+  const st = sync.value
+  if (!st?.master_configured) return '还没连到主'
+  if (st.ok === false) return '连不上主'
+  if (st.ok) return `已连接主 · ${st.last_ok_at.slice(11, 16)} 同步`
+  return '正在连主…'
+})
 
-function pickBundle() {
-  fileInput.value?.click()
-}
-
-async function onBundleFile(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file) return
-  let bundle: { scenics?: { scenic_name?: string }[]; box_name?: string }
+async function syncNow() {
+  syncing.value = true
   try {
-    bundle = JSON.parse(await file.text())
-  } catch {
-    ElMessage.error('这个文件不是分配包（打不开 JSON）')
-    return
+    await editionApi.sync()
+    ElMessage.success('已和主同步')
+    await load()
+  } finally {
+    syncing.value = false
   }
-  const names = (bundle.scenics || []).map((s) => s.scenic_name).filter(Boolean)
-  await ElMessageBox.confirm(
-    `分配包里有 ${names.length} 个景区：${names.slice(0, 6).join('、')}${names.length > 6 ? ' 等' : ''}。`
-    + '导入后盒子上的景区、关键字、采集目标都换成包里的；以前分到、这次没有的景区会停用（已采的数据还在）。',
-    '导入分配包', { type: 'info', confirmButtonText: '导入' },
-  )
-  const result = await editionApi.importBundle(bundle)
-  ElMessage.success(`已导入 ${result.scenic_ids?.length || 0} 个景区`)
-  await load()
 }
 
 // ---------------- 加载 ----------------
@@ -410,7 +407,10 @@ onUnmounted(() => window.clearInterval(taskTimer))
   margin: 4px 0 22px;
 }
 .head-title { margin: 0; font-size: 30px; font-weight: 700; letter-spacing: 0.3px; color: var(--box-ink); }
-.head-sub { margin: 4px 0 0; font-size: 13px; color: var(--smc-text-secondary); }
+.head-sub { margin: 4px 0 0; font-size: 13px; color: var(--smc-text-secondary); display: flex; align-items: center; gap: 6px; }
+.sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #b4b8c0; }
+.sync-dot.ok { background: #22c55e; }
+.sync-dot.bad { background: #ef4444; }
 .head-actions { display: flex; gap: 8px; }
 
 .grid {

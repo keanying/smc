@@ -39,6 +39,9 @@ class AuthMiddleware:
             reason = edition.denied_reason(edition.current(), scope.get("method", "GET"), path)
             if reason:
                 return await _reject(kind, scope, receive, send, 403, reason)
+        if (scope.get("state") or {}).get("box"):
+            # 景区盒子的请求：box/gateway.py 已经认过令牌、限好了能调的接口
+            return await self.app(scope, receive, send)
         if (auth is None or not auth.enabled or kind not in ("http", "websocket")
                 or not (path.startswith("/api/") or path.startswith("/ws/"))
                 or path in PUBLIC_PATHS):

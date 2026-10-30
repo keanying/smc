@@ -74,6 +74,8 @@ METRIC_RUN = "src_opinion_metric_run"
 SYS_USER = "src_opinion_sys_user"
 #: 登录会话：一次登录一行，Cookie 里存的令牌只在这里存哈希
 SYS_USER_SESSION = "src_opinion_sys_user_session"
+#: 景区盒子：在主上登记的盒子（令牌、分到的景区、最近上报）
+BOX = "src_opinion_box"
 #: 集群机器（每台机器一行，心跳刷新）
 CLUSTER_NODE = "src_opinion_cluster_node"
 #: 集群租约：谁是当前的主机
@@ -165,6 +167,11 @@ EXTRA_COLUMNS = [
      "VARCHAR(100) NOT NULL DEFAULT '' COMMENT '谁点的（定时触发为空）'"),
     (TASK, "cancel_requested",
      "TINYINT NOT NULL DEFAULT 0 COMMENT '取消请求：任务在别的机器上跑时由那台机器读到后停止'"),
+    # 景区盒子上报的数据记下是哪个盒子来的（只用于追查，页面上不显示）。主自己采的为空
+    (WORKS, "source_box",
+     "VARCHAR(64) NOT NULL DEFAULT '' COMMENT '上报这条数据的景区盒子编号；主自己采的为空'"),
+    (COMMENTS, "source_box",
+     "VARCHAR(64) NOT NULL DEFAULT '' COMMENT '上报这条数据的景区盒子编号；主自己采的为空'"),
 ]
 
 #: 后加的索引：(表名, 索引名, 索引定义)

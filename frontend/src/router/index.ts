@@ -39,6 +39,8 @@ const router = createRouter({
       meta: { title: '账号管理' } },
     { path: '/cluster', name: 'cluster', component: () => import('../views/ClusterView.vue'),
       meta: { title: '集群', hq: true } },
+    { path: '/boxes', name: 'boxes', component: () => import('../views/BoxesView.vue'),
+      meta: { title: '盒子管理', admin: true, hq: true } },
     // 用户管理并进了系统设置；旧地址跳过去
     { path: '/users', redirect: { path: '/settings', query: { tab: 'users' } } },
     { path: '/settings', name: 'settings', component: () => import('../views/SettingsView.vue'),

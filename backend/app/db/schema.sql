@@ -501,6 +501,28 @@ CREATE TABLE IF NOT EXISTS `src_opinion_cluster_lease` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='集群租约：谁是当前的主机';
 
 -- -------------------------------------------------------------------
+-- 景区盒子：在主上登记，盒子拿令牌上报采到的数据、拉取分到的景区
+-- -------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `src_opinion_box` (
+  `id`            BIGINT       NOT NULL AUTO_INCREMENT,
+  `box_id`        VARCHAR(64)  NOT NULL                COMMENT '盒子编号（自动生成），数据里记的是它',
+  `box_name`      VARCHAR(100) NOT NULL                COMMENT '名字，如「A景区 1号盒子」，只在盒子管理页和盒子自己页面上显示',
+  `token_hash`    CHAR(64)     NOT NULL                COMMENT '盒子令牌的 SHA-256，库里不存明文',
+  `scenic_ids`    TEXT         NULL                    COMMENT '分到的景区编号（JSON 数组）',
+  `enabled`       TINYINT      NOT NULL DEFAULT 1      COMMENT '停用后令牌立刻失效',
+  `last_seen_at`  DATETIME     NULL DEFAULT NULL       COMMENT '最近一次连上主的时间',
+  `last_ip`       VARCHAR(64)  NOT NULL DEFAULT '',
+  `uploaded_works`    BIGINT   NOT NULL DEFAULT 0      COMMENT '累计上报作品数',
+  `uploaded_comments` BIGINT   NOT NULL DEFAULT 0      COMMENT '累计上报评论数',
+  `create_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time`   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_box_id` (`box_id`),
+  UNIQUE KEY `uk_box_token` (`token_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='景区盒子';
+
+-- -------------------------------------------------------------------
 -- 用户：登录本系统的人（不是社媒平台账号）
 -- -------------------------------------------------------------------
 

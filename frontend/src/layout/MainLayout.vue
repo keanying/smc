@@ -56,6 +56,10 @@
         <el-menu-item index="/cluster">
           <el-icon><Connection /></el-icon><span>集群</span>
         </el-menu-item>
+        <!-- 景区盒子：登记、分景区、发令牌（只有管理员） -->
+        <el-menu-item v-if="isAdmin" index="/boxes">
+          <el-icon><Box /></el-icon><span>盒子管理</span>
+        </el-menu-item>
         <!-- 系统设置（含用户管理）只有管理员能用 -->
         <el-menu-item v-if="isAdmin" index="/settings">
           <el-icon><Setting /></el-icon><span>系统设置</span>
@@ -152,7 +156,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import {
-  ArrowDown, Collection, Connection, Setting, SwitchButton, TrendCharts,
+  ArrowDown, Box, Collection, Connection, Setting, SwitchButton, TrendCharts,
 } from '@element-plus/icons-vue'
 import { authApi, settingsApi } from '../api'
 import { loadFeatures, metricsEnabled } from '../composables/features'

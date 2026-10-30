@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 from .common import bad_request, not_found, ok
 from .deps import AppState, get_state
 from ..core.constants import CHANNELS_POI_BASED
+from ..core.scope import in_scope
 from ..db import tables
 
 router = APIRouter(prefix="/api/data", tags=["数据中心"])
@@ -33,6 +34,8 @@ async def overview(state: AppState = Depends(get_state)):
     rows = await state.data.scenic_overview()
     grouped: dict = {}
     for row in rows:
+        if not in_scope(row["scenic_id"]):      # 盒子来查：只看它分到的景区
+            continue
         bucket = grouped.setdefault(row["scenic_id"], {
             "scenic_id": row["scenic_id"],
             "scenic_name": row["scenic_name"],
@@ -76,8 +79,8 @@ async def delete_work(work_pk: int, state: AppState = Depends(get_state)):
     删它等于删掉整个景区的点评，不允许从这里删。
     """
     row = await state.db.fetch_one(
-        f"SELECT channel FROM `{tables.WORKS}` WHERE id = %s", [work_pk])
-    if row is None:
+        f"SELECT channel, scenic_id FROM `{tables.WORKS}` WHERE id = %s", [work_pk])
+    if row is None or not in_scope(row["scenic_id"]):
         raise not_found("作品不存在（可能已经删过了）")
     if row["channel"] in CHANNELS_POI_BASED:
         raise bad_request("携程/同程/去哪儿的这一条是景区点评的集合，不能整条删除")

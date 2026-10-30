@@ -8,9 +8,10 @@
 
 景区版是同一套代码换个开关（config.yaml 的 edition.name 或环境变量 SMC_EDITION_NAME=scenic）：
 
-- 景区由总部分配：总部在「景区管理」里勾选景区导出「分配包」，盒子上导入。
-  盒子上看得到、能用来建任务，但**改不了**景区本身（关键字、目标都跟着分配包走）；
-- 采集在盒子上跑，采集账号盒子自己加、自己维护；
+- 景区由主分配：主的「盒子管理」里登记盒子、勾选景区，盒子定时来拉（box/sync.py）。
+  盒子上看得到、能用来建任务，但**改不了**景区本身（关键字、目标都跟着主走）；
+- 采集在盒子上跑，采集账号盒子自己加、自己维护；采到的数据直接报给主（box/client.py），
+  数据中心和标注审核也是查主、改主（box/forward.py），盒子不留数据；
 - 看不到也调不了：系统设置、集群、景区档案、景区管理、指标计算。
 
 限制按「方法 + 路径」统一在中间件里卡（和 auth/roles.py 一个思路），不靠前端藏菜单——
@@ -71,9 +72,8 @@ def denied_reason(edition: str, method: str, path: str) -> str:
     """景区版不让做的操作返回原因，允许返回空串。总部版什么都不卡（角色另有 roles.py 管）。"""
     if edition != "scenic":
         return ""
-    if path.startswith("/api/edition/") and not path.startswith("/api/edition/bundle/import"):
-        # 总部那边的「导出分配包」在盒子上没有意义
-        return "景区版不能导出分配包" if path.startswith("/api/edition/bundle") else ""
+    if path.startswith(("/api/box/", "/api/boxes")):
+        return "盒子管理和数据上报在主上，景区盒子不提供"
     if method in _READ:
         return ""
     if path == "/api/settings" and method == "PUT":
@@ -91,27 +91,41 @@ def settings_allowed(edition: str, section: str, values: Dict[str, Any]) -> bool
     return section == "crawl" and bool(values) and set(values) <= {"account_quota"}
 
 
+#: 盒子从主同步到的名字（主的「盒子管理」里起的，如「A景区 1号盒子」）
+_synced_box_name = ""
+
+
+def set_synced_box_name(name: str) -> None:
+    global _synced_box_name
+    _synced_box_name = name or ""
+
+
 def info(config) -> Dict[str, Any]:
     edition = _current
     return {
         "edition": edition,
         "label": EDITION_LABELS[edition],
-        "box_name": str(config.get("edition.box_name", "") or ""),
+        # 盒子的名字以主上起的为准；还没连上主时用配置里的
+        "box_name": _synced_box_name or str(config.get("edition.box_name", "") or ""),
     }
 
 
 # ---------------------------------------------------------------------- 分配包
 async def export_bundle(scenics, scenic_ids: Sequence[str], *, box_name: str = "",
-                        exported_by: str = "") -> Dict[str, Any]:
-    """总部：把选中的景区（连同关键字、附加/过滤词、采集目标）打成一个分配包。"""
+                        exported_by: str = "", strict: bool = True) -> Dict[str, Any]:
+    """主：把盒子分到的景区（连同关键字、附加/过滤词、采集目标）打成一个分配包，盒子定时来拉。
+
+    strict=False（盒子来拉时）：一个景区都没分也照样给（盒子据此停用全部），
+    分过的景区在主上被删了就跳过，不报错。
+    """
     ids = [s.strip() for s in scenic_ids if s and s.strip()]
-    if not ids:
+    if not ids and strict:
         raise ValueError("先选要分配的景区")
     items: List[Dict[str, Any]] = []
     missing: List[str] = []
     for scenic_id in dict.fromkeys(ids):
         row = await scenics.get_scenic(scenic_id)
-        if not row:
+        if not row or (not strict and not row.get("enabled")):
             missing.append(scenic_id)
             continue
         keywords = await scenics.list_keywords(scenic_id, enabled_only=True)
@@ -127,7 +141,7 @@ async def export_bundle(scenics, scenic_ids: Sequence[str], *, box_name: str = "
                                                "target_name", "target_url", "extra")}
                         for t in targets],
         })
-    if missing:
+    if missing and strict:
         raise ValueError(f"这些景区不存在：{'、'.join(missing)}")
     return {
         "kind": BUNDLE_KIND, "version": BUNDLE_VERSION,
@@ -137,18 +151,18 @@ async def export_bundle(scenics, scenic_ids: Sequence[str], *, box_name: str = "
     }
 
 
-def parse_bundle(raw: Any) -> Dict[str, Any]:
+def parse_bundle(raw: Any, *, allow_empty: bool = False) -> Dict[str, Any]:
     if isinstance(raw, (bytes, str)):
         try:
             raw = json.loads(raw)
         except ValueError as exc:
             raise ValueError(f"分配包不是合法的 JSON：{exc}") from exc
     if not isinstance(raw, dict) or raw.get("kind") != BUNDLE_KIND:
-        raise ValueError("这不是云听的景区分配包（请用总部「景区管理 → 分配到景区盒子」导出的文件）")
+        raise ValueError("这不是云听的景区分配包")
     if int(raw.get("version") or 0) > BUNDLE_VERSION:
         raise ValueError("分配包是新版本导出的，请先把盒子升级到和总部一样的版本")
     scenics = raw.get("scenics")
-    if not isinstance(scenics, list) or not scenics:
+    if not isinstance(scenics, list) or (not scenics and not allow_empty):
         raise ValueError("分配包里没有景区")
     for item in scenics:
         if not isinstance(item, dict) or not str(item.get("scenic_id") or "").strip() \
@@ -158,7 +172,8 @@ def parse_bundle(raw: Any) -> Dict[str, Any]:
 
 
 async def import_bundle(db, scenics, settings, bundle: Dict[str, Any], *,
-                        imported_by: str = "") -> Dict[str, Any]:
+                        imported_by: str = "", allow_empty: bool = False,
+                        digest: str = "") -> Dict[str, Any]:
     """盒子：导入分配包。盒子上的景区和总部下发的**完全一致**：
 
     - 包里的景区：新建或更新，关键字 / 附加过滤词 / 采集目标都换成包里的那一份；
@@ -166,7 +181,7 @@ async def import_bundle(db, scenics, settings, bundle: Dict[str, Any], *,
     """
     from .db import tables as T
 
-    bundle = parse_bundle(bundle)
+    bundle = parse_bundle(bundle, allow_empty=allow_empty)
     ids = [str(item["scenic_id"]).strip() for item in bundle["scenics"]]
     previous = await assignment(settings)
     for item in bundle["scenics"]:
@@ -202,6 +217,8 @@ async def import_bundle(db, scenics, settings, bundle: Dict[str, Any], *,
         "scenic_ids": ids, "box_name": bundle.get("box_name") or "",
         "exported_by": bundle.get("exported_by") or "", "exported_at": bundle.get("exported_at") or "",
         "imported_by": imported_by, "imported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        # 盒子定时拉分配：内容没变就不重新导（见 box/sync.py）
+        "digest": digest,
     }
     await settings.set(ASSIGNMENT_KEY, record)
     return {**record, "dropped": dropped}

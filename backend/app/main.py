@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from . import collectors  # noqa: F401  导入即注册全部采集器
 from .api import (
     accounts, archive as archive_api, auth as auth_api, cluster as cluster_api, data,
-    edition as edition_api,
+    edition as edition_api, box_api, boxes as boxes_api,
     labeling as labeling_api, live, media, users as users_api,
     metrics as metrics_api,
     qunar as qunar_api, scenic,
@@ -59,8 +59,8 @@ async def lifespan(app: FastAPI):
     logger.info("配置文件：%s", config.source_path or "（未找到，使用内置默认值）")
     from . import edition as _edition
     if _edition.is_scenic():
-        logger.info("版本：景区版（%s）——景区由总部分配，系统设置 / 集群 / 景区档案 / 景区管理 / 指标计算不开放",
-                    config.get("edition.box_name") or "未命名盒子")
+        logger.info("版本：景区版——景区由主分配，采到的数据直接报给主；"
+                    "系统设置 / 集群 / 景区档案 / 景区管理 / 指标计算不开放")
 
     db = init_db(config)
     await db.connect()
@@ -117,9 +117,30 @@ async def lifespan(app: FastAPI):
     from .browser import live_session
     live_session.ID_PREFIX = f"{identity.node_id}~"
     browser_manager = BrowserSessionManager(config, account_repo)
+    # 景区盒子：采到的数据不落本地库，直接报给主（box/client.py）；分到的景区定时从主拉。
+    # 主：登记盒子、收上报（box/repo.py、api/box_api.py）
+    from . import edition as _edition
+    from .box.repo import BoxRepository, set_box_repo
+    from .box.sync import set_box
+    box_sync = None
+    collect_repo = data_repo
+    if _edition.is_scenic():
+        from .box.client import MasterClient, RemoteDataRepository
+        from .box.sync import BoxSync
+        box_client = MasterClient(config.get("edition.master_url", ""), config.get("edition.box_token", ""))
+        if not box_client.configured:
+            logger.warning("景区版还没配主的地址和令牌（edition.master_url / edition.box_token）："
+                           "分不到景区，采集也报不上去")
+        collect_repo = RemoteDataRepository(box_client, db)
+        box_sync = BoxSync(box_client, db, scenic_repo, setting_repo)
+        set_box(box_client, box_sync)
+        set_box_repo(None)
+    else:
+        set_box(None, None)
+        set_box_repo(BoxRepository(db))
     runner = TaskRunner(
         config,
-        task_repo=task_repo, scenic_repo=scenic_repo, data_repo=data_repo,
+        task_repo=task_repo, scenic_repo=scenic_repo, data_repo=collect_repo,
         proxy_manager=proxy_manager, browser_manager=browser_manager,
     )
     scheduler = TaskScheduler(config, task_repo, runner, browser_manager=browser_manager,
@@ -157,6 +178,9 @@ async def lifespan(app: FastAPI):
         logger.info("本机只协调不跑任务（cluster.role = master），不启动本机的任务执行")
     await cluster.start()
     set_cluster(cluster)
+    if box_sync is not None and box_sync.client.configured:
+        await box_sync.start()
+        logger.info("景区盒子：数据报给主 %s，分到的景区每分钟同步一次", box_sync.client.master_url)
     # 机器之间互相调用（批量检测等）带这个令牌，不走用户登录
     auth_service.internal_token = cluster.secret
     logger.info("已注册采集器：%s", "、".join(CollectorRegistry.available()))
@@ -177,7 +201,7 @@ async def lifespan(app: FastAPI):
     _notifier = _get_notifier(config)
     if _notifier.enabled:
         logger.info("通知：飞书机器人已开启（需要人工介入或采集报错时会推送）")
-    if (config.get("labeling") or {}).get("enabled") and cluster.is_leader:
+    if (config.get("labeling") or {}).get("enabled") and cluster.is_leader and box_sync is None:
         # 重启前队列里没标完的，现在就接着标——不等下一次采集任务来"顺便"拉起引擎。
         # 放后台跑：自检要真打一次模型，别拖慢服务启动
         logger.info("边采边标：已开启，正在检查并续标队列里剩下的评论")
@@ -202,6 +226,10 @@ async def lifespan(app: FastAPI):
         logger.info("正在关闭服务…")
         set_cluster(None)
         set_auth(None)
+        if box_sync is not None:
+            await box_sync.stop()
+        set_box(None, None)
+        set_box_repo(None)
         await metrics_manager.stop()
         from .metrics import reset_manager as _reset_metrics_manager
         _reset_metrics_manager()
@@ -272,15 +300,21 @@ def create_app() -> FastAPI:
         accounts.router, settings_api.router, ws.router,
         live.router, live.ws_router, labeling_api.router, qunar_api.router, metrics_api.router,
         archive_api.router, cluster_api.router, auth_api.router, users_api.router,
-        metrics_api.ws_router, edition_api.router,
+        metrics_api.ws_router, edition_api.router, box_api.router, boxes_api.router,
     ):
         app.include_router(router)
     # 集群：账号 / 任务不在本机时，把请求转给它所在的机器（cluster/forward.py）
+    # 景区盒子：数据中心 / 标注的请求转给主（在登录检查里面：先认盒子上的人）
+    from .box.forward import BoxForwarder
+    app.add_middleware(BoxForwarder)
     from .cluster.forward import ClusterForwarder
     app.add_middleware(ClusterForwarder)
     # 登录检查放在最外层（后加的在外层）：没登录的请求不会被转给别的机器
     from .auth.middleware import AuthMiddleware
     app.add_middleware(AuthMiddleware)
+    # 主：景区盒子拿令牌来的请求，在最外层认盒子（不走用户登录）
+    from .box.gateway import BoxGateway
+    app.add_middleware(BoxGateway)
 
     @app.exception_handler(HTTPException)
     async def _http_error(request: Request, exc: HTTPException):
