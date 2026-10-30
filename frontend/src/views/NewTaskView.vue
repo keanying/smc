@@ -101,7 +101,7 @@
               </template>
               <div style="width: 100%">
                 <div v-if="!creatorTargets.length" class="form-warn">
-                  该景区还没配置主页目标，请先到「景区管理 → 采集目标」添加
+                  该景区还没配置主页目标，{{ scenicFixHint }}
                 </div>
                 <el-table v-else :data="creatorTargets" size="small" border>
                   <el-table-column label="平台" width="90">
@@ -124,7 +124,7 @@
                   <el-table-column prop="target_name" label="备注" width="140" />
                 </el-table>
                 <div v-else class="form-error">
-                  该景区没配 POI_ID / sid，任务会被拒绝创建。请先到「景区管理 → 采集目标」添加
+                  该景区没配 POI_ID / sid，任务会被拒绝创建。{{ scenicFixHint }}
                 </div>
               </div>
             </el-form-item>
@@ -246,6 +246,7 @@
 
 <script setup lang="ts">
 import { isCluster, loadCluster, workerNodes } from '../composables/cluster'
+import { isScenicEdition } from '../composables/edition'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -261,6 +262,10 @@ const route = useRoute()
 const router = useRouter()
 
 const scenics = ref<ScenicOption[]>([])
+/** 景区缺配置时怎么补：总部版自己去景区管理；景区版的景区跟着总部的分配包走 */
+const scenicFixHint = computed(() => (isScenicEdition.value
+  ? '景区由总部维护，请联系总部在「景区管理 → 采集目标」补上后重新下发分配包'
+  : '请先到「景区管理 → 采集目标」添加'))
 const channels = ref<ChannelOption[]>([])
 const scenicKeywords = ref<string[]>([])
 const allTargets = ref<Target[]>([])
@@ -345,7 +350,9 @@ async function pullKeywords() {
       enabled_only: true, limit: keywordLimit.value,
     })
     if (!rows.length) {
-      ElMessage.warning('该景区还没有启用的关键字，先去景区管理里添加')
+      ElMessage.warning(isScenicEdition.value
+        ? '该景区还没有启用的关键字，请联系总部补上后重新下发分配包'
+        : '该景区还没有启用的关键字，先去景区管理里添加')
       return
     }
     form.keywords = rows.map((r) => r.keyword)

@@ -8,6 +8,7 @@
 
 - 没登录：接口回 401，WebSocket 直接拒绝握手；
 - 登录了但角色不够：回 403（规则见 roles.py）；
+- 景区版不开放的功能：一律 403（规则见 app/edition.py）；
 - 认出来的用户放进 contextvar，接口里记「谁做的」时用（context.py）。
 前端静态文件、登录本身、健康检查不用登录。
 """
@@ -15,13 +16,14 @@ from __future__ import annotations
 
 import json
 
+from .. import edition
 from .context import reset_current_user, set_current_user
 from .repo import split_cookie
 from .roles import denied_reason
 from .service import get_auth
 
 INTERNAL_HEADER = b"x-smc-cluster-token"
-PUBLIC_PATHS = ("/api/auth/status", "/api/auth/login", "/api/auth/setup", "/api/health")
+PUBLIC_PATHS = ("/api/auth/status", "/api/auth/login", "/api/auth/setup", "/api/health", "/api/edition")
 
 
 class AuthMiddleware:
@@ -32,6 +34,11 @@ class AuthMiddleware:
         auth = get_auth()
         kind = scope["type"]
         path = scope.get("path", "")
+        # 景区版不开放的功能：谁来都不行（管理员也一样），登录关了也一样
+        if kind in ("http", "websocket") and path.startswith("/api/"):
+            reason = edition.denied_reason(edition.current(), scope.get("method", "GET"), path)
+            if reason:
+                return await _reject(kind, scope, receive, send, 403, reason)
         if (auth is None or not auth.enabled or kind not in ("http", "websocket")
                 or not (path.startswith("/api/") or path.startswith("/ws/"))
                 or path in PUBLIC_PATHS):

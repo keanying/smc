@@ -269,6 +269,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "cookie_name": "smc_session",
         "cookie_secure": False,
     },
+    # 版本：full=总部版（默认）/ scenic=景区版（部署在景区盒子上，见 app/edition.py）。
+    # 只能在 config.yaml / 环境变量里改（SMC_EDITION_NAME=scenic），不放进页面设置
+    "edition": {
+        "name": "full",
+        # 盒子的名字，页面左上角显示，如「灵山胜境 · 1 号盒子」。留空 = 景区版
+        "box_name": "",
+    },
     # 集群：多台机器连同一个 MySQL（和同一个 Redis），主机负责派任务，从机负责跑。
     # 这一段是**每台机器自己的**，写在各自的 config.yaml 或环境变量里
     # （SMC_CLUSTER_ROLE=worker 这样），不在页面上改。只有一台机器时不用管，默认既是主也是从。

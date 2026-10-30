@@ -35,7 +35,7 @@
               本次运行不再尝试标注。<br>{{ status.error || '未知原因，点「自检」查看详情' }}
             </template>
             <template v-else-if="!status.enabled">
-              采集时不会自动标注。到「系统设置 → 标注」里打开；历史数据用「一键补标」补。
+              采集时不会自动标注。{{ isScenicEdition ? '在盒子的 config.yaml 里打开 labeling.enabled' : '到「系统设置 → 标注」里打开' }}；历史数据用「一键补标」补。
             </template>
             <template v-else>采集时自动标注；没有标签的（含 AI 标注错误）用「一键补标」补。</template>
           </InfoTip>
@@ -356,6 +356,7 @@ import {
   type LabelStats, type ScenicOption,
 } from '../api'
 import { CHANNEL_LABELS } from '../constants'
+import { isScenicEdition } from '../composables/edition'
 
 const scenics = ref<ScenicOption[]>([])
 const channels = ref<ChannelOption[]>([])

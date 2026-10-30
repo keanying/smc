@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from . import collectors  # noqa: F401  导入即注册全部采集器
 from .api import (
     accounts, archive as archive_api, auth as auth_api, cluster as cluster_api, data,
+    edition as edition_api,
     labeling as labeling_api, live, media, users as users_api,
     metrics as metrics_api,
     qunar as qunar_api, scenic,
@@ -56,6 +57,10 @@ async def lifespan(app: FastAPI):
     )
     config.ensure_dirs()
     logger.info("配置文件：%s", config.source_path or "（未找到，使用内置默认值）")
+    from . import edition as _edition
+    if _edition.is_scenic():
+        logger.info("版本：景区版（%s）——景区由总部分配，系统设置 / 集群 / 景区档案 / 景区管理 / 指标计算不开放",
+                    config.get("edition.box_name") or "未命名盒子")
 
     db = init_db(config)
     await db.connect()
@@ -243,6 +248,8 @@ async def _cluster_brief():
 
 def create_app() -> FastAPI:
     config = load_config()
+    from . import edition
+    edition.set_current(config)
     app = FastAPI(
         title="CloudSense 云听",
         description="按景区维度采集抖音/快手/小红书/微博/携程/同程的作品与评论",
@@ -263,7 +270,7 @@ def create_app() -> FastAPI:
         accounts.router, settings_api.router, ws.router,
         live.router, live.ws_router, labeling_api.router, qunar_api.router, metrics_api.router,
         archive_api.router, cluster_api.router, auth_api.router, users_api.router,
-        metrics_api.ws_router,
+        metrics_api.ws_router, edition_api.router,
     ):
         app.include_router(router)
     # 集群：账号 / 任务不在本机时，把请求转给它所在的机器（cluster/forward.py）
@@ -312,6 +319,7 @@ def create_app() -> FastAPI:
                 "collectors": CollectorRegistry.available(),
                 "scheduler": state.scheduler.status(),
                 "cluster": await _cluster_brief(),
+                "edition": edition.current(),
                 "proxy_enabled": bool(state.config.get("proxy.enabled")),
                 # 浏览器闸门：现在开着几个、上限多少、内存还剩多少。
                 # 卡机那次事后完全查不到"当时开了几个浏览器"，只能看监控猜。

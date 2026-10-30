@@ -66,11 +66,25 @@ async def list_tasks(
     return ok(result)
 
 
+async def _check_scenic_edition(data, state: AppState) -> None:
+    """景区版：任务只能建在总部分配给盒子的景区上（停用的 = 已经不再分配了）。"""
+    from .. import edition
+    if not edition.is_scenic():
+        return
+    scenic_id = (data.get("scenic_id") or "").strip()
+    if not scenic_id:
+        raise bad_request("景区版的任务要选一个景区")
+    scenic = await state.scenics.get_scenic(scenic_id)
+    if not scenic or not scenic.get("enabled"):
+        raise bad_request(f"景区 {scenic_id} 没有分配给这个盒子")
+
+
 @router.post("")
 async def create_task(payload: TaskIn, state: AppState = Depends(get_state)):
     data = payload.model_dump()
     # 谁建的：登录了就记登录的人
     data["created_by"] = current_name() or data.get("created_by")
+    await _check_scenic_edition(data, state)
 
     # 关键字模式必须有关键字；没显式传就从景区自动带（默认上限见配置）
     if data["collect_type"] == "keyword" and not data["keywords"]:
@@ -188,6 +202,7 @@ async def update_task(task_id: str, payload: TaskIn, state: AppState = Depends(g
     if not await state.tasks.get(task_id):
         raise not_found(f"任务不存在：{task_id}")
     data = payload.model_dump()
+    await _check_scenic_edition(data, state)
     if data["schedule_type"] == "cron":
         try:
             validate_cron(data.get("cron_expression") or "")

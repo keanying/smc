@@ -9,12 +9,16 @@
 <template>
   <!-- 登录页单独一屏，不套菜单和顶栏 -->
   <router-view v-if="route.meta.bare" />
+  <!-- 景区版（景区盒子）换一套深色外框布局 -->
+  <BoxLayout v-else-if="route.name && isScenicEdition" />
   <MainLayout v-else-if="route.name" />
 </template>
 
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
 import MainLayout from './layout/MainLayout.vue'
+import BoxLayout from './layout/BoxLayout.vue'
+import { isScenicEdition } from './composables/edition'
 
 const route = useRoute()
 </script>

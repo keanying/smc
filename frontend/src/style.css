@@ -421,3 +421,54 @@ body {
   .lg\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .lg\:col-span-2 { grid-column: span 2 / span 2; }
 }
+
+/* ===================================================================
+   景区版（景区盒子）配色：深色外框 + 白色大圆角内容面板，
+   主色从紫换成墨黑，卡片用淡蓝 / 淡紫 / 薄荷绿 / 奶油黄几种马卡龙色。
+   只改变量，各页面原样复用（布局见 layout/BoxLayout.vue）。
+   =================================================================== */
+html.edition-scenic {
+  --smc-primary: #22252e;
+  --smc-primary-dark: #15171c;
+  --smc-primary-light: #eef0f4;
+  --smc-gradient: linear-gradient(145deg, #353945 0%, #1b1d24 100%);
+  --smc-sidebar-bg: #16171d;
+  --smc-page-bg: #16171d;
+  --smc-bg: #ffffff;
+  --smc-border: #eceef2;
+  --smc-border-strong: #dfe2e8;
+  --smc-text: #1d1f25;
+  --smc-text-secondary: #868b96;
+  --smc-text-tertiary: #b4b8c0;
+  --smc-shadow: 0 4px 16px rgba(20, 22, 30, 0.05);
+  --smc-shadow-hover: 0 10px 26px rgba(20, 22, 30, 0.10);
+  --smc-shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.35);
+  /* 马卡龙色卡片 */
+  --box-sky: #dbe7fb;
+  --box-lavender: #e2ddf7;
+  --box-mint: #d6efdf;
+  --box-cream: #f6ecd2;
+  --box-ink: #1d1f26;
+  --el-color-primary: #22252e;
+  --el-color-primary-light-3: #646670;
+  --el-color-primary-light-5: #90929a;
+  --el-color-primary-light-7: #bdbec2;
+  --el-color-primary-light-8: #d3d3d5;
+  --el-color-primary-light-9: #eef0f4;
+  --el-color-primary-dark-2: #15171c;
+  --el-border-color: #e1e4ea;
+  --el-border-color-light: #eceef2;
+  --el-border-color-lighter: #f3f4f7;
+  --el-text-color-primary: #1d1f25;
+  --el-text-color-regular: #474b55;
+  --el-text-color-secondary: #868b96;
+  --el-text-color-placeholder: #b4b8c0;
+  --el-fill-color-light: #f4f5f8;
+  --el-fill-color-lighter: #f9fafb;
+}
+html.edition-scenic .el-table th.el-table__cell,
+html.edition-scenic .el-table__fixed-right-patch { background: #f5f6f9; }
+/* 景区版的白色内容面板本身就是白的：卡片靠细边框分层，不靠底色 */
+html.edition-scenic .el-card { border: 1px solid var(--smc-border) !important; box-shadow: none !important; }
+/* 主按钮的投影跟着换成中性色（总部版是紫色光晕） */
+html.edition-scenic .el-button--primary:not(.is-plain):not(.is-link):not(.is-text) { box-shadow: 0 6px 16px rgba(20, 22, 30, 0.18); }

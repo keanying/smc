@@ -5,6 +5,7 @@
 // 首次运行即表示已阅读并同意根目录 LICENSE，使用风险与法律责任由使用者自行承担。
 
 import { computed, ref } from 'vue'
+import { isScenicEdition } from './edition'
 import { clusterApi, type ClusterNode, type ClusterOverview } from '../api'
 
 /**
@@ -13,7 +14,8 @@ import { clusterApi, type ClusterNode, type ClusterOverview } from '../api'
  */
 export const clusterInfo = ref<ClusterOverview | null>(null)
 export const clusterNodes = computed<ClusterNode[]>(() => clusterInfo.value?.nodes || [])
-export const isCluster = computed(() => clusterNodes.value.length > 1)
+// 景区版（单台盒子）永远不显示「机器」相关的列和选项
+export const isCluster = computed(() => !isScenicEdition.value && clusterNodes.value.length > 1)
 /** 能放账号、能跑任务的在线机器（角色 主+从 / 从） */
 export const workerNodes = computed(() =>
   clusterNodes.value.filter((n) => n.role !== 'master'))

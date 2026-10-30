@@ -7,7 +7,7 @@
 -->
 
 <template>
-  <div class="login-page">
+  <div class="login-page" :class="{ 'is-box': isScenicEdition }">
     <div class="login-card">
       <div class="brand">
         <img class="brand-img" src="/logo.png" alt="CloudSense 云听" />
@@ -15,6 +15,10 @@
           <div class="brand-title">CloudSense</div>
           <div class="brand-sub">云听社媒舆情分析</div>
         </div>
+      </div>
+      <!-- 景区版：告诉登录的人这是哪台盒子 -->
+      <div v-if="isScenicEdition" class="box-tag">
+        景区版<template v-if="editionInfo?.box_name"> · {{ editionInfo.box_name }}</template>
       </div>
 
       <template v-if="needsSetup">
@@ -67,6 +71,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { authApi } from '../api'
 import { authStatus, currentUser, loadAuth, setLoggedIn } from '../composables/auth'
+import { editionInfo, isScenicEdition } from '../composables/edition'
 
 const route = useRoute()
 const router = useRouter()
@@ -143,6 +148,18 @@ onMounted(async () => {
 .login-card {
   width: 100%; max-width: 420px; background: #fff; border-radius: 28px;
   padding: 36px 36px 28px; box-shadow: 0 30px 70px rgba(60, 50, 140, 0.20);
+}
+/* 景区版：和盒子里的深色外框一个调子 */
+.login-page.is-box {
+  background:
+    radial-gradient(900px 520px at 0% 0%, rgba(219, 231, 251, 0.18), transparent 60%),
+    radial-gradient(800px 480px at 100% 100%, rgba(246, 236, 210, 0.14), transparent 60%),
+    #16171d;
+}
+.login-page.is-box .login-card { box-shadow: 0 30px 70px rgba(0, 0, 0, 0.45); }
+.box-tag {
+  display: inline-block; margin: -10px 0 18px; padding: 4px 12px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; background: #f6ecd2; color: #6b5a2a;
 }
 .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
 /* LOGO 原样使用，只按高度等比缩放 */
