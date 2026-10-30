@@ -196,7 +196,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter, type RouteLocationRaw } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowRight, LocationFilled, Plus, Upload } from '@element-plus/icons-vue'
@@ -363,7 +363,7 @@ async function load() {
     const [assign, overviewRows, taskPage, accountPage, channelList, stats] = await Promise.all([
       editionApi.assignment(),
       dataApi.overview(),
-      taskApi.list({ page_size: 6 }),
+      taskApi.list({ page_size: 6, sort: 'recent' }),
       accountApi.list({}).catch(() => ({ items: [] as Account[], total: 0, page: 1, page_size: 0 })),
       accountApi.channels(),
       labelingApi.stats().catch(() => null),
@@ -380,7 +380,22 @@ async function load() {
   }
 }
 
-onMounted(load)
+// 最近的任务每 30 秒自己刷新：定时任务跑起来、跑完不用手动刷新页面
+async function refreshTasks() {
+  if (document.hidden) return
+  try {
+    recentTasks.value = (await taskApi.list({ page_size: 6, sort: 'recent' }, true)).items
+  } catch {
+    /* 下一轮再试 */
+  }
+}
+
+let taskTimer: number | undefined
+onMounted(() => {
+  load()
+  taskTimer = window.setInterval(refreshTasks, 30_000)
+})
+onUnmounted(() => window.clearInterval(taskTimer))
 </script>
 
 <style scoped>

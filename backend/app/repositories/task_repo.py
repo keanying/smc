@@ -169,8 +169,10 @@ class TaskRepository:
 
     async def list(
         self, *, status: str = "", scenic_id: str = "", keyword: str = "", node: str = "",
-        page: int = 1, page_size: int = 20,
+        page: int = 1, page_size: int = 20, sort: str = "",
     ) -> Dict[str, Any]:
+        """sort：默认按建的先后（新建的在前）；recent = 按最近一次运行（概览「最近动态」用）——
+        按建的先后排的话，早就建好、每天定时跑的任务永远排不进前几条。"""
         clauses: List[str] = []
         args: List[Any] = []
         if node:
@@ -187,10 +189,13 @@ class TaskRepository:
             clauses.append("task_name LIKE %s")
             args.append(f"%{keyword}%")
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        # 没跑过的按建的时间算，和跑过的放在一起比谁更近
+        order = ("COALESCE(last_run_time, create_time) DESC, id DESC" if sort == "recent"
+                 else "id DESC")
 
         total = await self.db.fetch_value(f"SELECT COUNT(*) AS c FROM `src_opinion_crawl_task` {where}", args, 0)
         rows = await self.db.fetch_all(
-            f"SELECT * FROM `src_opinion_crawl_task` {where} ORDER BY id DESC LIMIT %s OFFSET %s",
+            f"SELECT * FROM `src_opinion_crawl_task` {where} ORDER BY {order} LIMIT %s OFFSET %s",
             [*args, int(page_size), max(0, (page - 1) * page_size)],
         )
         return {

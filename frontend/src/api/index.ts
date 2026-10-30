@@ -462,8 +462,9 @@ export const labelingApi = {
 // ===================== 任务 =====================
 
 export const taskApi = {
-  list: (params: { status?: string; scenic_id?: string; keyword?: string; node?: string; page?: number; page_size?: number } = {}) =>
-    api.get<Paged<Task>>('/api/tasks', params),
+  /** sort='recent'：按最近一次运行排（定时任务跑了就排到前面）；默认按建的先后 */
+  list: (params: { status?: string; scenic_id?: string; keyword?: string; node?: string; page?: number; page_size?: number; sort?: 'recent' } = {}, silent = false) =>
+    api.get<Paged<Task>>('/api/tasks', params, silent),
   detail: (taskId: string) => api.get<Task>(`/api/tasks/${taskId}`),
   create: (payload: Record<string, unknown>) => api.post<Task>('/api/tasks', payload),
   update: (taskId: string, payload: Record<string, unknown>) => api.put<Task>(`/api/tasks/${taskId}`, payload),

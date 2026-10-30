@@ -312,3 +312,26 @@ async def test_browser_busy_queues_instead_of_failing():
                       "channels": ["douyin"]})
     kinds = [c[0] for c in runner.tasks.calls]
     assert "waiting" in kinds and "finished" not in kinds
+
+
+@pytest.mark.asyncio
+async def test_recent_sort_puts_scheduled_runs_first(repos):
+    """概览「最近动态」：早就建好、刚刚定时跑过的任务要排在前面。
+
+    以前按建的先后排（id DESC），每天定时跑的老任务永远挤不进前几条，
+    看上去像是定时任务没跑。
+    """
+    old = await _cron_task(repos.tasks, "每天凌晨定时")
+    newer = await _cron_task(repos.tasks, "刚建还没跑")
+    await repos.db.execute(
+        "UPDATE `src_opinion_crawl_task` SET create_time = %s WHERE task_id = %s",
+        [datetime.now() - timedelta(days=3), old])
+    await repos.db.execute(
+        "UPDATE `src_opinion_crawl_task` SET create_time = %s WHERE task_id = %s",
+        [datetime.now() - timedelta(hours=1), newer])
+    await repos.tasks.mark_running(old)            # 定时任务刚跑起来
+
+    by_created = [t["task_id"] for t in (await repos.tasks.list())["items"]]
+    by_recent = [t["task_id"] for t in (await repos.tasks.list(sort="recent"))["items"]]
+    assert by_created == [newer, old]
+    assert by_recent == [old, newer]

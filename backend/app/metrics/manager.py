@@ -726,3 +726,9 @@ def get_manager(config: Config = None, db: Database = None, settings_repo=None) 
             raise RuntimeError("指标计算管理器还没初始化")
         _manager = MetricsManager(config, db, settings_repo)
     return _manager
+
+
+def reset_manager() -> None:
+    """服务关闭时调：下次起服务（测试里一个进程会起好几次）新建一个，别拿着上一次已经关掉的库连接。"""
+    global _manager
+    _manager = None
