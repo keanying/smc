@@ -89,6 +89,8 @@ class WorkItem:
     hit_keywords: str = ""
     hit_aux_keywords: str = ""
     task_id: str = ""
+    #: 景区盒子上报的：哪个盒子（主收到时填，采集器不用管）
+    source_box: str = ""
 
     def finalize(self) -> "WorkItem":
         """入库前统一截断与补默认值，避免 Data too long 打断整批写入。"""
@@ -134,6 +136,8 @@ class CommentItem:
     publish_time: Optional[datetime] = None
     crawl_time: Optional[datetime] = None
     task_id: str = ""
+    #: 景区盒子上报的：哪个盒子（主收到时填，采集器不用管）
+    source_box: str = ""
 
     def finalize(self) -> "CommentItem":
         self.comment_id = nz.truncate(self.comment_id, 300)

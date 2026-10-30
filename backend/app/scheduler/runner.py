@@ -51,6 +51,27 @@ from .task_logger import TaskLogger
 
 logger = get_logger(__name__)
 
+
+async def submit_for_labeling(comments: Sequence[CommentItem]) -> int:
+    """把刚落库的评论推给标注引擎（边采边标）。没开开关时直接返回 0。
+
+    本机采集（runner flush 之后）和景区盒子上报（api/box_api.py 写库之后）都走这里。
+    """
+    from ..labeling import get_manager
+
+    manager = get_manager()
+    if not manager.enabled:
+        return 0
+    rows = [{
+        "channel": c.channel, "work_id": c.work_id,
+        "scenic_id": c.scenic_id, "scenic_name": c.scenic_name,
+        "comment_id": c.comment_id, "content": c.content or "",
+        "likes": c.likes, "publish_time": c.publish_time,
+        "commenter_name": c.commenter_name,
+        "extra_content": c.extra_content,
+    } for c in comments if c.comment_id and c.content]
+    return await manager.submit_comments(rows)
+
 #: 攒批阈值。**主路径已经是"一条作品采完就落库"**（见 _collect_keyword），
 #: 这两个阈值只在**单条作品内部**起兜底作用：一条作品有几千条评论时，
 #: 不至于全压在内存里等这条作品采完。
@@ -1457,23 +1478,10 @@ class _Buffer:
 
         没开开关、引擎不可用时是**零成本**的：manager 里第一句就返回。
         """
-        if not comments:
-            return
+        if not comments or getattr(self.data, "remote", False):
+            return                    # 景区盒子：数据直接报给主，标注在主那边做
         try:
-            from ..labeling import get_manager
-
-            manager = get_manager()
-            if not manager.enabled:
-                return
-            rows = [{
-                "channel": c.channel, "work_id": c.work_id,
-                "scenic_id": c.scenic_id, "scenic_name": c.scenic_name,
-                "comment_id": c.comment_id, "content": c.content or "",
-                "likes": c.likes, "publish_time": c.publish_time,
-                "commenter_name": c.commenter_name,
-                "extra_content": c.extra_content,
-            } for c in comments if c.comment_id and c.content]
-            accepted = await manager.submit_comments(rows)
+            accepted = await submit_for_labeling(comments)
             if accepted:
                 self.log.info(f"[标注] 已推送 {accepted} 条评论进标注队列")
         except Exception as exc:  # noqa: BLE001

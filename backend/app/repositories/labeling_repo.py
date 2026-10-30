@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..core.db import Database
+from ..core.scope import in_scope, scope_sql
 from ..core.logging import get_logger
 from ..db import tables
 
@@ -161,7 +162,9 @@ class LabelingRepository:
         cols = ", ".join(f"`{c}`" for c in REVIEW_COLUMNS)
         row = await self.db.fetch_one(
             f"SELECT {cols} FROM `{tables.COMMENTS}` WHERE `id` = %s", [int(row_id)])
-        return self._shape(row) if row else None
+        if not row or not in_scope(row.get("scenic_id")):
+            return None
+        return self._shape(row)
 
     # ------------------------------------------------------------------ 写回
     async def save_review(
@@ -206,8 +209,10 @@ class LabelingRepository:
         params.append(datetime.now())
         params.append(int(row_id))
 
+        cond, cond_args = scope_sql()
         affected = await self.db.execute(
-            f"UPDATE `{tables.COMMENTS}` SET {', '.join(sets)} WHERE `id` = %s", params)
+            f"UPDATE `{tables.COMMENTS}` SET {', '.join(sets)} WHERE `id` = %s"
+            + (f" AND {cond}" if cond else ""), [*params, *cond_args])
         return bool(affected)
 
     async def reset_review(self, row_id: int) -> bool:
@@ -216,15 +221,21 @@ class LabelingRepository:
         ⚠️ 回到 0 而不是 4，是**故意**的：引擎跑批只取 pending_flags（默认 [0]），
         回到 0 才会被下一轮补标捞到。回到 4 的话这条就再也进不了跑批了。
         """
+        cond, cond_args = scope_sql()
         return bool(await self.db.execute(
             f"UPDATE `{tables.COMMENTS}` SET `label_review_flag` = %s,"
-            f" `label_review_by` = '', `label_review_time` = NULL WHERE `id` = %s",
-            [FLAG_UNLABELED, int(row_id)]))
+            f" `label_review_by` = '', `label_review_time` = NULL WHERE `id` = %s"
+            + (f" AND {cond}" if cond else ""),
+            [FLAG_UNLABELED, int(row_id), *cond_args]))
 
     # ------------------------------------------------------------------ 内部
     @staticmethod
     def _scope(scenic_id: str, channel: str) -> Tuple[str, List[Any]]:
         conds, params = [], []
+        cond, cond_args = scope_sql()           # 盒子来查：只看它分到的景区
+        if cond:
+            conds.append(cond)
+            params.extend(cond_args)
         if scenic_id:
             conds.append("`scenic_id` = %s")
             params.append(scenic_id)

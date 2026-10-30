@@ -35,13 +35,16 @@
               本次运行不再尝试标注。<br>{{ status.error || '未知原因，点「自检」查看详情' }}
             </template>
             <template v-else-if="!status.enabled">
-              采集时不会自动标注。{{ isScenicEdition ? '在盒子的 config.yaml 里打开 labeling.enabled' : '到「系统设置 → 标注」里打开' }}；历史数据用「一键补标」补。
+              <template v-if="isScenicEdition">采到的评论报给主后由主统一标注；主那边还没打开边采边标。</template>
+              <template v-else>采集时不会自动标注。到「系统设置 → 标注」里打开；历史数据用「一键补标」补。</template>
             </template>
+            <template v-else-if="isScenicEdition">采到的评论报给主后由主自动标注，这里可以看、可以改。</template>
             <template v-else>采集时自动标注；没有标签的（含 AI 标注错误）用「一键补标」补。</template>
           </InfoTip>
         </template>
       </h2>
-      <div class="header-actions">
+      <!-- 景区盒子：标注引擎在主上，自检 / 补标由主那边做 -->
+      <div v-if="!isScenicEdition" class="header-actions">
         <el-button @click="runCheck">
           <AppIcon name="query" :size="14" class="btn-icon" />自检
         </el-button>
@@ -657,7 +660,7 @@ onMounted(async () => {
   ])
   channels.value = status.value?.channels || []
   if (status.value?.review_flags?.length) reviewFlags.value = status.value.review_flags
-  await Promise.all([load(), loadStats(), restoreRunningJob()])
+  await Promise.all([load(), loadStats(), isScenicEdition.value ? null : restoreRunningJob()])
 })
 
 onUnmounted(() => window.clearInterval(timer))

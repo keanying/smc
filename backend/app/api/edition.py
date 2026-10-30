@@ -4,22 +4,19 @@
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
 # 首次运行即表示已阅读并同意根目录 LICENSE，使用风险与法律责任由使用者自行承担。
 
-"""版本信息与景区分配包（见 app/edition.py）。
+"""版本信息与景区盒子的分配状态（见 app/edition.py、app/box/）。
 
     GET  /api/edition                   不用登录：总部版还是景区版（页面据此换布局、藏菜单）
-    GET  /api/edition/assignment        景区版：当前分配了哪些景区、什么时候下发的
-    POST /api/edition/bundle/export     总部版：选中的景区导出成分配包
-    POST /api/edition/bundle/import     景区版：导入总部下发的分配包（管理员）
+    GET  /api/edition/assignment        景区版：分到了哪些景区、和主同步得怎么样
+    POST /api/edition/sync              景区版：马上从主拉一次分配（管理员）
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List
-
-from fastapi import APIRouter, Body, Depends
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends
 
 from .. import edition as E
-from ..auth import current_name, current_user
+from ..auth import current_user
+from ..box.sync import get_box_client, get_box_sync
 from .common import bad_request, ok
 from .deps import AppState, get_state
 
@@ -31,33 +28,32 @@ async def edition_info(state: AppState = Depends(get_state)):
     return ok(E.info(state.config))
 
 
+def _sync_status():
+    client, sync = get_box_client(), get_box_sync()
+    return {
+        "master_configured": bool(client and client.configured),
+        **(sync.status if sync else {"ok": None, "last_ok_at": "", "last_error": "", "box_id": ""}),
+    }
+
+
 @router.get("/assignment")
 async def get_assignment(state: AppState = Depends(get_state)):
     record = await E.assignment(state.settings) or {}
+    record.pop("digest", None)
     options = await state.scenics.list_scenic_options(enabled_only=True)
-    return ok({**record, "scenics": options})
+    return ok({**record, "box_name": E.info(state.config)["box_name"],
+               "scenics": options, "sync": _sync_status()})
 
 
-@router.post("/bundle/export")
-async def export_bundle(scenic_ids: List[str] = Body(..., embed=True),
-                        box_name: str = Body("", embed=True),
-                        state: AppState = Depends(get_state)):
-    bundle = await E.export_bundle(state.scenics, scenic_ids, box_name=box_name,
-                                   exported_by=current_name())
-    # 原样返回包本身（不套 {code,data}），前端直接存成文件
-    return JSONResponse(bundle)
-
-
-@router.post("/bundle/import")
-async def import_bundle(bundle: Dict[str, Any] = Body(...), state: AppState = Depends(get_state)):
-    if not E.is_scenic():
-        raise bad_request("总部版不用导入分配包；分配包是给景区盒子用的")
+@router.post("/sync")
+async def sync_now(state: AppState = Depends(get_state)):
+    sync = get_box_sync()
+    if not E.is_scenic() or sync is None:
+        raise bad_request("只有景区盒子需要同步分配")
     user = current_user()
     if user is not None and user.get("role") != "admin":
-        raise bad_request("只有管理员能导入分配包")
-    result = await E.import_bundle(state.db, state.scenics, state.settings, bundle,
-                                   imported_by=current_name())
-    # 景区换了：概览的按景区汇总缓存了 30 秒，不清掉的话新景区要过一会儿才有数字
-    state.data._overview_cache = None
-    note = f"，停用了不再分配的 {len(result['dropped'])} 个" if result["dropped"] else ""
-    return ok(result, f"已导入 {len(result['scenic_ids'])} 个景区{note}")
+        raise bad_request("只有管理员能手动同步")
+    status = await sync.sync_once()
+    if not status.get("ok"):
+        raise bad_request(f"同步失败：{status.get('last_error')}")
+    return ok(_sync_status(), "已和主同步")

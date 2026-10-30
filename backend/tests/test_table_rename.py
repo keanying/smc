@@ -126,12 +126,12 @@ def test_every_table_name_carries_the_prefix():
     #: 放宽成 issubset 的话，把一张老表改了名却忘了登记旧名，测试照样绿，
     #: 而用户升级后那张老表的数据就全"消失"了。
     from app.db.tables import (
-        ACCOUNT_QUOTA, ARCHIVE_REGION, CLUSTER_LEASE, CLUSTER_NODE, DELETED_WORK, METRIC_RUN,
+        ACCOUNT_QUOTA, ARCHIVE_REGION, BOX, CLUSTER_LEASE, CLUSTER_NODE, DELETED_WORK, METRIC_RUN,
         QUNAR_REGION, SCENIC_FILTER_WORD, SCENIC_POI_INFO, SYS_USER, SYS_USER_SESSION,
     )
     born_after_rename = {SCENIC_FILTER_WORD, SCENIC_POI_INFO, QUNAR_REGION,
                          ARCHIVE_REGION, ACCOUNT_QUOTA, DELETED_WORK, METRIC_RUN,
-                         CLUSTER_NODE, CLUSTER_LEASE, SYS_USER, SYS_USER_SESSION}
+                         CLUSTER_NODE, CLUSTER_LEASE, SYS_USER, SYS_USER_SESSION, BOX}
 
     assert set(LEGACY_RENAMES.values()) == set(names) - born_after_rename
     # 旧名映射不能指向一个不存在的表名常量
