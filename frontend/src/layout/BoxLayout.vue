@@ -37,10 +37,6 @@
 
     <section class="box-panel">
       <header class="box-top">
-        <div class="box-name">
-          <span class="box-badge">景区版</span>
-          <span class="box-title">{{ boxName }}</span>
-        </div>
         <div class="box-top-right">
           <span v-if="health" class="box-status">
             <el-tooltip :content="healthText" placement="bottom">
@@ -87,7 +83,6 @@ import {
 } from '@element-plus/icons-vue'
 import { authApi, settingsApi } from '../api'
 import { currentUser, loadAuth } from '../composables/auth'
-import { editionInfo } from '../composables/edition'
 import ChangePasswordDialog from '../components/ChangePasswordDialog.vue'
 
 const route = useRoute()
@@ -104,7 +99,6 @@ const menu = [
   { path: '/accounts', label: '账号管理', icon: User },
 ]
 
-const boxName = computed(() => editionInfo.value?.box_name || 'CloudSense 云听 · 景区盒子')
 
 function isActive(path: string): boolean {
   return path === '/' ? route.path === '/' : route.path.startsWith(path)
@@ -151,7 +145,8 @@ onUnmounted(() => window.clearInterval(timer))
   height: 100vh;
   display: flex;
   gap: 0;
-  padding: 14px 14px 14px 0;
+  /* 白色面板贴着窗口上、右、下三边，只有左边挨着深色图标栏 */
+  padding: 0;
   background: var(--smc-page-bg);
 }
 
@@ -162,7 +157,7 @@ onUnmounted(() => window.clearInterval(timer))
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 4px 0 6px;
+  padding: 18px 0 20px;          /* 外框不再留边，图标栏自己留上下空 */
 }
 .rail-logo {
   width: 48px;
@@ -203,7 +198,7 @@ onUnmounted(() => window.clearInterval(timer))
   display: flex;
   flex-direction: column;
   background: #fff;
-  border-radius: 30px;
+  border-radius: 30px 0 0 30px;
   overflow: hidden;
 }
 .box-top {
@@ -211,26 +206,9 @@ onUnmounted(() => window.clearInterval(timer))
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 16px;
   padding: 0 32px;
-}
-.box-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.box-badge {
-  flex-shrink: 0;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--box-cream);
-  color: #6b5a2a;
-}
-.box-title {
-  font-size: 14px;
-  color: var(--smc-text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .box-top-right { display: flex; align-items: center; gap: 14px; }
 .box-status {
@@ -274,7 +252,7 @@ onUnmounted(() => window.clearInterval(timer))
 .box-main::-webkit-scrollbar { display: none; }
 
 @media (max-width: 760px) {
-  .box-frame { padding: 8px 8px 8px 0; }
+  .box-panel { border-radius: 22px 0 0 22px; }
   .box-rail { width: 60px; }
   .rail-btn { width: 40px; height: 40px; }
   .box-top { padding: 0 16px; }
