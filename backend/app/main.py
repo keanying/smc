@@ -203,6 +203,8 @@ async def lifespan(app: FastAPI):
         set_cluster(None)
         set_auth(None)
         await metrics_manager.stop()
+        from .metrics import reset_manager as _reset_metrics_manager
+        _reset_metrics_manager()
         await close_live_sessions()
         await close_live_views()
         await scheduler.shutdown()

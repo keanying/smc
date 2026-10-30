@@ -48,12 +48,12 @@ def _filters_summary(task: dict) -> list:
 @router.get("")
 async def list_tasks(
     status: str = "", scenic_id: str = "", keyword: str = "", node: str = "",
-    page: int = 1, page_size: int = 20,
+    page: int = 1, page_size: int = 20, sort: str = "",
     state: AppState = Depends(get_state),
 ):
     result = await state.tasks.list(
         status=status, scenic_id=scenic_id, keyword=keyword, node=node,
-        page=page, page_size=page_size,
+        page=page, page_size=page_size, sort=sort,
     )
     running = state.scheduler.running_task_ids()
     for item in result["items"]:

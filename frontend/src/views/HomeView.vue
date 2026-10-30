@@ -203,7 +203,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter, type RouteLocationRaw } from 'vue-router'
 import {
   ArrowRight, Bell, ChatDotRound, Connection, LocationFilled, Refresh, VideoPlay,
@@ -382,7 +382,7 @@ async function load() {
     const [overviewRows, scenicPage, taskPage, runningPage, accountPage, channelList] = await Promise.all([
       dataApi.overview(),
       scenicApi.list({ page_size: 1 }),
-      taskApi.list({ page_size: 6 }),
+      taskApi.list({ page_size: 6, sort: 'recent' }),
       taskApi.list({ status: 'running', page_size: 1 }),
       accountApi.list({}).catch(() => ({ items: [] as Account[], total: 0, page: 1, page_size: 0 })),
       accountApi.channels(),
@@ -403,7 +403,31 @@ async function load() {
   }
 }
 
-onMounted(load)
+/**
+ * 「最近动态」和运行中任务数每 30 秒自己刷新一次：定时任务在后台跑起来、跑完，
+ * 页面开着不动也能看到（不用点「刷新」）。悄悄刷，失败了不弹错。
+ */
+async function refreshFeed() {
+  if (document.hidden) return
+  try {
+    const [taskPage, runningPage] = await Promise.all([
+      taskApi.list({ page_size: 6, sort: 'recent' }, true),
+      taskApi.list({ status: 'running', page_size: 1 }, true),
+    ])
+    recentTasks.value = taskPage.items
+    stats.tasks = taskPage.total
+    stats.runningTasks = runningPage.total
+  } catch {
+    /* 下一轮再试 */
+  }
+}
+
+let feedTimer: number | undefined
+onMounted(() => {
+  load()
+  feedTimer = window.setInterval(refreshFeed, 30_000)
+})
+onUnmounted(() => window.clearInterval(feedTimer))
 </script>
 
 <style scoped>

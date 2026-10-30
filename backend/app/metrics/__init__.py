@@ -10,6 +10,6 @@
 smc 不 import 它，计算在子进程里跑（worker.py）。这一层只管：页面维护的配置、
 定时、调起子进程、记录每次运行的结果。
 """
-from .manager import MetricsManager, get_manager
+from .manager import MetricsManager, get_manager, reset_manager
 
-__all__ = ["MetricsManager", "get_manager"]
+__all__ = ["MetricsManager", "get_manager", "reset_manager"]
