@@ -121,7 +121,28 @@
           用来抓景区名、明星、剧名这类主体词——AI 的关键词只放「支撑情感判断的词」，这类词它不会提。<br />
           新采的评论入库时自动识别；补充或修改了标注字后，点「重新识别历史评论」把已有的评论按新词表重算。
         </InfoTip>
-        <el-button :loading="applyingMark" style="margin-left: auto" @click="applyMark">重新识别历史评论</el-button>
+        <el-button :loading="markRunning" style="margin-left: auto" @click="applyMark">
+          {{ markRunning ? '正在重新识别…' : '重新识别历史评论' }}
+        </el-button>
+      </div>
+
+      <!-- 重新识别的进度：在跑时实时刷新；跑完留着最后一次的结果 -->
+      <div v-if="markJob" class="mark-progress">
+        <el-progress
+          :percentage="markJob.percent" :stroke-width="10"
+          :status="markJob.status === 'done' ? 'success' : markJob.status === 'failed' ? 'exception' : undefined"
+        />
+        <div class="mark-progress-text">
+          <template v-if="markJob.status === 'running'">
+            正在重新识别：{{ markJob.scanned.toLocaleString() }} / {{ markJob.total.toLocaleString() }} 条评论，
+            已命中 {{ markJob.hit.toLocaleString() }} 条
+          </template>
+          <template v-else-if="markJob.status === 'done'">
+            {{ markJob.finished_at.slice(5, 16) }} 识别完成：共 {{ markJob.scanned.toLocaleString() }} 条评论，
+            {{ markJob.hit.toLocaleString() }} 条命中标注字，{{ markJob.changed.toLocaleString() }} 条有变化
+          </template>
+          <template v-else>识别失败：{{ markJob.error }}</template>
+        </div>
       </div>
 
       <div v-if="markWords.length" class="keyword-list">
@@ -293,11 +314,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   archiveApi, scenicApi, type ArchiveItem, type ChannelOption,
-  type FilterWord, type Keyword, type Target,
+  type FilterWord, type Keyword, type MarkWordsJob, type Target,
 } from '../api'
 import { CHANNEL_COLORS, channelLabel } from '../constants'
 
@@ -321,7 +342,9 @@ const MAX_EXCLUDE = 200
 const MAX_MARK = 300
 const markInput = ref('')
 const savingMark = ref(false)
-const applyingMark = ref(false)
+const markJob = ref<MarkWordsJob | null>(null)
+const markRunning = computed(() => markJob.value?.status === 'running')
+let markTimer: number | undefined
 const filterWords = ref<FilterWord[]>([])
 const auxInput = ref('')
 const excludeInput = ref('')
@@ -380,13 +403,32 @@ async function addMark() {
   } finally { savingMark.value = false }
 }
 
-/** 已有的评论按现在的标注字重算一遍（标注字补了、改了、删了都要点） */
+/** 已有的评论按现在的标注字重算一遍（标注字补了、改了、删了都要点）。后台跑，这里每秒刷一次进度 */
 async function applyMark() {
-  applyingMark.value = true
-  try {
-    const r = await scenicApi.applyMarkWords(props.scenicId)
-    ElMessage.success(`已重新识别 ${r.scanned} 条评论：${r.hit} 条命中标注字，${r.changed} 条有变化`)
-  } finally { applyingMark.value = false }
+  markJob.value = await scenicApi.applyMarkWords(props.scenicId)
+  watchMarkJob()
+}
+
+function watchMarkJob() {
+  window.clearInterval(markTimer)
+  if (!markRunning.value) return
+  const scenicId = props.scenicId
+  markTimer = window.setInterval(async () => {
+    const job = await scenicApi.markWordsJob(scenicId).catch(() => null)
+    if (scenicId !== props.scenicId) return
+    markJob.value = job
+    if (job?.status !== 'running') {
+      window.clearInterval(markTimer)
+      if (job?.status === 'done') ElMessage.success(`重新识别完成：${job.hit} 条命中标注字，${job.changed} 条有变化`)
+      if (job?.status === 'failed') ElMessage.error(`重新识别失败：${job.error}`)
+    }
+  }, 1000)
+}
+
+/** 打开这个景区时看一眼：之前点过、还在跑的接着显示进度 */
+async function loadMarkJob() {
+  markJob.value = await scenicApi.markWordsJob(props.scenicId).catch(() => null)
+  watchMarkJob()
 }
 
 async function removeWord(id: number) {
@@ -603,11 +645,14 @@ async function removeTarget(id: number) {
 // ⚠️ 只留 watch + immediate，不要再加 onMounted(loadAll)：
 // 两个都写的话，组件挂载时 scenicId 恰好也被赋值，keywords/targets
 // 会各被拉两遍（一共 4 个请求），而且两次响应先后到达还可能互相覆盖。
-watch(() => props.scenicId, loadAll, { immediate: true })
+watch(() => props.scenicId, () => { loadAll(); loadMarkJob() }, { immediate: true })
+onUnmounted(() => window.clearInterval(markTimer))
 </script>
 
 <style scoped>
 .keyword-list { padding: 4px 0; }
+.mark-progress { margin: 4px 0 14px; max-width: 640px; }
+.mark-progress-text { margin-top: 6px; font-size: 12px; color: var(--smc-text-secondary); }
 /* 标签页上的数量：中性灰小字，替代原来红/绿/蓝的徽标 */
 .tab-count {
   margin-left: 6px;

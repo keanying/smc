@@ -33,6 +33,20 @@ export interface Keyword {
 }
 
 /** 景区的附关键字 / 过滤关键字。kind: aux=附关键字（命中就留存）exclude=过滤关键字（命中就丢弃） */
+/** 「重新识别历史评论」的进度 */
+export interface MarkWordsJob {
+  scenic_id: string
+  status: 'running' | 'done' | 'failed'
+  total: number
+  scanned: number
+  changed: number
+  hit: number
+  percent: number
+  error: string
+  started_at: string
+  finished_at: string
+}
+
 export interface FilterWord {
   id: number
   scenic_id: string
@@ -339,9 +353,12 @@ export const scenicApi = {
     api.post<{ added: number; skipped: number; dropped: number }>(
       `/api/scenics/${scenicId}/filter-words`, { kind, words }),
   /** 按现在的标注字把这个景区已有的评论重新识别一遍 */
+  /** 开始重新识别（后台跑，马上返回进度）；已经在跑就返回那一个 */
   applyMarkWords: (scenicId: string) =>
-    api.post<{ scanned: number; changed: number; hit: number; words: number }>(
-      `/api/scenics/${scenicId}/mark-words/apply`),
+    api.post<MarkWordsJob>(`/api/scenics/${scenicId}/mark-words/apply`),
+  /** 重新识别的进度；没跑过是 null */
+  markWordsJob: (scenicId: string) =>
+    api.get<MarkWordsJob | null>(`/api/scenics/${scenicId}/mark-words/apply`, undefined, true),
   removeFilterWord: (wordId: number) =>
     api.del<null>(`/api/scenics/filter-words/${wordId}`),
   toggleFilterWord: (wordId: number, enabled: boolean) =>

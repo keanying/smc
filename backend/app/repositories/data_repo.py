@@ -298,8 +298,16 @@ class DataRepository:
             words = await self.mark_words_of(item.scenic_id)
             item.mark_word_tags = mark_words.dumps(mark_words.match(item.content or "", words)) if words else None
 
-    async def apply_mark_words(self, scenic_id: str, chunk: int = 5000) -> Dict[str, int]:
-        """按现在的标注字把这个景区已有的评论全部重新识别一遍，只改有变化的行。"""
+    async def count_comments(self, scenic_id: str) -> int:
+        return int(await self.db.fetch_value(
+            f"SELECT COUNT(*) AS c FROM `{tables.COMMENTS}` WHERE scenic_id = %s", [scenic_id], 0) or 0)
+
+    async def apply_mark_words(self, scenic_id: str, chunk: int = 2000,
+                               progress=None) -> Dict[str, int]:
+        """按现在的标注字把这个景区已有的评论全部重新识别一遍，只改有变化的行。
+
+        progress(scanned, changed, hit)：每处理完一批调一次，页面上的进度条靠它。
+        """
         words = await self.mark_words_of(scenic_id)
         scanned = changed = hit = 0
         last_id = 0
@@ -325,6 +333,8 @@ class DataRepository:
                         f"WHERE id IN ({', '.join(['%s'] * len(part))})", [value, *part])
                 changed += len(ids)
             scanned += len(rows)
+            if progress is not None:
+                progress(scanned, changed, hit)
             last_id = rows[-1]["id"]
             if len(rows) < chunk:
                 break
