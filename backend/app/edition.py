@@ -136,7 +136,7 @@ async def export_bundle(scenics, scenic_ids: Sequence[str], *, box_name: str = "
             "province": row.get("province"), "city": row.get("city"), "remark": row.get("remark"),
             "keywords": [k["keyword"] for k in keywords],
             "filter_words": {kind: [w["word"] for w in words if w["kind"] == kind]
-                             for kind in ("aux", "exclude")},
+                             for kind in scenics.FILTER_KINDS},
             "targets": [{k: t.get(k) for k in ("channel", "target_type", "target_id",
                                                "target_name", "target_url", "extra")}
                         for t in targets],

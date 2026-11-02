@@ -21,6 +21,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from ..core.config import Config
 from ..core.logging import get_logger
+from ..core.mark_words import loads as mark_loads, merge_keywords
 from ..db import tables
 from ..repositories.data_repo import DataRepository
 
@@ -74,6 +75,7 @@ COMMENTS_HEADERS: Dict[str, str] = {
     "dimension_tags": "维度标签数组",
     "entity_tags": "实体标签数组",
     "keyword_tags": "关键词数组",
+    "mark_word_tags": "标注字",
     "publish_time": "发布时间",
     "crawl_time": "采集时间",
     "create_time": "创建时间",
@@ -84,6 +86,19 @@ TABLE_HEADERS = {
     tables.WORKS: WORKS_HEADERS,
     tables.COMMENTS: COMMENTS_HEADERS,
 }
+
+
+def _export_value(table: str, row: Dict[str, Any], column: str) -> Any:
+    """评论的「关键词数组」导出 AI 关键词 + 标注字补充（标注字另有单独一列）。"""
+    if table == tables.COMMENTS and column == "keyword_tags" and row.get("mark_word_tags"):
+        try:
+            ai = json.loads(row.get("keyword_tags") or "[]")
+        except (TypeError, ValueError):
+            ai = []
+        return merge_keywords(ai if isinstance(ai, list) else [], row.get("mark_word_tags"))
+    if column == "mark_word_tags":
+        return mark_loads(row.get(column))
+    return row.get(column)
 
 
 def _format_cell(value: Any) -> str:
@@ -125,7 +140,7 @@ class CsvExporter:
 
         count = 0
         async for row in self.data.iter_export_rows(table, filters, self.chunk_size):
-            writer.writerow([_format_cell(row.get(column)) for column in headers])
+            writer.writerow([_format_cell(_export_value(table, row, column)) for column in headers])
             count += 1
             if count % 500 == 0:
                 yield self._take(buffer)

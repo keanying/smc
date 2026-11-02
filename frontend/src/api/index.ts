@@ -36,7 +36,8 @@ export interface Keyword {
 export interface FilterWord {
   id: number
   scenic_id: string
-  kind: 'aux' | 'exclude'
+  /** aux=附关键字 exclude=过滤关键字 mark=标注字 */
+  kind: 'aux' | 'exclude' | 'mark'
   word: string
   enabled: number
   sort_order: number
@@ -334,9 +335,13 @@ export const scenicApi = {
 
   filterWords: (scenicId: string, params: { kind?: string; enabled_only?: boolean } = {}) =>
     api.get<FilterWord[]>(`/api/scenics/${scenicId}/filter-words`, params),
-  addFilterWords: (scenicId: string, kind: 'aux' | 'exclude', words: string[]) =>
+  addFilterWords: (scenicId: string, kind: 'aux' | 'exclude' | 'mark', words: string[]) =>
     api.post<{ added: number; skipped: number; dropped: number }>(
       `/api/scenics/${scenicId}/filter-words`, { kind, words }),
+  /** 按现在的标注字把这个景区已有的评论重新识别一遍 */
+  applyMarkWords: (scenicId: string) =>
+    api.post<{ scanned: number; changed: number; hit: number; words: number }>(
+      `/api/scenics/${scenicId}/mark-words/apply`),
   removeFilterWord: (wordId: number) =>
     api.del<null>(`/api/scenics/filter-words/${wordId}`),
   toggleFilterWord: (wordId: number, enabled: boolean) =>
@@ -369,6 +374,8 @@ export interface LabelComment {
   dimension_tags: Array<{ dim1: string; dim2: string; dim3: string; sentiment: number }>
   entity_tags: Array<{ type: string; value: string }>
   keyword_tags: string[]
+  /** 命中的标注字（景区配置的词在评论原文里出现），给 AI 关键词做补充 */
+  mark_word_tags?: string[]
   /** 0未标注 1人工复核正确 2人工复核错误 3复核成功 4AI标注成功 5AI标注错误 6未人工复核 */
   label_review_flag: number
   label_review_label: string

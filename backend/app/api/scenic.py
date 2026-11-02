@@ -204,7 +204,9 @@ async def add_filter_words(
             scenic_id, payload.kind, payload.words)
     except ValueError as exc:
         raise bad_request(str(exc))
-    label = "附关键字" if payload.kind == "aux" else "过滤关键字"
+    label = {"aux": "附关键字", "exclude": "过滤关键字", "mark": "标注字"}[payload.kind]
+    if payload.kind == "mark":
+        state.data.invalidate_mark_words()
     message = f"新增 {result['added']} 个{label}，跳过重复 {result['skipped']} 个"
     if result.get("dropped"):
         # 超上限必须说出来。安静截断的现象是"我贴了 250 个，后面那些怎么不生效"
@@ -216,6 +218,7 @@ async def add_filter_words(
 @router.delete("/filter-words/{word_id}")
 async def delete_filter_word(word_id: int, state: AppState = Depends(get_state)):
     await state.scenics.delete_filter_word(word_id)
+    state.data.invalidate_mark_words()
     return ok(message="已删除")
 
 
@@ -224,7 +227,20 @@ async def toggle_filter_word(
     word_id: int, enabled: bool = Query(...), state: AppState = Depends(get_state)
 ):
     await state.scenics.set_filter_word_enabled(word_id, enabled)
+    state.data.invalidate_mark_words()
     return ok(message="已更新")
+
+
+@router.post("/{scenic_id}/mark-words/apply")
+async def apply_mark_words(scenic_id: str, state: AppState = Depends(get_state)):
+    """按现在的标注字把这个景区**已有的**评论重新识别一遍（补了 / 改了 / 删了标注字之后点）。
+    新采的评论入库时自动识别，不用点。"""
+    if not await state.scenics.get_scenic(scenic_id):
+        raise not_found(f"景区不存在：{scenic_id}")
+    state.data.invalidate_mark_words()
+    result = await state.data.apply_mark_words(scenic_id)
+    return ok(result, f"已重新识别 {result['scanned']} 条评论：{result['hit']} 条命中标注字，"
+                      f"{result['changed']} 条有变化")
 
 
 # ---------------- 平台采集目标 ----------------

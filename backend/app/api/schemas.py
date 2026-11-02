@@ -44,15 +44,15 @@ class FilterWordsIn(BaseModel):
 
     kind：aux = 附关键字（命中就留存）；exclude = 过滤关键字（命中就丢弃）。
     """
-    kind: str = Field(..., description="aux（附关键字）或 exclude（过滤关键字）")
+    kind: str = Field(..., description="aux（附关键字）、exclude（过滤关键字）或 mark（标注字）")
     words: List[str] = Field(..., description="词列表，支持逗号/换行粘贴，重复的自动跳过")
 
     @field_validator("kind")
     @classmethod
     def _kind_ok(cls, value: str) -> str:
         value = (value or "").strip().lower()
-        if value not in ("aux", "exclude"):
-            raise ValueError("kind 只能是 aux（附关键字）或 exclude（过滤关键字）")
+        if value not in ("aux", "exclude", "mark"):
+            raise ValueError("kind 只能是 aux（附关键字）、exclude（过滤关键字）或 mark（标注字）")
         return value
 
     @field_validator("words")

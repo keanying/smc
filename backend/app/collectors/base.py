@@ -138,6 +138,8 @@ class CommentItem:
     task_id: str = ""
     #: 景区盒子上报的：哪个盒子（主收到时填，采集器不用管）
     source_box: str = ""
+    #: 命中的标注字（JSON 数组）。入库时按景区的标注字算（data_repo.save_comments），采集器不用管
+    mark_word_tags: Optional[str] = None
 
     def finalize(self) -> "CommentItem":
         self.comment_id = nz.truncate(self.comment_id, 300)
