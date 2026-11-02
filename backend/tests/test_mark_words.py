@@ -80,6 +80,20 @@ def _comment(cid, content):
                        publish_time=datetime(2026, 10, 30), crawl_time=datetime.now()).finalize()
 
 
+def _apply(c):
+    """点「重新识别」，等后台跑完，返回最后的进度。"""
+    import time
+    job = _ok(c.post("/api/scenics/hlx/mark-words/apply"))
+    assert job["status"] in ("running", "done") and job["total"] >= 1
+    for _ in range(200):
+        job = _ok(c.get("/api/scenics/hlx/mark-words/apply"))
+        if job["status"] != "running":
+            break
+        time.sleep(0.05)
+    assert job["status"] == "done" and job["percent"] == 100, job
+    return job
+
+
 def _marks(c):
     items = _ok(c.get("/api/labeling/comments", params={"scenic_id": "hlx", "page_size": 50}))["items"]
     return {x["comment_id"]: x["mark_word_tags"] for x in items}
@@ -107,13 +121,13 @@ def test_mark_words_flow(app_client):
     assert marks["c0"] == []          # 历史的要点「重新识别」才会补
 
     # 重新识别历史评论
-    result = _ok(c.post("/api/scenics/hlx/mark-words/apply"))
-    assert result["scanned"] == 4 and result["hit"] == 3 and result["changed"] == 1
+    result = _apply(c)
+    assert result["scanned"] == result["total"] == 4 and result["hit"] == 3 and result["changed"] == 1
     assert _marks(c)["c0"] == ["肖战", "小城良方"]
 
     # 补一个词再识别：只改受影响的行
     _ok(c.post("/api/scenics/hlx/filter-words", json={"kind": "mark", "words": ["海豹"]}))
-    result = _ok(c.post("/api/scenics/hlx/mark-words/apply"))
+    result = _apply(c)
     assert result["changed"] == 2 and _marks(c)["c1"] == ["海豹", "小城良方"]
 
     # 原来的 AI 关键词不动；导出里合并，另有「标注字」一列
@@ -133,7 +147,7 @@ def test_mark_words_flow(app_client):
     words = _ok(c.get("/api/scenics/hlx/filter-words", params={"kind": "mark"}))
     hb = next(w for w in words if w["word"] == "海豹")
     _ok(c.put(f"/api/scenics/filter-words/{hb['id']}/enabled", params={"enabled": False}))
-    _ok(c.post("/api/scenics/hlx/mark-words/apply"))
+    _apply(c)
     assert _marks(c)["c1"] == ["小城良方"]
 
     # 上限 300

@@ -7,18 +7,22 @@
 """景区、关键字、平台采集目标 API。"""
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
-from typing import List, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 
 from ..core.constants import ALL_CHANNELS, CHANNEL_LABELS
+from ..core.logging import get_logger
 from .common import bad_request, not_found, ok
 from .deps import AppState, get_state
 from .schemas import (FilterWordsIn, KeywordsIn, ScenicBulkIn,
                       ScenicIn, TargetIn)
 
+logger = get_logger(__name__)
 router = APIRouter(prefix="/api/scenics", tags=["景区"])
 
 
@@ -231,16 +235,50 @@ async def toggle_filter_word(
     return ok(message="已更新")
 
 
+#: 每个景区「重新识别」的进度（在跑的和最近一次跑完的）。存在本机内存：
+#: 页面点的和查进度的是同一台机器；服务重启就没了，重新点一次即可（只改有变化的行，重跑无害）
+_mark_jobs: Dict[str, Dict[str, Any]] = {}
+
+
 @router.post("/{scenic_id}/mark-words/apply")
 async def apply_mark_words(scenic_id: str, state: AppState = Depends(get_state)):
     """按现在的标注字把这个景区**已有的**评论重新识别一遍（补了 / 改了 / 删了标注字之后点）。
-    新采的评论入库时自动识别，不用点。"""
+    新采的评论入库时自动识别，不用点。
+
+    放后台跑，马上返回进度；页面每秒查一次 GET 同一个地址。这个景区已经在跑就直接返回那一个。
+    """
     if not await state.scenics.get_scenic(scenic_id):
         raise not_found(f"景区不存在：{scenic_id}")
+    job = _mark_jobs.get(scenic_id)
+    if job and job["status"] == "running":
+        return ok(job, "这个景区正在重新识别")
     state.data.invalidate_mark_words()
-    result = await state.data.apply_mark_words(scenic_id)
-    return ok(result, f"已重新识别 {result['scanned']} 条评论：{result['hit']} 条命中标注字，"
-                      f"{result['changed']} 条有变化")
+    job = {"scenic_id": scenic_id, "status": "running", "total": await state.data.count_comments(scenic_id),
+           "scanned": 0, "changed": 0, "hit": 0, "percent": 0, "error": "",
+           "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "finished_at": ""}
+    _mark_jobs[scenic_id] = job
+
+    def progress(scanned: int, changed: int, hit: int) -> None:
+        job.update(scanned=scanned, changed=changed, hit=hit,
+                   percent=min(99, int(scanned * 100 / job["total"])) if job["total"] else 99)
+
+    async def run() -> None:
+        try:
+            result = await state.data.apply_mark_words(scenic_id, progress=progress)
+            job.update(result, status="done", percent=100)
+        except Exception as exc:  # noqa: BLE001 —— 失败也要让页面知道，不能一直转
+            logger.exception("重新识别标注字失败：%s", scenic_id)
+            job.update(status="failed", error=str(exc))
+        job["finished_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    asyncio.create_task(run())
+    return ok(job, "开始重新识别")
+
+
+@router.get("/{scenic_id}/mark-words/apply")
+async def mark_words_progress(scenic_id: str):
+    """这个景区「重新识别」的进度；没跑过返回 null。"""
+    return ok(_mark_jobs.get(scenic_id))
 
 
 # ---------------- 平台采集目标 ----------------
