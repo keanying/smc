@@ -353,6 +353,12 @@ export const scenicApi = {
     api.post<{ added: number; skipped: number; dropped: number }>(
       `/api/scenics/${scenicId}/filter-words`, { kind, words }),
   /** 按现在的标注字把这个景区已有的评论重新识别一遍 */
+  /** 标注灌注：这个景区的补充标注提示词 + 关键词放宽 */
+  labelPrompt: (scenicId: string) =>
+    api.get<{ prompt: string; broad_keywords: boolean; max_length: number }>(
+      `/api/scenics/${scenicId}/label-prompt`),
+  saveLabelPrompt: (scenicId: string, payload: { prompt: string; broad_keywords: boolean }) =>
+    api.put<{ prompt: string; broad_keywords: boolean }>(`/api/scenics/${scenicId}/label-prompt`, payload),
   /** 开始重新识别（后台跑，马上返回进度）；已经在跑就返回那一个 */
   applyMarkWords: (scenicId: string) =>
     api.post<MarkWordsJob>(`/api/scenics/${scenicId}/mark-words/apply`),

@@ -159,6 +159,38 @@
       <el-empty v-else description="还没有标注字" :image-size="64" />
     </el-tab-pane>
 
+    <!-- 标注灌注：这个景区的补充标注提示词，标注时拼进正式提示词 -->
+    <el-tab-pane name="label">
+      <template #label>标注灌注<span v-if="labelRule.prompt.trim()" class="tab-count">已配</span></template>
+
+      <div class="label-head">
+        <span class="muted label-desc">本景区的补充标注要求，标注时拼进 AI 提示词</span>
+        <InfoTip :width="400">
+          和通用规则一起提取维度、实体、关键词；冲突时以这里为准，维度、实体仍只能从标签体系里选。<br />
+          写法：直接写给 AI 看的要求，如关键词定义、提取粒度、步骤，或本景区的特殊说法
+          （「梦梦是一只斑海豹」「提到《小城良方》算与本景区相关」）。<br />
+          边采边标、一键补标、单条重标都会带上；<b>已经标过的评论不会自动重标</b>。
+        </InfoTip>
+      </div>
+      <el-input
+        v-model="labelRule.prompt" type="textarea" :autosize="{ minRows: 10, maxRows: 24 }"
+        :maxlength="labelMax" show-word-limit
+        placeholder="例：&#10;一、关键词定义&#10;关键词是能承载评论主题、对象、事件、动作、关系、属性、评价、场景、时空、专有名称的词或短语……&#10;二、提取粒度&#10;1. 专有名称保留完整全称，如「《哪吒之魔童闹海》」「敖丙」……"
+      />
+      <div class="label-foot">
+        <el-switch v-model="labelRule.broad_keywords" />
+        <span class="label-switch-text">关键词放宽</span>
+        <InfoTip :width="380">
+          打开后这个景区的关键词：<b>不要求和整体情感同向</b>（中性评论里的「好看但贵」也留）、
+          专有名称可以带书名号保留全称、每个最长 30 字、每条最多 20 个。仍然必须是原文里出现的，编造的照样丢。<br />
+          不打开：关键词还按原来的规则（只留和整体情感同向的、最多 8 个、每个最长 12 字）。<br />
+          像上面例子那样重新定义了关键词的，要打开。
+        </InfoTip>
+        <el-button v-if="!labelRule.prompt.trim()" link type="primary" @click="fillLabelSample">填入参考模板</el-button>
+        <el-button type="primary" :loading="savingLabel" style="margin-left: auto" @click="saveLabelRule">保存</el-button>
+      </div>
+    </el-tab-pane>
+
     <!-- 采集目标 -->
     <el-tab-pane name="targets">
       <template #label>采集目标<span class="tab-count">{{ targets.length }}</span></template>
@@ -342,6 +374,53 @@ const MAX_EXCLUDE = 200
 const MAX_MARK = 300
 const markInput = ref('')
 const savingMark = ref(false)
+// ---------------- 标注灌注 ----------------
+const labelRule = reactive({ prompt: '', broad_keywords: false })
+const labelMax = ref(5000)
+const savingLabel = ref(false)
+/** 参考模板：IP / 影视取景地这类景区常用的关键词提取要求 */
+const LABEL_SAMPLE = `一、关键词定义
+关键词是能承载评论主题、对象、事件、动作、关系、属性、评价、场景、时空、专有名称的词或短语。包括但不限于：
+1. 实体词：人物、地名、机构、品牌、产品、IP形象名称、影视剧/综艺/游戏/小说名称、角色名、账号名等；
+2. 事件关系词：主语、谓语、宾语所构成的动作/关系/事件，如"排队太久""工作人员态度一般""妆造精致"；
+3. 属性修饰词：定语、状语、补语中有信息价值的词，如"精致""太久""一般""周末""在福州"；
+4. 评价词与情感对象：如"好看但贵""服务差""剧情拖沓"；
+5. 场景/时间/地点/条件/原因/对比/程度词：如"周末""三坊七巷""因为下雨""比上次好"；
+6. 主题词：评论核心讨论的话题，如"cos妆造""景区排队""演员演技"。
+
+二、提取粒度
+1. 专有名称保留完整全称，如"《哪吒之魔童闹海》""敖丙""福州三坊七巷"；
+2. 普通关键词用原子化短语，避免整句照抄；但事件型关键词可用"主谓/动宾/主谓宾"短语，如"排队太久""工作人员态度一般"；
+3. 同一信息不要重复输出；同义合并，保留原文最准确说法；
+4. 不要输出纯停用词、语气词、无信息虚词，如"的、了、很、啊、就是"；
+5. 不要只抽名词：动词、形容词、副词、时间地点、程度、转折对比也要抽。
+
+三、提取步骤
+第一步：把评论按分句或信息单元切分；
+第二步：逐单元提取关键词，覆盖实体、动作关系、属性修饰、评价、时空场景、专有名称；
+第三步：汇总去重，合并同义项；
+第四步：做覆盖检查：每个分句是否至少有关键词？人物/地点/IP/作品/角色/动作/评价是否遗漏？`
+
+async function loadLabelRule() {
+  const r = await scenicApi.labelPrompt(props.scenicId).catch(() => null)
+  labelRule.prompt = r?.prompt || ''
+  labelRule.broad_keywords = !!r?.broad_keywords
+  labelMax.value = r?.max_length || 5000
+}
+
+function fillLabelSample() {
+  labelRule.prompt = LABEL_SAMPLE
+  labelRule.broad_keywords = true
+}
+
+async function saveLabelRule() {
+  savingLabel.value = true
+  try {
+    await scenicApi.saveLabelPrompt(props.scenicId, { prompt: labelRule.prompt, broad_keywords: labelRule.broad_keywords })
+    ElMessage.success('已保存，之后标注的评论都会带上')
+  } finally { savingLabel.value = false }
+}
+
 const markJob = ref<MarkWordsJob | null>(null)
 const markRunning = computed(() => markJob.value?.status === 'running')
 let markTimer: number | undefined
@@ -645,13 +724,17 @@ async function removeTarget(id: number) {
 // ⚠️ 只留 watch + immediate，不要再加 onMounted(loadAll)：
 // 两个都写的话，组件挂载时 scenicId 恰好也被赋值，keywords/targets
 // 会各被拉两遍（一共 4 个请求），而且两次响应先后到达还可能互相覆盖。
-watch(() => props.scenicId, () => { loadAll(); loadMarkJob() }, { immediate: true })
+watch(() => props.scenicId, () => { loadAll(); loadMarkJob(); loadLabelRule() }, { immediate: true })
 onUnmounted(() => window.clearInterval(markTimer))
 </script>
 
 <style scoped>
 .keyword-list { padding: 4px 0; }
 .mark-progress { margin: 4px 0 14px; max-width: 640px; }
+.label-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.label-desc { font-size: 13px; }
+.label-foot { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.label-switch-text { font-size: 13px; }
 .mark-progress-text { margin-top: 6px; font-size: 12px; color: var(--smc-text-secondary); }
 /* 标签页上的数量：中性灰小字，替代原来红/绿/蓝的徽标 */
 .tab-count {
