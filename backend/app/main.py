@@ -207,6 +207,13 @@ async def lifespan(app: FastAPI):
         logger.info("边采边标：已开启，正在检查并续标队列里剩下的评论")
         asyncio.create_task(_get_labeling_manager(config)._resume_quietly("服务启动"))
 
+    # 标注灌注：每个景区的补充标注提示词推给标注引擎（景区盒子不标注，不用推）
+    from .labeling.scenic_rules_sync import ScenicRulesSync
+    label_rules = None
+    if box_sync is None:
+        label_rules = ScenicRulesSync(scenic_repo)
+        await label_rules.start()
+
     # 指标计算：自己的定时循环和运行记录，跟采集互不相干。没开的时候循环空转，不做任何事
     from .metrics import get_manager as _get_metrics_manager
 
@@ -228,6 +235,8 @@ async def lifespan(app: FastAPI):
         set_auth(None)
         if box_sync is not None:
             await box_sync.stop()
+        if label_rules is not None:
+            await label_rules.stop()
         set_box(None, None)
         set_box_repo(None)
         await metrics_manager.stop()

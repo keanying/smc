@@ -134,6 +134,33 @@ class ScenicRepository:
         created = sum(1 for i in ids if i not in existing)
         return {"created": created, "updated": len(ids) - created}
 
+    # ---------------- 标注灌注 ----------------
+    #: 灌注内容最多多少字。太长会挤占模型的上下文、拖慢每一条的标注
+    MAX_LABEL_PROMPT = 5000
+
+    async def get_label_rule(self, scenic_id: str) -> Dict[str, Any]:
+        row = await self.db.fetch_one(
+            "SELECT label_prompt, label_keyword_broad FROM `src_opinion_social_scenic` WHERE scenic_id = %s",
+            [scenic_id])
+        return {"prompt": (row or {}).get("label_prompt") or "",
+                "broad_keywords": bool((row or {}).get("label_keyword_broad"))}
+
+    async def set_label_rule(self, scenic_id: str, prompt: str, broad_keywords: bool) -> None:
+        prompt = (prompt or "").strip()
+        if len(prompt) > self.MAX_LABEL_PROMPT:
+            raise ValueError(f"标注灌注最多 {self.MAX_LABEL_PROMPT} 个字，现在 {len(prompt)} 个")
+        await self.db.execute(
+            "UPDATE `src_opinion_social_scenic` SET label_prompt = %s, label_keyword_broad = %s "
+            "WHERE scenic_id = %s", [prompt or None, 1 if broad_keywords else 0, scenic_id])
+
+    async def all_label_rules(self) -> Dict[str, Dict[str, Any]]:
+        """配了标注灌注的景区（标注引擎按景区取）。"""
+        rows = await self.db.fetch_all(
+            "SELECT scenic_id, label_prompt, label_keyword_broad FROM `src_opinion_social_scenic` "
+            "WHERE (label_prompt IS NOT NULL AND label_prompt <> '') OR label_keyword_broad = 1")
+        return {r["scenic_id"]: {"prompt": r.get("label_prompt") or "",
+                                 "broad_keywords": bool(r.get("label_keyword_broad"))} for r in rows}
+
     async def delete_scenic(self, scenic_id: str) -> None:
         """删除景区连同其关键字和目标；已采集的数据保留，避免误删业务数据。"""
         async with self.db.transaction() as cur:

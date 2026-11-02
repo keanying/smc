@@ -13,7 +13,7 @@ import io
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Query, UploadFile
 
 from ..core.constants import ALL_CHANNELS, CHANNEL_LABELS
 from ..core.logging import get_logger
@@ -233,6 +233,36 @@ async def toggle_filter_word(
     await state.scenics.set_filter_word_enabled(word_id, enabled)
     state.data.invalidate_mark_words()
     return ok(message="已更新")
+
+
+# ---------------- 标注灌注 ----------------
+
+@router.get("/{scenic_id}/label-prompt")
+async def get_label_prompt(scenic_id: str, state: AppState = Depends(get_state)):
+    """这个景区的标注灌注：补充提示词 + 关键词放宽开关。"""
+    if not await state.scenics.get_scenic(scenic_id):
+        raise not_found(f"景区不存在：{scenic_id}")
+    return ok({**await state.scenics.get_label_rule(scenic_id),
+               "max_length": state.scenics.MAX_LABEL_PROMPT})
+
+
+@router.put("/{scenic_id}/label-prompt")
+async def save_label_prompt(scenic_id: str, payload: Dict[str, Any] = Body(...),
+                            state: AppState = Depends(get_state)):
+    """保存后马上推给标注引擎：之后标的评论（边采边标、补标、重标）都带上它。"""
+    if not await state.scenics.get_scenic(scenic_id):
+        raise not_found(f"景区不存在：{scenic_id}")
+    try:
+        await state.scenics.set_label_rule(scenic_id, str(payload.get("prompt") or ""),
+                                           bool(payload.get("broad_keywords")))
+    except ValueError as exc:
+        raise bad_request(str(exc))
+    from ..labeling.scenic_rules_sync import refresh
+    try:
+        await refresh(state.scenics)
+    except Exception as exc:  # noqa: BLE001 —— 存上了；引擎这边一分钟内会自己再读
+        logger.warning("标注灌注：推给标注引擎失败（一分钟内自动重试）：%s", exc)
+    return ok(await state.scenics.get_label_rule(scenic_id), "已保存，之后标注的评论都会带上")
 
 
 #: 每个景区「重新识别」的进度（在跑的和最近一次跑完的）。存在本机内存：

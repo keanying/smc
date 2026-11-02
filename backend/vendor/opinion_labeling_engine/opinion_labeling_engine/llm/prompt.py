@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 
 from ..domain.models import CommentRecord
 from ..domain.taxonomy import Taxonomy
+from ..labeling.scenic_rules import BROAD_KEYWORD_MAX_COUNT, BROAD_KEYWORD_MAX_LENGTH, rule_for
 from ..preprocess.cleaner import CleanResult
 
 __all__ = ["PromptBuilder", "OUTPUT_SCHEMA_HINT"]
@@ -246,6 +247,23 @@ class PromptBuilder:
                 lines.append("补充信息：" + "，".join(parts))
                 lines.append("（补充信息中的评分仅作参考，最终情感以评论正文为准；"
                              "正文与评分矛盾时以正文为准）")
+
+        # 这个景区自己的标注要求（景区管理里配的补充提示词）
+        rule = rule_for(record.scenic_id)
+        if rule is not None and (rule.prompt.strip() or rule.broad_keywords):
+            lines.append("")
+            lines.append("================ 本景区的补充标注要求 ================")
+            if rule.prompt.strip():
+                lines.append(rule.prompt.strip())
+            if rule.broad_keywords:
+                lines.append(
+                    f"（本景区的关键词放宽：keywords 按上面的要求提取，不要求和整体情感同向，"
+                    f"每个关键词的 polarity 写它自己的情感；专有名称可以带书名号保留全称；"
+                    f"每个关键词不超过 {BROAD_KEYWORD_MAX_LENGTH} 个字，最多 {BROAD_KEYWORD_MAX_COUNT} 个。）")
+            lines.append("以上补充要求与系统提示里的通用规则冲突时，以补充要求为准；"
+                         "但输出仍然只用系统提示里的 JSON 结构，dimensions、entities 仍然只能从标签体系清单里选。")
+            lines.append("================================================")
+            lines.append("")
 
         lines.append(f"评论正文：{cleaned.text}")
         lines.append("")

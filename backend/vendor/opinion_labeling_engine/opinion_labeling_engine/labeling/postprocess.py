@@ -28,6 +28,7 @@ from ..domain.enums import LabelSource, Sentiment
 from ..domain.models import CommentRecord, DimensionTag, EntityTag, LabelResult
 from ..domain.taxonomy import Taxonomy
 from ..llm.parser import RawLabel
+from .scenic_rules import BROAD_KEYWORD_MAX_COUNT, BROAD_KEYWORD_MAX_LENGTH, rule_for
 from ..logging_conf import get_logger
 
 __all__ = ["LabelPostProcessor", "KeywordMatch"]
@@ -41,6 +42,9 @@ _FORBIDDEN_IN_KEYWORD = re.compile(
 )
 # 只由标点/空白构成
 _NON_INFORMATIVE = re.compile(r"^[\W_]+$", re.UNICODE)
+#: 关键词放宽的景区：专有名称可以带书名号、引号、间隔号（「《哪吒之魔童闹海》」「海蓝星·梦幻城」）
+_FORBIDDEN_IN_BROAD_KEYWORD = re.compile(r"[。，、；：！？…—～,.;:!?\n\r\t\[\]【】｛｝{}<>|]")
+_QUOTE_MARKS = re.compile(r"[《》“”\"'‘’·（）()]")
 
 
 class KeywordMatch:
@@ -102,7 +106,9 @@ class LabelPostProcessor:
             sentiment = self._majority_sentiment(dimensions, fallback=sentiment)
 
         # 4) 关键词：先按整体情感方向过滤，再做幻觉校验
-        keywords = self._filter_keywords(raw.keywords, sentiment, source_text, dropped)
+        rule = rule_for(record.scenic_id)
+        keywords = self._filter_keywords(raw.keywords, sentiment, source_text, dropped,
+                                         broad=bool(rule and rule.broad_keywords))
 
         result = LabelResult(
             comment_id=record.comment_id,
@@ -215,6 +221,7 @@ class LabelPostProcessor:
         overall: Sentiment,
         source_text: str,
         dropped: Dict[str, List[str]],
+        broad: bool = False,
     ) -> List[str]:
         """按整体情感方向筛关键词，并逐个做幻觉校验。
 
@@ -231,14 +238,15 @@ class LabelPostProcessor:
 
             # 要求 1：方向必须与整体情感一致。
             # polarity 缺失时按"模型已按提示词只输出同向词"处理，不因缺字段误杀。
+            # 关键词放宽的景区（景区管理里配的）：各个关键词带自己的情感，不按整体方向筛
             polarity_raw = item.get("polarity", item.get("sentiment"))
-            if polarity_raw is not None:
+            if polarity_raw is not None and not broad:
                 polarity = self._tax.normalize_sentiment(polarity_raw)
                 if polarity is not None and polarity is not overall:
                     dropped.setdefault("keyword_polarity", []).append(f"{word}({polarity.value})")
                     continue
 
-            reason = self._keyword_reject_reason(word, source_text)
+            reason = self._keyword_reject_reason(word, source_text, broad=broad)
             if reason:
                 dropped.setdefault(f"keyword_{reason}", []).append(word)
                 continue
@@ -250,18 +258,22 @@ class LabelPostProcessor:
             kept.append(normalized)
 
         kept = self._drop_contained(kept)
-        return kept[: self._cfg.keyword_max_count]
+        limit = max(self._cfg.keyword_max_count, BROAD_KEYWORD_MAX_COUNT) if broad else self._cfg.keyword_max_count
+        return kept[:limit]
 
-    def _keyword_reject_reason(self, word: str, source_text: str) -> str:
-        """返回拒绝原因码；通过校验返回空串。"""
+    def _keyword_reject_reason(self, word: str, source_text: str, broad: bool = False) -> str:
+        """返回拒绝原因码；通过校验返回空串。broad=关键词放宽的景区。"""
         cfg = self._cfg
+        max_length = max(cfg.keyword_max_length, BROAD_KEYWORD_MAX_LENGTH) if broad else cfg.keyword_max_length
+        # 书名号、引号不算长度，也不参与原文溯源（原文里可能没打书名号）
+        core = _QUOTE_MARKS.sub("", word) if broad else word
 
         # 要求 4：禁止单字，禁止整句
-        if len(word) < cfg.keyword_min_length:
+        if len(core) < cfg.keyword_min_length:
             return "too_short"
-        if len(word) > cfg.keyword_max_length:
+        if len(core) > max_length:
             return "too_long"
-        if _FORBIDDEN_IN_KEYWORD.search(word):
+        if (_FORBIDDEN_IN_BROAD_KEYWORD if broad else _FORBIDDEN_IN_KEYWORD).search(word):
             return "punctuation"
         if _NON_INFORMATIVE.match(word):
             return "non_informative"
@@ -270,7 +282,7 @@ class LabelPostProcessor:
 
         # 要求 4：幻觉校验——关键词必须能在原文中找到依据
         if cfg.keyword_must_appear_in_content:
-            level = self._match_level(word, source_text)
+            level = self._match_level(core, source_text)
             if level == KeywordMatch.MISS:
                 return "hallucination"
             if level != KeywordMatch.EXACT and not cfg.keyword_allow_subsequence_match:
