@@ -105,6 +105,39 @@
       <el-empty v-else description="还没有过滤关键字" :image-size="64" />
     </el-tab-pane>
 
+    <!-- 标注字 -->
+    <el-tab-pane name="mark">
+      <template #label>标注字<span class="tab-count">{{ markWords.length }}</span></template>
+
+      <div class="toolbar">
+        <el-input
+          v-model="markInput" placeholder="输入标注字，如 海蓝星、肖战、小城良方；回车添加，支持逗号/换行批量粘贴"
+          style="width: 420px" clearable @keyup.enter="addMark"
+        />
+        <el-button type="primary" :loading="savingMark" @click="addMark">添加</el-button>
+        <span class="word-quota">{{ markWords.length }} / {{ MAX_MARK }}</span>
+        <InfoTip :width="380">
+          <b>评论原文里出现就提取</b>，作为 AI 标注关键词的补充（AI 的关键词照常提取，不受影响）。<br />
+          用来抓景区名、明星、剧名这类主体词——AI 的关键词只放「支撑情感判断的词」，这类词它不会提。<br />
+          新采的评论入库时自动识别；补充或修改了标注字后，点「重新识别历史评论」把已有的评论按新词表重算。
+        </InfoTip>
+        <el-button :loading="applyingMark" style="margin-left: auto" @click="applyMark">重新识别历史评论</el-button>
+      </div>
+
+      <div v-if="markWords.length" class="keyword-list">
+        <el-tag
+          v-for="item in markWords" :key="item.id"
+          :type="item.enabled ? 'warning' : 'info'"
+          closable size="large" style="margin: 0 8px 8px 0; cursor: pointer"
+          @close="removeWord(item.id)" @click="toggleWord(item)"
+        >
+          {{ item.word }}
+          <span v-if="!item.enabled" class="muted">（已停用）</span>
+        </el-tag>
+      </div>
+      <el-empty v-else description="还没有标注字" :image-size="64" />
+    </el-tab-pane>
+
     <!-- 采集目标 -->
     <el-tab-pane name="targets">
       <template #label>采集目标<span class="tab-count">{{ targets.length }}</span></template>
@@ -284,6 +317,11 @@ const savingTarget = ref(false)
  */
 const MAX_AUX = 700
 const MAX_EXCLUDE = 200
+/** 标注字上限，和后端 core/mark_words.MAX_MARK_WORDS 对齐 */
+const MAX_MARK = 300
+const markInput = ref('')
+const savingMark = ref(false)
+const applyingMark = ref(false)
 const filterWords = ref<FilterWord[]>([])
 const auxInput = ref('')
 const excludeInput = ref('')
@@ -291,16 +329,19 @@ const savingAux = ref(false)
 const savingExclude = ref(false)
 const auxWords = computed(() => filterWords.value.filter((w) => w.kind === 'aux'))
 const excludeWords = computed(() => filterWords.value.filter((w) => w.kind === 'exclude'))
+const markWords = computed(() => filterWords.value.filter((w) => w.kind === 'mark'))
+const KIND_LABEL = { aux: '附关键字', exclude: '过滤关键字', mark: '标注字' } as const
+const KIND_MAX = { aux: MAX_AUX, exclude: MAX_EXCLUDE, mark: MAX_MARK } as const
 
 /** 一次粘贴多个：逗号、顿号、分号、换行都当分隔符。 */
 function splitWords(raw: string): string[] {
   return raw.split(/[,，、;；\n\r]+/).map((x) => x.trim()).filter(Boolean)
 }
 
-async function addWords(kind: 'aux' | 'exclude', raw: string) {
+async function addWords(kind: 'aux' | 'exclude' | 'mark', raw: string) {
   const parts = splitWords(raw)
   if (!parts.length) {
-    ElMessage.warning(kind === 'aux' ? '先输入附关键字' : '先输入过滤关键字')
+    ElMessage.warning(`先输入${KIND_LABEL[kind]}`)
     return false
   }
   const r = await scenicApi.addFilterWords(props.scenicId, kind, parts)
@@ -308,7 +349,7 @@ async function addWords(kind: 'aux' | 'exclude', raw: string) {
   ElMessage.success(
     `新增 ${r.added} 个，跳过重复 ${r.skipped} 个`
     + (r.dropped
-      ? `；超出 ${kind === 'aux' ? MAX_AUX : MAX_EXCLUDE} 个上限，丢弃 ${r.dropped} 个`
+      ? `；超出 ${KIND_MAX[kind]} 个上限，丢弃 ${r.dropped} 个`
       : ''),
   )
   await loadAll()
@@ -327,6 +368,25 @@ async function addExclude() {
   try {
     if (await addWords('exclude', excludeInput.value)) excludeInput.value = ''
   } finally { savingExclude.value = false }
+}
+
+async function addMark() {
+  savingMark.value = true
+  try {
+    if (await addWords('mark', markInput.value)) {
+      markInput.value = ''
+      ElMessage.info('新采的评论会自动识别；已有的评论点「重新识别历史评论」')
+    }
+  } finally { savingMark.value = false }
+}
+
+/** 已有的评论按现在的标注字重算一遍（标注字补了、改了、删了都要点） */
+async function applyMark() {
+  applyingMark.value = true
+  try {
+    const r = await scenicApi.applyMarkWords(props.scenicId)
+    ElMessage.success(`已重新识别 ${r.scanned} 条评论：${r.hit} 条命中标注字，${r.changed} 条有变化`)
+  } finally { applyingMark.value = false }
 }
 
 async function removeWord(id: number) {

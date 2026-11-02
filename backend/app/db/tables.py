@@ -170,6 +170,9 @@ EXTRA_COLUMNS = [
     # 景区盒子上报的数据记下是哪个盒子来的（只用于追查，页面上不显示）。主自己采的为空
     (WORKS, "source_box",
      "VARCHAR(64) NOT NULL DEFAULT '' COMMENT '上报这条数据的景区盒子编号；主自己采的为空'"),
+    # 标注字命中（JSON 数组）。和 AI 的 keyword_tags 分开存：AI 标注会整列覆盖 keyword_tags
+    (COMMENTS, "mark_word_tags",
+     "TEXT NULL COMMENT '命中的标注字（JSON 数组），给 AI 关键词做补充；页面和导出里合并显示'"),
     (COMMENTS, "source_box",
      "VARCHAR(64) NOT NULL DEFAULT '' COMMENT '上报这条数据的景区盒子编号；主自己采的为空'"),
 ]

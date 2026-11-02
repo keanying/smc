@@ -30,6 +30,7 @@ REVIEW_COLUMNS = (
     "commenter_name", "content", "likes", "publish_time", "comment_level",
     "sentiment_label", "sentiment_score", "dimension_tags", "entity_tags",
     "keyword_tags", "label_review_flag", "label_review_by", "label_review_time",
+    "mark_word_tags",
 )
 
 # ---------------------------------------------------------------------------
@@ -250,6 +251,8 @@ class LabelingRepository:
         item["dimension_tags"] = _loads(row.get("dimension_tags"), [])
         item["entity_tags"] = _loads(row.get("entity_tags"), [])
         item["keyword_tags"] = _loads(row.get("keyword_tags"), [])
+        # 标注字（评论原文里出现的景区配置词），和 AI 关键词分开给，页面合并显示
+        item["mark_word_tags"] = _loads(row.get("mark_word_tags"), [])
         item["labeled"] = bool(row.get("sentiment_label"))
         flag = int(row.get("label_review_flag") or 0)
         item["label_review_label"] = FLAG_LABELS.get(flag, f"未知({flag})")

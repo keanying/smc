@@ -239,7 +239,10 @@
         <el-table-column label="关键词" min-width="160">
           <template #default="{ row }">
             <el-tag v-for="(k, i) in row.keyword_tags" :key="i" size="small" class="tag">{{ k }}</el-tag>
-            <span v-if="!row.keyword_tags.length" class="muted">—</span>
+            <!-- 标注字补充：AI 已经提到的不重复显示 -->
+            <el-tag v-for="k in extraMarks(row)" :key="`m-${k}`" size="small" type="warning"
+                    class="tag" title="标注字（景区配置的词，原文里出现）">{{ k }}</el-tag>
+            <span v-if="!row.keyword_tags.length && !extraMarks(row).length" class="muted">—</span>
           </template>
         </el-table-column>
 
@@ -309,6 +312,10 @@
             >
               <el-option v-for="k in form.keyword_tags" :key="k" :label="k" :value="k" />
             </el-select>
+          </el-form-item>
+          <el-form-item v-if="editing?.mark_word_tags?.length" label="标注字">
+            <el-tag v-for="k in editing.mark_word_tags" :key="k" size="small" type="warning" class="tag">{{ k }}</el-tag>
+            <span class="muted mark-note">按景区的标注字从原文里自动提取，改词表后在景区管理里重新识别</span>
           </el-form-item>
           <el-form-item label="维度标签">
             <el-input v-model="dimensionText" type="textarea" :rows="4"
@@ -585,6 +592,12 @@ async function relabelOne(row: LabelComment) {
 const editVisible = ref(false)
 const saving = ref(false)
 const editing = ref<LabelComment | null>(null)
+/** 标注字里 AI 关键词还没有的那些（列表里接在 AI 关键词后面显示） */
+function extraMarks(row: LabelComment): string[] {
+  const ai = new Set(row.keyword_tags || [])
+  return (row.mark_word_tags || []).filter((k) => !ai.has(k))
+}
+
 const form = reactive<{ sentiment_label: string; keyword_tags: string[] }>({
   sentiment_label: '中性', keyword_tags: [],
 })
@@ -670,6 +683,7 @@ onUnmounted(() => window.clearInterval(timer))
 .labeling-view { display: flex; flex-direction: column; gap: 16px; }
 .labeling-view > .page-header { margin-bottom: 4px; }
 .engine-tag { margin-left: 10px; font-weight: 500; }
+.mark-note { font-size: 12px; margin-left: 4px; }
 .header-actions { display: flex; gap: 8px; }
 .header-actions .el-button + .el-button { margin-left: 0; }
 .btn-icon { margin-right: 6px; }

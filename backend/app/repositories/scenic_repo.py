@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from ..core import content_filter
 from ..core.db import Database
+from ..core.mark_words import MAX_MARK_WORDS
 from ..db import tables
 
 
@@ -196,14 +197,16 @@ class ScenicRepository:
 
     # ---------------- 平台目标（POI / 主页） ----------------
     # ---------------- 附关键字 / 过滤关键字 ----------------
-    #: 两类词的合法取值。aux=附关键字（命中就留存），exclude=过滤关键字（命中就丢弃）
-    FILTER_KINDS = ("aux", "exclude")
+    #: 词表的合法取值。aux=附关键字（命中就留存），exclude=过滤关键字（命中就丢弃），
+    #: mark=标注字（评论原文里出现就提取出来，给 AI 关键词做补充，见 core/mark_words.py）
+    FILTER_KINDS = ("aux", "exclude", "mark")
     #: 每类各自的上限，和 core/content_filter.py 里的两个常量**逐一**对齐——
     #: 这边放进去、那边截断的话，用户会看到"配了 700 个，只有 200 个生效"，
     #: 而页面上又明明显示 700 个都在，极难对上。
     MAX_FILTER_WORDS: Dict[str, int] = {
         "aux": content_filter.MAX_AUX_KEYWORDS,        # 附关键字 700
         "exclude": content_filter.MAX_EXCLUDE_KEYWORDS,  # 过滤关键字 200
+        "mark": MAX_MARK_WORDS,                          # 标注字 300
     }
 
     @classmethod
@@ -215,7 +218,7 @@ class ScenicRepository:
         kind = (kind or "").strip().lower()
         if kind not in ScenicRepository.FILTER_KINDS:
             raise ValueError(
-                f"词表类型只能是 aux（附关键字）或 exclude（过滤关键字），收到 {kind!r}")
+                f"词表类型只能是 aux（附关键字）、exclude（过滤关键字）或 mark（标注字），收到 {kind!r}")
         return kind
 
     async def list_filter_words(

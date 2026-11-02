@@ -22,6 +22,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from ..collectors.base import AuthorItem, CommentItem, WorkItem, merge_words
 from ..core.db import Database
+from ..core import mark_words
 from ..core.scope import in_scope, scope_sql
 from ..core.constants import ALL_CHANNELS
 from ..core.logging import get_logger
@@ -54,12 +55,13 @@ COMMENT_COLUMNS = [
     "comment_parent_id", "comment_id", "commenter_id", "image_list", "video_list",
     "location", "content", "likes", "extra_content", "publish_time", "crawl_time",
     "commenter_name", "root_comment_id", "sub_comment_count", "task_id", "source_box",
+    "mark_word_tags",
 ]
 COMMENT_UPDATE_COLUMNS = [
     "scenic_name", "comment_level", "comment_parent_id", "commenter_id",
     "image_list", "video_list", "location", "content", "likes", "extra_content",
     "publish_time", "crawl_time", "commenter_name", "root_comment_id",
-    "sub_comment_count",
+    "sub_comment_count", "mark_word_tags",
 ]
 
 AUTHOR_COLUMNS = [
@@ -129,6 +131,8 @@ class DataRepository:
         self.db = db
         #: (取数时刻, 结果)，见 scenic_overview
         self._overview_cache: Optional[Tuple[float, List[Dict[str, Any]]]] = None
+        #: 景区 → (取数时刻, 标注字)
+        self._mark_cache: Dict[str, Tuple[float, List[str]]] = {}
 
     # ---------------- 写入 ----------------
     async def save_works(self, items: Sequence[WorkItem]) -> Tuple[int, int]:
@@ -246,6 +250,7 @@ class DataRepository:
         """
         if not items:
             return 0, 0
+        await self._fill_mark_words(items)
         sql = _upsert_sql(tables.COMMENTS, COMMENT_COLUMNS, COMMENT_UPDATE_COLUMNS)
         total_new = total_updated = 0
 
@@ -267,6 +272,63 @@ class DataRepository:
             total_new += sum(1 for key in keys if key not in existing)
 
         return total_new, total_updated
+
+    # ---------------- 标注字 ----------------
+    #: 景区的标注字缓存多久（秒）。页面上改了标注字会主动清掉，这里只是兜底
+    MARK_WORDS_TTL_SECONDS = 60
+
+    def invalidate_mark_words(self) -> None:
+        self._mark_cache.clear()
+
+    async def mark_words_of(self, scenic_id: str) -> List[str]:
+        hit = self._mark_cache.get(scenic_id)
+        if hit and time.time() - hit[0] < self.MARK_WORDS_TTL_SECONDS:
+            return hit[1]
+        rows = await self.db.fetch_all(
+            f"SELECT word FROM `{tables.SCENIC_FILTER_WORD}` "
+            f"WHERE scenic_id = %s AND kind = 'mark' AND enabled = 1 ORDER BY sort_order, id",
+            [scenic_id])
+        words = [r["word"] for r in rows]
+        self._mark_cache[scenic_id] = (time.time(), words)
+        return words
+
+    async def _fill_mark_words(self, items: Sequence[CommentItem]) -> None:
+        """入库前按景区的标注字算好命中（评论原文里出现才算）。景区没配标注字就留空。"""
+        for item in items:
+            words = await self.mark_words_of(item.scenic_id)
+            item.mark_word_tags = mark_words.dumps(mark_words.match(item.content or "", words)) if words else None
+
+    async def apply_mark_words(self, scenic_id: str, chunk: int = 5000) -> Dict[str, int]:
+        """按现在的标注字把这个景区已有的评论全部重新识别一遍，只改有变化的行。"""
+        words = await self.mark_words_of(scenic_id)
+        scanned = changed = hit = 0
+        last_id = 0
+        while True:
+            rows = await self.db.fetch_all(
+                f"SELECT id, content, mark_word_tags FROM `{tables.COMMENTS}` "
+                f"WHERE scenic_id = %s AND id > %s ORDER BY id ASC LIMIT %s",
+                [scenic_id, last_id, int(chunk)])
+            if not rows:
+                break
+            # 结果相同的行一起改：命中组合就那么几种，一条 UPDATE ... IN (...) 顶几千条逐行 UPDATE
+            groups: Dict[Optional[str], List[int]] = {}
+            for row in rows:
+                found = mark_words.match(row.get("content") or "", words)
+                hit += 1 if found else 0
+                new = mark_words.dumps(found) if words else None
+                if new != row.get("mark_word_tags"):
+                    groups.setdefault(new, []).append(row["id"])
+            for value, ids in groups.items():
+                for part in _chunks(ids, 1000):
+                    await self.db.execute(
+                        f"UPDATE `{tables.COMMENTS}` SET mark_word_tags = %s "
+                        f"WHERE id IN ({', '.join(['%s'] * len(part))})", [value, *part])
+                changed += len(ids)
+            scanned += len(rows)
+            last_id = rows[-1]["id"]
+            if len(rows) < chunk:
+                break
+        return {"scanned": scanned, "changed": changed, "hit": hit, "words": len(words)}
 
     async def save_authors(self, items: Sequence[AuthorItem]) -> int:
         if not items:
