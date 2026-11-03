@@ -32,7 +32,8 @@ async def refresh(scenics) -> int:
     from opinion_labeling_engine.labeling.scenic_rules import ScenicRule, set_rules
 
     rules = await scenics.all_label_rules()
-    set_rules({sid: ScenicRule(prompt=r["prompt"], broad_keywords=r["broad_keywords"])
+    set_rules({sid: ScenicRule(prompt=r["prompt"], broad_keywords=r["broad_keywords"],
+                               mark_words=tuple(r.get("mark_words") or ()))
                for sid, r in rules.items()})
     return len(rules)
 

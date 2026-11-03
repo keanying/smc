@@ -147,3 +147,37 @@ def test_save_pushes_to_engine(app_client):
     assert rule_for("hlx") is None
     assert c.put("/api/scenics/hlx/label-prompt", json={"prompt": "字" * 5001}).status_code == 400
     set_rules({})
+
+
+def test_service_adds_mark_words_after_ai(engine):
+    """AI 标完（含判为无关、内容无效的中性结果），出口处都补上标注字；AI 自己提的关键词在前。"""
+    import json
+    from opinion_labeling_engine.config import load_config
+    from opinion_labeling_engine.labeling.service import LabelingService
+    from opinion_labeling_engine.llm.client import LLMResponse
+
+    class FakeClient:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def complete(self, messages):
+            return LLMResponse(text=json.dumps(self.payload, ensure_ascii=False), model="fake")
+
+        def close(self):
+            pass
+
+    cfg = load_config(ENGINE_ROOT / "config" / "config.yaml", require_db=False)
+    rules = engine["rules"]
+    rules.set_rules({"hlx": rules.ScenicRule(mark_words=("小城良方", "海豹梦梦", "肖战"))})
+    text = "这个话题出自热播剧《小城良方》的出圈名场面：斑海豹“梦梦”在剧中上演荒诞一幕"
+
+    ai = {"relevant": True, "sentiment": "中性", "confidence": 0.8, "dimensions": [], "entities": [],
+          "keywords": [{"word": "出圈名场面", "polarity": "中性"}], "reason": ""}
+    service = LabelingService(cfg, client=FakeClient(ai))
+    assert service.label(_record("hlx", text)).keyword_tags == ["出圈名场面", "小城良方", "海豹梦梦"]
+    # 判为与景区无关（关键词按规则清空）：标注字照样补
+    irrelevant = {**ai, "relevant": False}
+    service = LabelingService(cfg, client=FakeClient(irrelevant))
+    assert service.label(_record("hlx", text)).keyword_tags == ["小城良方", "海豹梦梦"]
+    # 别的景区不补
+    assert service.label(_record("other", text)).keyword_tags == []

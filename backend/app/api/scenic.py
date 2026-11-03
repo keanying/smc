@@ -210,7 +210,7 @@ async def add_filter_words(
         raise bad_request(str(exc))
     label = {"aux": "附关键字", "exclude": "过滤关键字", "mark": "标注字"}[payload.kind]
     if payload.kind == "mark":
-        state.data.invalidate_mark_words()
+        await _mark_words_changed(state)
     message = f"新增 {result['added']} 个{label}，跳过重复 {result['skipped']} 个"
     if result.get("dropped"):
         # 超上限必须说出来。安静截断的现象是"我贴了 250 个，后面那些怎么不生效"
@@ -219,10 +219,21 @@ async def add_filter_words(
     return ok(result, message)
 
 
+async def _mark_words_changed(state: AppState) -> None:
+    """标注字变了：入库识别用的缓存清掉，标注引擎那份马上更新（AI 标注出口补标注字用它）。
+    附关键字 / 过滤关键字变了也会走到这里，多刷一次无害。"""
+    state.data.invalidate_mark_words()
+    from ..labeling.scenic_rules_sync import refresh
+    try:
+        await refresh(state.scenics)
+    except Exception as exc:  # noqa: BLE001 —— 一分钟内会自动再同步
+        logger.warning("标注字：推给标注引擎失败（一分钟内自动重试）：%s", exc)
+
+
 @router.delete("/filter-words/{word_id}")
 async def delete_filter_word(word_id: int, state: AppState = Depends(get_state)):
     await state.scenics.delete_filter_word(word_id)
-    state.data.invalidate_mark_words()
+    await _mark_words_changed(state)
     return ok(message="已删除")
 
 
@@ -231,7 +242,7 @@ async def toggle_filter_word(
     word_id: int, enabled: bool = Query(...), state: AppState = Depends(get_state)
 ):
     await state.scenics.set_filter_word_enabled(word_id, enabled)
-    state.data.invalidate_mark_words()
+    await _mark_words_changed(state)
     return ok(message="已更新")
 
 
