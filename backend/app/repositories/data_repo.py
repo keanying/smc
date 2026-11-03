@@ -55,7 +55,7 @@ COMMENT_COLUMNS = [
     "comment_parent_id", "comment_id", "commenter_id", "image_list", "video_list",
     "location", "content", "likes", "extra_content", "publish_time", "crawl_time",
     "commenter_name", "root_comment_id", "sub_comment_count", "task_id", "source_box",
-    "mark_word_tags",
+    "mark_word_tags", "keyword_tags",
 ]
 COMMENT_UPDATE_COLUMNS = [
     "scenic_name", "comment_level", "comment_parent_id", "commenter_id",
@@ -296,7 +296,10 @@ class DataRepository:
         """入库前按景区的标注字算好命中（评论原文里出现才算）。景区没配标注字就留空。"""
         for item in items:
             words = await self.mark_words_of(item.scenic_id)
-            item.mark_word_tags = mark_words.dumps(mark_words.match(item.content or "", words)) if words else None
+            hits = mark_words.match(item.content or "", words) if words else []
+            item.mark_word_tags = mark_words.dumps(hits) if words else None
+            # 还没 AI 标注，关键词先放标注字；AI 标完会写成 AI 关键词 + 标注字
+            item.keyword_tags = mark_words.dumps(hits) if hits else None
 
     async def count_comments(self, scenic_id: str) -> int:
         return int(await self.db.fetch_value(
@@ -306,32 +309,41 @@ class DataRepository:
                                progress=None) -> Dict[str, int]:
         """按现在的标注字把这个景区已有的评论全部重新识别一遍，只改有变化的行。
 
-        progress(scanned, changed, hit)：每处理完一批调一次，页面上的进度条靠它。
+        mark_word_tags 换成新的命中；keyword_tags 里上一次补的标注字先拿掉，再按新的补上
+        （AI 自己提的关键词不动）。progress(scanned, changed, hit)：每处理完一批调一次，页面进度条靠它。
         """
         words = await self.mark_words_of(scenic_id)
         scanned = changed = hit = 0
         last_id = 0
         while True:
             rows = await self.db.fetch_all(
-                f"SELECT id, content, mark_word_tags FROM `{tables.COMMENTS}` "
+                f"SELECT id, content, mark_word_tags, keyword_tags FROM `{tables.COMMENTS}` "
                 f"WHERE scenic_id = %s AND id > %s ORDER BY id ASC LIMIT %s",
                 [scenic_id, last_id, int(chunk)])
             if not rows:
                 break
-            # 结果相同的行一起改：命中组合就那么几种，一条 UPDATE ... IN (...) 顶几千条逐行 UPDATE
-            groups: Dict[Optional[str], List[int]] = {}
+            updates = []
             for row in rows:
                 found = mark_words.match(row.get("content") or "", words)
                 hit += 1 if found else 0
-                new = mark_words.dumps(found) if words else None
-                if new != row.get("mark_word_tags"):
-                    groups.setdefault(new, []).append(row["id"])
-            for value, ids in groups.items():
-                for part in _chunks(ids, 1000):
-                    await self.db.execute(
-                        f"UPDATE `{tables.COMMENTS}` SET mark_word_tags = %s "
-                        f"WHERE id IN ({', '.join(['%s'] * len(part))})", [value, *part])
-                changed += len(ids)
+                new_marks = mark_words.dumps(found) if words else None
+                old_marks = set(mark_words.loads(row.get("mark_word_tags")))
+                kept = [k for k in mark_words.loads(row.get("keyword_tags")) if k not in old_marks]
+                merged = mark_words.merge_keywords(kept, mark_words.dumps(found))
+                new_kw = mark_words.dumps(merged) if (merged or row.get("keyword_tags")) else None
+                if new_marks != row.get("mark_word_tags") or new_kw != row.get("keyword_tags"):
+                    updates.append((row["id"], new_marks, new_kw))
+            # 一批里每行的值都不一样：用 CASE 一条 UPDATE 改几百行，比逐行 UPDATE 快一个数量级
+            for part in _chunks(updates, 500):
+                ids = [u[0] for u in part]
+                await self.db.execute(
+                    f"UPDATE `{tables.COMMENTS}` SET "
+                    f"mark_word_tags = CASE id {' '.join(['WHEN %s THEN %s'] * len(part))} END, "
+                    f"keyword_tags = CASE id {' '.join(['WHEN %s THEN %s'] * len(part))} END "
+                    f"WHERE id IN ({', '.join(['%s'] * len(part))})",
+                    [*[v for u in part for v in (u[0], u[1])],
+                     *[v for u in part for v in (u[0], u[2])], *ids])
+            changed += len(updates)
             scanned += len(rows)
             if progress is not None:
                 progress(scanned, changed, hit)

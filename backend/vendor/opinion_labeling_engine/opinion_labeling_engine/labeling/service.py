@@ -29,6 +29,7 @@ from ..llm.prompt import PromptBuilder
 from ..logging_conf import get_logger
 from ..preprocess.cleaner import ContentCleaner
 from .postprocess import LabelPostProcessor
+from .scenic_rules import match_marks, merge_marks, rule_for
 
 __all__ = ["LabelingService", "LabelingStats", "LabelingFailed"]
 
@@ -116,6 +117,16 @@ class LabelingService:
 
     # ------------------------------------------------------------------ 主流程
     def label(self, record: CommentRecord) -> LabelResult:
+        """标注一条评论，出口处按景区补上标注字（见 labeling/scenic_rules.py）。"""
+        result = self._label(record)
+        rule = rule_for(record.scenic_id)
+        if rule is not None and rule.mark_words:
+            marks = match_marks(record.content, rule.mark_words)
+            if marks:
+                result.keyword_tags = merge_marks(result.keyword_tags, marks)
+        return result
+
+    def _label(self, record: CommentRecord) -> LabelResult:
         """标注一条评论。
 
         Args:

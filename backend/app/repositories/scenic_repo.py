@@ -154,12 +154,19 @@ class ScenicRepository:
             "WHERE scenic_id = %s", [prompt or None, 1 if broad_keywords else 0, scenic_id])
 
     async def all_label_rules(self) -> Dict[str, Dict[str, Any]]:
-        """配了标注灌注的景区（标注引擎按景区取）。"""
+        """标注引擎按景区取的规则：标注灌注（提示词、关键词放宽）+ 启用的标注字。"""
         rows = await self.db.fetch_all(
             "SELECT scenic_id, label_prompt, label_keyword_broad FROM `src_opinion_social_scenic` "
             "WHERE (label_prompt IS NOT NULL AND label_prompt <> '') OR label_keyword_broad = 1")
-        return {r["scenic_id"]: {"prompt": r.get("label_prompt") or "",
-                                 "broad_keywords": bool(r.get("label_keyword_broad"))} for r in rows}
+        rules = {r["scenic_id"]: {"prompt": r.get("label_prompt") or "",
+                                  "broad_keywords": bool(r.get("label_keyword_broad")), "mark_words": []}
+                 for r in rows}
+        for r in await self.db.fetch_all(
+                f"SELECT scenic_id, word FROM `{tables.SCENIC_FILTER_WORD}` "
+                f"WHERE kind = 'mark' AND enabled = 1 ORDER BY scenic_id, sort_order, id"):
+            rules.setdefault(r["scenic_id"], {"prompt": "", "broad_keywords": False, "mark_words": []})
+            rules[r["scenic_id"]]["mark_words"].append(r["word"])
+        return rules
 
     async def delete_scenic(self, scenic_id: str) -> None:
         """删除景区连同其关键字和目标；已采集的数据保留，避免误删业务数据。"""
