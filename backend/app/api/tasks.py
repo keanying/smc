@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Query
 
 from ..auth import current_name
 from ..core import collect_params, content_filter, search_filters
-from ..core.constants import CHANNELS_POI_BASED
+from ..core.constants import CHANNELS_POI_BASED, CHANNELS_WITH_WORKS
 from ..repositories.task_repo import compute_next_run, validate_cron
 from .common import bad_request, not_found, ok
 from .deps import AppState, get_state
@@ -363,6 +363,24 @@ async def toggle_schedule(
 ):
     await state.tasks.update(task_id, {"schedule_enabled": int(enabled)})
     return ok(message="已启用定时" if enabled else "已暂停定时")
+
+
+@router.put("/{task_id}/ai-filter")
+async def toggle_ai_filter(
+    task_id: str, enabled: bool = Query(...), state: AppState = Depends(get_state)
+):
+    """任务列表上一键开 / 关 AI 过滤（core/ai_relevance.py）。只动这一个开关，别的参数原样不动。"""
+    task = await state.tasks.get(task_id)
+    if not task:
+        raise not_found(f"任务不存在：{task_id}")
+    if not any(c in CHANNELS_WITH_WORKS for c in task.get("channels") or []):
+        raise bad_request("携程 / 同程 / 去哪儿采的是景区点评，不用 AI 过滤")
+    params = dict(task.get("params") or {})
+    params["ai_filter"] = bool(enabled)
+    await state.tasks.update(task_id, {"params": params})
+    running = task_id in state.scheduler.running_task_ids()
+    note = "（正在跑的这一轮不变，下一轮生效）" if running else ""
+    return ok({"ai_filter": bool(enabled)}, ("已开启 AI 过滤" if enabled else "已关闭 AI 过滤") + note)
 
 
 @router.get("/{task_id}/logs")

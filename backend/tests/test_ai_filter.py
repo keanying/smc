@@ -203,3 +203,22 @@ def test_box_asks_master(app_client):
     down = httpx.MockTransport(lambda r: (_ for _ in ()).throw(httpx.ConnectError("refused")))
     remote = RemoteRelevanceJudge(MasterClient("http://master", "t", retry_delays=(), transport=down))
     assert asyncio.run(remote.judge(SCENIC, channel="douyin", work_id="w9")).keep is True
+
+
+def test_toggle_from_task_list(app_client):
+    """任务列表上一键开 / 关：只动 ai_filter，别的参数不变；纯点评任务不给开。"""
+    c = app_client
+    task = {"task_name": "九嶷山-抖音", "scenic_id": "jys", "collect_type": "keyword", "channels": ["douyin"],
+            "keywords": ["九嶷山"], "schedule_type": "once", "params": {"max_works": 30, "ai_filter": False}}
+    tid = _ok(c.post("/api/tasks", json={**task, "schedule_type": "cron", "cron_expression": "0 14 * * *"}))["task_id"]
+    r = _ok(c.put(f"/api/tasks/{tid}/ai-filter", params={"enabled": True}))
+    assert r["ai_filter"] is True
+    params = _ok(c.get(f"/api/tasks/{tid}"))["params"]
+    assert params["ai_filter"] is True and params["max_works"] == 30
+    _ok(c.put(f"/api/tasks/{tid}/ai-filter", params={"enabled": False}))
+    assert _ok(c.get(f"/api/tasks/{tid}"))["params"]["ai_filter"] is False
+    _ok(c.post(f"/api/scenics/jys/targets", json={"channel": "ctrip", "target_type": "poi", "target_id": "1"}))
+    poi = _ok(c.post("/api/tasks", json={**task, "task_name": "携程", "channels": ["ctrip"], "collect_type": "poi",
+                                         "keywords": []}))["task_id"]
+    assert c.put(f"/api/tasks/{poi}/ai-filter", params={"enabled": True}).status_code == 400
+    assert c.put("/api/tasks/nope/ai-filter", params={"enabled": True}).status_code == 404

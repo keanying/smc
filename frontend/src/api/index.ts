@@ -505,6 +505,9 @@ export const taskApi = {
   cancel: (taskId: string) => api.post<{ cancelled: boolean }>(`/api/tasks/${taskId}/cancel`),
   toggleSchedule: (taskId: string, enabled: boolean) =>
     api.put<null>(`/api/tasks/${taskId}/schedule-enabled`, undefined, { enabled }),
+  /** 一键开 / 关 AI 过滤（只动这一个开关） */
+  toggleAiFilter: (taskId: string, enabled: boolean) =>
+    api.put<{ ai_filter: boolean }>(`/api/tasks/${taskId}/ai-filter`, undefined, { enabled }),
   logs: (taskId: string, afterId = 0, limit = 500) =>
     api.get<TaskLog[]>(`/api/tasks/${taskId}/logs`, { after_id: afterId, limit }),
   clearLogs: (taskId: string) => api.del<null>(`/api/tasks/${taskId}/logs`),

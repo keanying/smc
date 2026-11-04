@@ -138,13 +138,23 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="196" align="center" fixed="right">
+      <el-table-column label="操作" width="226" align="center" fixed="right">
         <template #default="{ row }">
           <div class="row-actions">
             <IconAction icon="view" tip="详情" @click="$router.push(`/tasks/${row.task_id}`)" />
             <IconAction v-if="row.status !== 'running'" icon="play" tip="立即执行" @click="run(row)" />
             <IconAction v-else icon="revoke" tip="取消执行" @click="cancel(row)" />
             <IconAction icon="edit" tip="编辑" @click="edit(row)" />
+            <!-- AI 过滤：开着是橙色，关着是黑色；携程 / 同程 / 去哪儿是点评，没有这个开关 -->
+            <el-tooltip v-if="hasWorkChannel(row)" placement="top" :show-after="200"
+                        :content="row.params?.ai_filter ? 'AI 过滤已开启，点一下关闭' : 'AI 过滤已关闭，点一下开启'">
+              <button type="button" class="ai-toggle" :class="{ 'is-on': row.params?.ai_filter }"
+                      :disabled="aiToggling === row.task_id"
+                      :aria-label="row.params?.ai_filter ? '关闭 AI 过滤' : '开启 AI 过滤'"
+                      @click="toggleAi(row)">
+                <img :src="row.params?.ai_filter ? aiIcon : aiIconDark" alt="" />
+              </button>
+            </el-tooltip>
             <IconAction
               v-if="row.schedule_type !== 'once'"
               :icon="row.schedule_enabled ? 'pause' : 'online'"
@@ -184,7 +194,9 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { scenicApi, taskApi, type ChannelOption, type ScenicOption, type Task } from '../api'
-import { COLLECT_ENGINES, normalizeEngine } from '../constants'
+import { COLLECT_ENGINES, POI_CHANNELS, normalizeEngine } from '../constants'
+import aiIcon from '../assets/icons/ai.png'
+import aiIconDark from '../assets/icons/ai-dark.png'
 import TaskEditDialog from '../components/TaskEditDialog.vue'
 import {
   CHANNEL_COLORS, SCHEDULE_LABELS, TASK_STATUS_LABELS, TASK_STATUS_TYPES,
@@ -257,6 +269,25 @@ async function onSaved(updated: Task) {
   await load(true)
 }
 
+const aiToggling = ref('')
+
+function hasWorkChannel(row: Task): boolean {
+  return (row.channels || []).some((c) => !POI_CHANNELS.includes(c))
+}
+
+/** 一键开 / 关 AI 过滤：只改这个开关，正在跑的这一轮不变、下一轮生效 */
+async function toggleAi(row: Task) {
+  aiToggling.value = row.task_id
+  try {
+    const enabled = !row.params?.ai_filter
+    await taskApi.toggleAiFilter(row.task_id, enabled)
+    row.params = { ...(row.params || {}), ai_filter: enabled }
+    ElMessage.success(enabled ? 'AI 过滤已开启，下一轮采集生效' : 'AI 过滤已关闭')
+  } finally {
+    aiToggling.value = ''
+  }
+}
+
 async function toggleSchedule(row: Task) {
   await taskApi.toggleSchedule(row.task_id, !row.schedule_enabled)
   await load(true)
@@ -316,6 +347,16 @@ onUnmounted(() => window.clearTimeout(timer))
 
 
 <style scoped>
+/* AI 过滤开关：和旁边的图标按钮一样大小；关着时淡一点 */
+.ai-toggle {
+  width: 26px; height: 26px; padding: 0; border: none; background: transparent; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; border-radius: 6px;
+}
+.ai-toggle img { width: 16px; height: 16px; border-radius: 4px; display: block; opacity: 0.55; }
+.ai-toggle.is-on img { opacity: 1; }
+.ai-toggle:hover { background: var(--el-fill-color-light); }
+.ai-toggle:hover img { opacity: 1; }
+.ai-toggle:disabled { cursor: wait; }
 .task-node { margin-top: 4px; font-size: 12px; color: var(--smc-text-secondary); }
 .row-actions {
   display: inline-flex;
