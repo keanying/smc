@@ -69,6 +69,26 @@ async def assignment(request: Request, state: AppState = Depends(get_state)):
     return ok({"box_id": box["box_id"], "box_name": box["box_name"], "bundle": bundle})
 
 
+@router.post("/ai-relevance")
+async def ai_relevance(request: Request, payload: Dict[str, Any] = Body(...),
+                       state: AppState = Depends(get_state)):
+    """盒子开了 AI 过滤：作品要不要留，主来问模型（盒子上不跑模型）。"""
+    box = _box(request)
+    scenic_id = str(payload.get("scenic_id") or "")
+    _check_scenic(box, scenic_id)
+    from ..core.ai_relevance import scenic_context
+    judge = getattr(state.runner, "relevance", None)
+    if judge is None:
+        return ok({"relevant": None, "reason": "主上没开 AI 过滤"})
+    verdict = await judge.judge(await scenic_context(state.scenics, scenic_id),
+                                channel=str(payload.get("channel") or ""),
+                                work_id=str(payload.get("work_id") or ""),
+                                title=str(payload.get("title") or ""),
+                                description=str(payload.get("description") or ""),
+                                label=str(payload.get("label") or ""))
+    return ok({"relevant": verdict.relevant, "reason": verdict.reason})
+
+
 @router.post("/data/{method}")
 async def data_call(method: str, request: Request, payload: Dict[str, Any] = Body(...),
                     state: AppState = Depends(get_state)):

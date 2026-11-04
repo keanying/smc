@@ -143,6 +143,13 @@ async def lifespan(app: FastAPI):
         task_repo=task_repo, scenic_repo=scenic_repo, data_repo=collect_repo,
         proxy_manager=proxy_manager, browser_manager=browser_manager,
     )
+    # AI 过滤（任务上开了才用）：景区盒子转给主判，主 / 总部版本机用标注的模型配置
+    if box_sync is not None:
+        from .box.client import RemoteRelevanceJudge
+        runner.relevance = RemoteRelevanceJudge(box_sync.client)
+    else:
+        from .core.ai_relevance import RelevanceJudge
+        runner.relevance = RelevanceJudge(config)
     scheduler = TaskScheduler(config, task_repo, runner, browser_manager=browser_manager,
                               cluster=cluster)
     exporter = CsvExporter(config, data_repo)

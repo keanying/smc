@@ -203,6 +203,10 @@ def normalize(params: Dict[str, Any], channels: List[str]) -> Dict[str, Any]:
     else:
         params.pop("channel_params", None)
 
+    # AI 过滤：任务级开关（见 core/ai_relevance.py），默认关
+    if "ai_filter" in params:
+        params["ai_filter"] = _as_bool(params["ai_filter"], False)
+
     # 内容过滤是任务级的（不分平台）：清洗成固定形状再存
     if "content_filter" in params:
         from .content_filter import normalize as normalize_content_filter

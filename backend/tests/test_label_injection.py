@@ -181,3 +181,22 @@ def test_service_adds_mark_words_after_ai(engine):
     assert service.label(_record("hlx", text)).keyword_tags == ["小城良方", "海豹梦梦"]
     # 别的景区不补
     assert service.label(_record("other", text)).keyword_tags == []
+
+
+def test_keywords_with_object_survive_checks(engine):
+    """关键词带上评价对象（「螺蛳粉非常正宗实惠」是跨分句组合）：原文溯源、长度上限都要放得过。"""
+    from opinion_labeling_engine.config import LabelingConfig
+    from opinion_labeling_engine.labeling.postprocess import LabelPostProcessor
+    from opinion_labeling_engine.llm.parser import RawLabel
+    post = LabelPostProcessor(engine["post"]._tax, LabelingConfig())
+    cases = [
+        ("舜帝陵可看可不看，没有意义。池神庙建筑没有意义", "负向", ["舜帝陵可看可不看", "池神庙建筑没有意义"]),
+        ("螺满天下螺蛳粉好吃，老板娘是广西人，非常正宗实惠[doge][doge]", "正向", ["螺蛳粉好吃", "螺蛳粉非常正宗实惠"]),
+    ]
+    for text, sentiment, words in cases:
+        raw = RawLabel(relevant=True, sentiment=sentiment, confidence=0.9,
+                       keywords=[{"word": w, "polarity": sentiment} for w in words])
+        assert post.build(_record("x", text), raw, source_text=text).keyword_tags == words
+    # 提示词里写明了要带对象，并给了这两个例子
+    prompt = engine["prompt"].system_prompt
+    assert "被评价的对象" in prompt and "螺蛳粉非常正宗实惠" in prompt and "池神庙建筑没有意义" in prompt

@@ -176,6 +176,25 @@
         </span>
       </el-form-item>
 
+      <!-- AI 过滤：过完关键字的作品再让模型判一次是不是在讲本景区 -->
+      <el-form-item v-if="workChannels.length">
+        <template #label>
+          <span class="ai-label">
+            <img :src="model.ai_filter ? aiIcon : aiIconDark" alt="" class="ai-icon" />AI 过滤
+          </span>
+          <InfoTip :width="400">
+            关键字挡得住完全不沾边的，挡不住<b>字面命中、内容却不是本景区</b>的
+            （别的省市的同名景点、诗词歌词里的地名、蹭话题标签的带货）。<br>
+            打开后，过完关键字的作品再让 AI 判一次是不是在讲本景区，不相关的丢弃、评论也不翻。<br>
+            用的是「系统设置 → 标注」里的模型；模型没配或判不了的<b>按相关留下</b>。每条作品多一次模型调用，会慢一点、花一点 Token。
+          </InfoTip>
+        </template>
+        <el-switch v-model="model.ai_filter" />
+        <span class="muted hint">
+          {{ model.ai_filter ? '再过一遍 AI' : '只按关键字' }}
+        </span>
+      </el-form-item>
+
       <el-form-item v-if="!perChannel">
         <template #label>
           采集评论<InfoTip content="携程/同程不受此项影响" />
@@ -206,6 +225,8 @@ import {
   channelLabel, normalizeEngine,
 } from '../constants'
 import FilterFields from './FilterFields.vue'
+import aiIcon from '../assets/icons/ai.png'
+import aiIconDark from '../assets/icons/ai-dark.png'
 
 type Params = Record<string, unknown>
 
@@ -234,6 +255,8 @@ const model = reactive<Record<string, any>>({
   content_filter_enabled: true,
   content_filter_mode: 'keyword',
   content_filter_extra: '',
+  // AI 过滤（见后端 core/ai_relevance.py），默认关
+  ai_filter: false,
   sort: 'general',
   publish_within: 'unlimited',
   start_date: '',
@@ -361,6 +384,8 @@ defineExpose({ load, build })
 </script>
 
 <style scoped>
+.ai-label { display: inline-flex; align-items: center; gap: 4px; }
+.ai-icon { width: 16px; height: 16px; border-radius: 4px; display: block; }
 /* 标签里的说明图标：label 是 flex 容器，图标默认会顶到上沿，这里让它和文字居中对齐 */
 :deep(.el-form-item__label .info-tip) { align-self: center; }
 .hint {

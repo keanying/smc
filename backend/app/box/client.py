@@ -132,3 +132,25 @@ class RemoteDataRepository:
 
     def invalidate_overview_cache(self) -> None:
         """概览缓存在主上，主收到上报时自己会处理。"""
+
+
+class RemoteRelevanceJudge:
+    """景区盒子的 AI 过滤：盒子不跑模型，转给主判（主那边见 api/box_api.py 的 /api/box/ai-relevance）。
+    主连不上、主判不了，都按相关留下（core/ai_relevance.py 的「判不了就留」）。"""
+
+    def __init__(self, client: MasterClient):
+        self.client = client
+
+    async def judge(self, scenic, *, channel: str, work_id: str, title: str = "",
+                    description: str = "", label: str = ""):
+        from ..core.ai_relevance import Verdict
+        try:
+            data = await self.client.request("POST", "/api/box/ai-relevance", json={
+                "scenic_id": scenic.get("scenic_id"), "channel": channel, "work_id": work_id,
+                "title": title, "description": description, "label": label}, retry=False)
+        except MasterUnavailable as exc:
+            return Verdict(None, f"问主失败：{exc}"[:60])
+        return Verdict(data.get("relevant"), str(data.get("reason") or ""))
+
+    def reset(self) -> None:
+        pass

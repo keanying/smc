@@ -182,7 +182,7 @@ class CleaningConfig:
 @dataclass(frozen=True)
 class LabelingConfig:
     keyword_min_length: int = 2
-    keyword_max_length: int = 12
+    keyword_max_length: int = 20         # 关键词带评价对象（「池神庙建筑没有意义」），12 不够
     keyword_max_count: int = 8
     keyword_must_appear_in_content: bool = True
     keyword_allow_subsequence_match: bool = True

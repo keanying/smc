@@ -168,6 +168,12 @@
             <div class="sub-title">内容过滤</div>
             <div class="sub-text">{{ task.content_filter.description }}</div>
           </template>
+          <div class="sub-title ai-title">
+            <img :src="task?.params?.ai_filter ? aiIcon : aiIconDark" alt="" class="ai-icon" />AI 过滤
+          </div>
+          <div class="sub-text">
+            {{ task?.params?.ai_filter ? '已开启：过完关键字的作品再让 AI 判一次是否在讲本景区，不相关的丢弃' : '未开启' }}
+          </div>
         </el-card>
 
         <el-card shadow="never" style="margin-top: 16px" header="关键字">
@@ -196,6 +202,8 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Edit, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import { scenicApi, taskApi, type ChannelOption, type Task, type TaskLog } from '../api'
+import aiIcon from '../assets/icons/ai.png'
+import aiIconDark from '../assets/icons/ai-dark.png'
 import LiveScreen from '../components/LiveScreen.vue'
 import TaskEditDialog from '../components/TaskEditDialog.vue'
 import { TaskLogSocket } from '../api/ws'
@@ -315,6 +323,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.ai-title { display: flex; align-items: center; gap: 4px; }
+.ai-icon { width: 16px; height: 16px; border-radius: 4px; display: block; }
 .status-tag .status-icon { margin-right: 3px; vertical-align: -2px; }
 .waiting-eta { margin-left: 8px; font-size: 12px; }
 .task-id { font-size: 12px; color: var(--smc-text-secondary); word-break: break-all; }
