@@ -49,6 +49,10 @@ async def save_settings(payload: SettingIn, state: AppState = Depends(get_state)
     if payload.section == "labeling":
         from ..labeling import get_manager
         await get_manager(state.config).reset()
+        # AI 过滤用的也是标注的模型配置：换了 Key / 模型，下次重新建客户端
+        relevance = getattr(getattr(state, "runner", None), "relevance", None)
+        if relevance is not None:
+            relevance.reset()
     # 集群：别的机器下一次心跳时读到这份新设置并同步（cluster/service.py 的 _sync_settings）
     from ..cluster import get_cluster
     cluster = get_cluster()

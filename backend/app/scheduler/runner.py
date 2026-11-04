@@ -292,6 +292,9 @@ class TaskRunner:
         self.data = data_repo
         self.proxy_manager = proxy_manager
         self.browser_manager = browser_manager
+        #: AI 过滤（任务上开了才用，见 core/ai_relevance.py）。main.py 按版本装：
+        #: 主 / 总部版本机问模型，景区盒子转给主判
+        self.relevance = None
         # 单账号配额与冷却。建一次，全 runner 共用——会话时长记在它身上，
         # 每次新建就等于每条任务都从 0 开始计时，单次时长上限形同虚设。
         from ..core.account_quota import AccountQuota
@@ -577,6 +580,9 @@ class TaskRunner:
             # 过滤配置一定要打出来：用户改了设置最想确认的就是"生效没有"，
             # 而"采到的条数变少了"这种现象，光看结果分不清是过滤还是平台没内容
             log.info(ctx.content_rules.describe())
+            if params.get("ai_filter"):
+                log.info("AI 过滤：已开启——过完关键字的作品再让模型判一次是不是在讲本景区，"
+                         "不相关的丢弃；模型判不了的按相关留下")
 
         # 登录态的拿法由各平台自己决定，这里只把入口交出去：
         #   抖音 —— 接口签名在 Node 里算，页面只用来取 msToken/Cookie，
@@ -955,6 +961,7 @@ class TaskRunner:
         excluded = 0
         deleted_skipped = 0
         collected_today = 0
+        ai_stats = {"dropped": 0, "unsure": 0}
         async for work in collector.collect_by_keyword(ctx, keyword):
             # 关键字匹配过滤：作品的标题/描述/标签里必须包含搜索关键字，
             # 否则说明是平台推荐/广告/无关内容，直接丢弃不存储。
@@ -1044,6 +1051,10 @@ class TaskRunner:
                 if deleted_skipped <= 5:
                     log.info(f"[已删除] 跳过《{(work.title or '')[:24]}》（数据中心里人工删除过）")
                 continue
+            # 第四道（任务上开了才有）：AI 判断是不是在讲本景区。放在便宜的几道之后、
+            # 翻评论之前——只为真要入库的作品问模型，不相关的连评论都不用翻
+            if not await self._ai_keeps(ctx, collector, work, log, ai_stats):
+                continue
             # ⚠️ 作品水印：命中就**整条跳过**，连评论都不翻。
             # 这是省时间的大头——一条作品的评论在拟人模式下要十几秒。
             # 用 claim_work（SETNX）而不是先查后写：两个任务同时跑同一个
@@ -1116,6 +1127,10 @@ class TaskRunner:
                      f"（误伤了就去景区的「过滤关键字」里删词）")
         if deleted_skipped:
             tail += f"，{deleted_skipped} 条在数据中心里人工删除过，未再收录"
+        if ai_stats["dropped"]:
+            tail += f"，{ai_stats['dropped']} 条被 AI 判为与本景区无关丢弃"
+        if ai_stats["unsure"]:
+            tail += f"，{ai_stats['unsure']} 条 AI 判不了、按相关留下"
         if duplicated:
             tail += f"，{duplicated} 条与前面的关键字重复（未重复入库、也没重复采评论）"
         if collected_today:
@@ -1148,6 +1163,34 @@ class TaskRunner:
             except Exception as exc:  # noqa: BLE001
                 log.error(f"主页 [{label}] 重试 {self.max_retries} 次仍失败，跳过：{exc}")
 
+    async def _ai_keeps(self, ctx: CollectContext, collector: BaseCollector, work: WorkItem,
+                        log: TaskLogger, stats: Dict[str, int]) -> bool:
+        """AI 过滤：这条作品留不留。任务没开、没装判官时一律留。判不了的也留（宁多勿漏）。"""
+        judge = getattr(self, "relevance", None)
+        if judge is None or not ctx.params.get("ai_filter"):
+            return True
+        scenic = ctx.params.get("_ai_scenic")
+        if scenic is None:
+            from ..core.ai_relevance import scenic_context
+            scenic = await scenic_context(self.scenics, ctx.scenic_id)
+            ctx.params["_ai_scenic"] = scenic
+        verdict = await judge.judge(scenic, channel=collector.channel, work_id=work.work_id,
+                                    title=work.title or "", description=work.description or "",
+                                    label=work.label or "")
+        if verdict.relevant is False:
+            stats["dropped"] += 1
+            if stats["dropped"] <= 5:
+                log.info(f"[AI 过滤] 丢弃《{(work.title or work.description or '')[:30]}》"
+                         f"——{verdict.reason or '与本景区无关'}")
+            elif stats["dropped"] == 6:
+                log.info("[AI 过滤] 后面被丢弃的不再逐条打印，结束时会报总数")
+            return False
+        if verdict.relevant is None:
+            stats["unsure"] += 1
+            if stats["unsure"] <= 3:
+                log.warn(f"[AI 过滤] 判不了，按相关留下《{(work.title or '')[:24]}》：{verdict.reason}")
+        return True
+
     async def _collect_one_creator(
         self, collector: BaseCollector, ctx: CollectContext,
         target: CollectTarget, buffer: "_Buffer", log: TaskLogger,
@@ -1156,6 +1199,7 @@ class TaskRunner:
         log.info(f"采集主页：{target.name or target.value}")
         count = 0
         skipped = 0
+        ai_stats = {"dropped": 0, "unsure": 0}
         async for work in collector.collect_by_creator(ctx, target):
             # 主页作品接口天然按时间倒序，所以越过窗口下界就能直接停
             if not filters.in_window(work.publish_time):
@@ -1185,6 +1229,9 @@ class TaskRunner:
                 continue
             if buffer.is_deleted(work):
                 log.info(f"[已删除] 跳过《{(work.title or '')[:24]}》（数据中心里人工删除过）")
+                continue
+            # 主页上什么都发：开了 AI 过滤，同样只留讲本景区的
+            if not await self._ai_keeps(ctx, collector, work, log, ai_stats):
                 continue
             fresh = await buffer.add_work(work)
             count += 1

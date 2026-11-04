@@ -98,7 +98,8 @@ cleaning:
 labeling:
   # 关键词最短字符数（要求 4：不允许单字关键词）
   keyword_min_length: 2
-  keyword_max_length: 12
+  # 关键词要带评价对象（「螺蛳粉非常正宗实惠」「池神庙建筑没有意义」），比只放评价词长
+  keyword_max_length: 20
   # 单条评论最多保留多少个关键词
   keyword_max_count: 8
   # 关键词必须能在评论原文中找到（要求 4：杜绝幻觉），开启后不匹配的一律丢弃
