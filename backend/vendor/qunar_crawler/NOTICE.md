@@ -1,6 +1,6 @@
 # 去哪儿解析器（原样引入，勿改）
 
-来源：用户提供的 `qunar_sight_crawler`（作者 Manus AI，见 README.upstream.md）。
+来源：用户提供的 `qunar_sight_crawler`
 
 ## 引入了什么、没引入什么
 
