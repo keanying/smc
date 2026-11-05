@@ -45,8 +45,9 @@ CSV_HEADER = [
 ]
 
 
-def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="原因关键事件 · 小样本验证（只读，不改库）")
+def build_parser(description: str = "原因关键事件 · 小样本验证（只读，不改库）") -> argparse.ArgumentParser:
+    """公共参数。主谓宾脚本（spo_sample.py）也用这一份，两边抽样口径一致。"""
+    p = argparse.ArgumentParser(description=description)
     p.add_argument("--text", action="append", metavar="评论", help="直接给评论试，可写多次；给了就不抽库")
     p.add_argument("--scenic-name", default="", help="配合 --text：景区名称")
     p.add_argument("--limit", type=int, default=300, help="抽多少条（默认 300）")
@@ -61,7 +62,11 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--price-out", type=float, default=0.0, help="输出单价，元/百万 token")
     p.add_argument("--out", default="", help="CSV 输出路径（默认 data/reason_sample/ 下按时间命名）")
     p.add_argument("--show-prompt", action="store_true", help="只打印系统提示词，不调模型")
-    return p.parse_args()
+    return p
+
+
+def _parse_args() -> argparse.Namespace:
+    return build_parser().parse_args()
 
 
 # ---------------------------------------------------------------------------- 配置与模型
