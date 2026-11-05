@@ -38,3 +38,4 @@ backend/libs/_bridge.cjs
 # 引擎跑测试时生成的日志
 backend/vendor/*/logs/
 data_box/
+release/
