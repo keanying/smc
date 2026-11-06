@@ -19,7 +19,7 @@
     <el-row :gutter="16">
       <el-col :span="15">
         <el-card shadow="never">
-          <el-form :model="form" label-width="110px">
+          <el-form :model="form" label-width="110px" class="task-form">
             <el-form-item label="任务名称" required>
               <el-input v-model="form.task_name" placeholder="如：西湖-全平台-每日采集" />
             </el-form-item>
@@ -447,6 +447,9 @@ onMounted(async () => {
 
 
 <style scoped>
+/* 文本框 / 下拉框别跟着卡片拉满（宽屏下一千多像素，很空）；关键字多了在 640 宽里换行 */
+.task-form :deep(.el-input:not(.el-input-number .el-input)),
+.task-form :deep(.el-select) { max-width: 640px; }
 /* 标签里的说明图标：label 是 flex 容器，图标默认会顶到上沿，这里让它和文字居中对齐 */
 :deep(.el-form-item__label .info-tip) { align-self: center; }
 .form-section {

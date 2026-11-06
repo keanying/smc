@@ -85,10 +85,10 @@
                 </el-form-item>
 
                 <el-form-item class="form-actions">
+                  <el-button :loading="testing" @click="testProxy">测试提取一个 IP</el-button>
                   <el-button type="primary" :loading="saving" @click="saveSection('proxy', proxy)">
                     保存代理设置
                   </el-button>
-                  <el-button :loading="testing" @click="testProxy">测试提取一个 IP</el-button>
                 </el-form-item>
               </el-form>
             </el-card>
@@ -505,9 +505,9 @@
                 </el-form-item>
 
                 <el-form-item class="form-actions">
+                  <el-button :loading="checking" @click="runLabelingCheck">自检</el-button>
                   <el-button type="primary" :loading="saving"
                              @click="saveSection('labeling', labeling)">保存</el-button>
-                  <el-button :loading="checking" @click="runLabelingCheck">自检</el-button>
                 </el-form-item>
               </el-form>
             </el-card>
@@ -598,9 +598,9 @@
                 </el-form-item>
 
                 <el-form-item class="form-actions">
+                  <el-button :loading="testingNotify" @click="testNotify">发送测试</el-button>
                   <el-button type="primary" :loading="saving"
                              @click="saveSection('notify', notify)">保存</el-button>
-                  <el-button :loading="testingNotify" @click="testNotify">发送测试</el-button>
                 </el-form-item>
               </el-form>
             </el-card>
@@ -636,9 +636,9 @@
                   <el-switch v-model="metrics.enabled" />
                 </el-form-item>
                 <el-form-item class="form-actions">
+                  <el-button v-if="metricsEnabled" @click="router.push('/metrics')">去指标计算</el-button>
                   <el-button type="primary" :loading="saving"
                              @click="saveSection('metrics', metrics)">保存</el-button>
-                  <el-button v-if="metricsEnabled" @click="router.push('/metrics')">去指标计算</el-button>
                 </el-form-item>
               </el-form>
             </el-card>
@@ -912,6 +912,7 @@ onMounted(() => {
 /* 组间距放在下面：放到上面的话，排到第二栏顶上的那组会比第一栏低一截 */
 .settings-form.is-columns .form-group { padding-bottom: 22px; }
 .settings-form.is-columns > .form-actions { column-span: all; }
+.settings-form.is-columns > :deep(.form-actions) { margin-top: 0; }
 
 /* 字段名 + ⓘ：包一层 span，避免 label 的 flex 布局把图标顶到上沿 */
 .lbl { display: inline-block; white-space: nowrap; }
@@ -962,13 +963,24 @@ onMounted(() => {
 .settings-form :deep(.el-form-item:has(+ .form-group)),
 .settings-form :deep(.el-form-item:has(+ .form-actions)),
 .settings-form .form-group > :deep(.el-form-item:last-child) { border-radius: 0 0 10px 10px; }
-/* 保存按钮那一行不是表格的一部分 */
+/* 保存按钮：卡片底部一条操作栏——上面一道分隔线、按钮靠右；
+   不跟着参数名那一列缩进（以前缩在左下角，不挨着任何一张表，很突兀） */
 .settings-form :deep(.el-form-item.form-actions) {
   border: none;
+  border-top: 1px solid var(--param-border);
+  border-radius: 0;
   background: transparent;
+  margin-top: 20px;
 }
-.settings-form :deep(.el-form-item.form-actions .el-form-item__label) { background: transparent; border: none; }
-.settings-form :deep(.el-form-item.form-actions .el-form-item__content) { padding: 16px 0 0; min-height: 0; }
+.settings-form :deep(.el-form-item.form-actions .el-form-item__label) { display: none; }
+.settings-form :deep(.el-form-item.form-actions .el-form-item__content) {
+  margin-left: 0 !important;
+  padding: 16px 0 0;
+  min-height: 0;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.settings-form :deep(.el-form-item.form-actions .el-button + .el-button) { margin-left: 0; }
 .settings-form .num { width: 160px; }
 /* 文本框 / 下拉框别跟着卡片无限拉宽：420 够填 Key、地址这类最长的值 */
 .settings-form :deep(.el-input:not(.el-input-number .el-input)),

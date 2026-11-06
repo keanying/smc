@@ -1187,6 +1187,8 @@ onUnmounted(() => {
 .form-group-title { margin: 6px 0 12px; padding-left: 8px; border-left: 3px solid var(--el-color-primary); font-size: 13px; font-weight: 600; }
 .form-group-title:not(:first-child) { margin-top: 22px; }
 .param-form :deep(.el-form-item) { margin-bottom: 16px; }
+/* 「目标」下拉别拉满整张卡片（选多个时标签在 560 宽里换行） */
+.param-form :deep(.el-select) { max-width: 560px; }
 .preview-select { width: 140px; margin-right: 8px; }
 .add-scenic { display: flex; align-items: center; gap: 8px; }
 .cell-line { display: flex; align-items: center; gap: 6px; }
