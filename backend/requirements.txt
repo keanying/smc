@@ -18,7 +18,7 @@ redis==5.2.1
 
 # --- 采集 ---
 httpx[http2]==0.28.1
-playwright==1.49.1
+playwright==1.62.0
 parsel==1.9.1
 tenacity==9.0.0
 # 小红书 X-S/X-T/x-s-common 签名的纯 Python 实现（不需要浏览器）
