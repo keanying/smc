@@ -669,10 +669,11 @@ import UserManagement from '../components/UserManagement.vue'
 import ArchiveView from './ArchiveView.vue'
 import BoxesView from './BoxesView.vue'
 import { onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { Refresh } from '@element-plus/icons-vue'
 import { labelingApi, settingsApi } from '../api'
 import { channelLabel } from '../constants'
+import { toast } from '../composables/toast'
 
 // ?tab=users 这样带进来时直接打开那一页（旧的 /users、/archive、/boxes 地址会跳到这里）
 // 非管理员只有「档案」这一页，带别的页签进来也落到档案
@@ -837,7 +838,7 @@ async function saveSection(section: string, values: Record<string, any>) {
       if (!payload.ark.api_key) delete payload.ark.api_key
     }
     await settingsApi.save(section, payload)
-    ElMessage.success('已保存并立即生效')
+    toast.success('已保存并立即生效')
     await load()
   } finally {
     saving.value = false
@@ -873,9 +874,9 @@ async function testProxy() {
       auth_mode: proxy.auth_mode,
     })
     if (result.ok) {
-      ElMessage.success(`提取成功：${result.proxy}（有效期约 ${result.ttl_seconds} 秒）`)
+      toast.success(`提取成功：${result.proxy}（有效期约 ${result.ttl_seconds} 秒）`)
     } else {
-      ElMessage.error(result.message || '测试失败')
+      toast.danger(result.message || '测试失败')
     }
   } finally {
     testing.value = false

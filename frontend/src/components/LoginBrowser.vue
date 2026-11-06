@@ -76,12 +76,13 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { Loading, RefreshRight } from '@element-plus/icons-vue'
 import { accountApi } from '../api'
 import { LoginBrowserSocket, type BrowserMessage } from '../api/ws'
 import { channelLabel } from '../constants'
 import { useRemoteInput } from '../composables/remoteInput'
+import { toast } from '../composables/toast'
 
 const props = withDefaults(defineProps<{
   visible: boolean; channel: string; accountName: string
@@ -121,9 +122,9 @@ async function saveNow() {
   try {
     const result = await accountApi.saveLoginSession(sessionId)
     status.value = { ...status.value, logged_in: true, message: result.message }
-    ElMessage.success(result.message || '登录态已保存')
+    toast.success(result.message || '登录态已保存')
   } catch (error: any) {
-    ElMessage.error(error?.message || '保存失败')
+    toast.danger(error?.message || '保存失败')
   } finally {
     saving.value = false
   }
@@ -161,7 +162,7 @@ function handleMessage(message: BrowserMessage) {
   } else if (message.type === 'status') {
     status.value = message
     if (message.state === 'logged_in') {
-      ElMessage.success('登录成功，登录态已保存')
+      toast.success('登录成功，登录态已保存')
     }
   }
 }

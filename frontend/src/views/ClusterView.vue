@@ -177,12 +177,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { Refresh } from '@element-plus/icons-vue'
 import { clusterApi, settingsApi, type ClusterNode, type ClusterOverview } from '../api'
 import { CHANNEL_COLORS, channelLabel } from '../constants'
 import { clusterInfo } from '../composables/cluster'
 import { isAdmin } from '../composables/auth'
+import { toast } from '../composables/toast'
 
 const info = ref<ClusterOverview | null>(null)
 const loading = ref(false)
@@ -231,7 +232,7 @@ async function setAccept(row: ClusterNode, on: boolean) {
   toggling.value = row.node_id
   try {
     await clusterApi.setAccept(row.node_id, on)
-    ElMessage.success(on ? `${row.node_name} 恢复接收新任务` : `${row.node_name} 暂停接收新任务，在跑的会跑完`)
+    toast.success(on ? `${row.node_name} 恢复接收新任务` : `${row.node_name} 暂停接收新任务，在跑的会跑完`)
     await load()
   } finally {
     toggling.value = ''
@@ -240,7 +241,7 @@ async function setAccept(row: ClusterNode, on: boolean) {
 
 async function remove(row: ClusterNode) {
   await clusterApi.remove(row.node_id)
-  ElMessage.success('已删除')
+  toast.success('已删除')
   await load()
 }
 

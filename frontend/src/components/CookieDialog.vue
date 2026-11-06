@@ -110,10 +110,11 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { Refresh } from '@element-plus/icons-vue'
 import { accountApi, type CookieImportResult, type CookieInspect } from '../api'
 import { channelLabel, formatTime } from '../constants'
+import { toast } from '../composables/toast'
 
 const props = defineProps<{
   modelValue: boolean
@@ -163,7 +164,7 @@ async function doImport() {
     await loadState()
     emit('changed')
     if (!importResult.value.profile_warning) {
-      ElMessage.success(`已导入 ${importResult.value.count} 个 Cookie`)
+      toast.success(`已导入 ${importResult.value.count} 个 Cookie`)
     }
   } finally {
     importing.value = false
@@ -174,8 +175,8 @@ async function harvest() {
   harvesting.value = true
   try {
     const result = await accountApi.harvest(props.channel, props.accountName)
-    if (result.logged_in) ElMessage.success(result.message)
-    else ElMessage.warning(result.message)
+    if (result.logged_in) toast.success(result.message)
+    else toast.warning(result.message)
     await loadState()
     emit('changed')
   } finally {

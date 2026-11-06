@@ -107,10 +107,11 @@
 /** embedded：放在系统设置的页签里时为 true，标题缩小成页签内的小标题 */
 defineProps<{ embedded?: boolean }>()
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { boxesApi, scenicApi, type ScenicBox, type ScenicOption } from '../api'
 import { formatCount } from '../constants'
+import { toast } from '../composables/toast'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -149,7 +150,7 @@ async function openEdit(row?: ScenicBox) {
 
 async function save() {
   if (!form.box_name.trim()) {
-    ElMessage.warning('给盒子起个名字')
+    toast.warning('给盒子起个名字')
     return
   }
   saving.value = true
@@ -157,7 +158,7 @@ async function save() {
     const payload = { box_name: form.box_name.trim(), scenic_ids: form.scenic_ids }
     if (editing.value) {
       await boxesApi.update(editing.value.box_id, payload)
-      ElMessage.success('已保存，盒子一分钟内同步')
+      toast.success('已保存，盒子一分钟内同步')
     } else {
       showToken((await boxesApi.create(payload)).token)
     }
@@ -195,9 +196,9 @@ async function remove(row: ScenicBox) {
 async function copySnippet() {
   try {
     await navigator.clipboard.writeText(configSnippet.value)
-    ElMessage.success('已复制')
+    toast.success('已复制')
   } catch {
-    ElMessage.warning('浏览器不让复制，请手动选中复制')
+    toast.warning('浏览器不让复制，请手动选中复制')
   }
 }
 

@@ -112,9 +112,10 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { accountApi, type ProbeReport } from '../api'
 import { POI_CHANNELS, channelLabel } from '../constants'
+import { toast } from '../composables/toast'
 
 const props = defineProps<{
   modelValue: boolean
@@ -162,9 +163,9 @@ async function copyReport() {
   const text = JSON.stringify(report.value, null, 2)
   try {
     await navigator.clipboard.writeText(text)
-    ElMessage.success('报告已复制到剪贴板')
+    toast.success('报告已复制到剪贴板')
   } catch {
-    ElMessage.warning('浏览器不允许自动复制，请手动选中下面的内容')
+    toast.warning('浏览器不允许自动复制，请手动选中下面的内容')
   }
 }
 </script>

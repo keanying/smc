@@ -201,7 +201,7 @@ import ChannelTag from '../components/ChannelTag.vue'
 import { isCluster, loadCluster, nodeLabel } from '../composables/cluster'
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import { Edit, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import { scenicApi, taskApi, type ChannelOption, type Task, type TaskLog } from '../api'
 import aiIcon from '../assets/icons/ai.png'
@@ -212,6 +212,7 @@ import { TaskLogSocket } from '../api/ws'
 import {
   COLLECT_ENGINES, SCHEDULE_LABELS, TASK_STATUS_LABELS, TASK_STATUS_TYPES, channelLabel, formatTime, normalizeEngine,
 } from '../constants'
+import { toast } from '../composables/toast'
 
 function engineLabel(value: unknown): string {
   const engine = normalizeEngine(value)
@@ -252,19 +253,19 @@ function scrollToBottom() {
 
 async function run() {
   await taskApi.run(taskId)
-  ElMessage.success('已开始执行')
+  toast.success('已开始执行')
   await loadTask()
 }
 
 async function cancel() {
   await taskApi.cancel(taskId)
-  ElMessage.success('已发送取消信号')
+  toast.success('已发送取消信号')
   await loadTask()
 }
 
 async function onSaved(updated: Task) {
   task.value = updated
-  ElMessage.success(
+  toast.success(
     updated.is_running ? '已保存，任务正在运行，改动从下一轮开始生效' : '已保存',
   )
 }
@@ -272,7 +273,7 @@ async function onSaved(updated: Task) {
 async function clearLogs() {
   await taskApi.clearLogs(taskId)
   logs.value = []
-  ElMessage.success('日志已清空')
+  toast.success('日志已清空')
 }
 
 onMounted(async () => {

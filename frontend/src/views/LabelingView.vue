@@ -359,7 +359,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 // ⚠️ 图标名要在 @element-plus/icons-vue 里真的存在。
 // 这套图标**没有** Stethoscope，写了会编译不过（"没有导出的成员"）。
 // （自检/补标按钮现在用客户图标集 AppIcon，这里只剩搜索图标）
@@ -371,6 +371,7 @@ import {
 } from '../api'
 import { CHANNEL_LABELS } from '../constants'
 import { isScenicEdition } from '../composables/edition'
+import { toast } from '../composables/toast'
 
 const scenics = ref<ScenicOption[]>([])
 const channels = ref<ChannelOption[]>([])
@@ -510,7 +511,7 @@ async function startBackfill() {
 async function cancelBackfill() {
   if (!job.value) return
   await labelingApi.cancelBackfill(job.value.job_id)
-  ElMessage.info('已请求停止，正在跑的那一批结束后收工')
+  toast.info('已请求停止，正在跑的那一批结束后收工')
   job.value = { ...job.value, cancel_requested: true }
 }
 
@@ -525,7 +526,7 @@ function pollJob() {
       if (fresh.status !== 'running') {
         window.clearInterval(timer)
         await Promise.all([load(), loadStats()])
-        ElMessage.success(fresh.status === 'canceled'
+        toast.success(fresh.status === 'canceled'
           ? `已停止，这一轮标了 ${fresh.done} 条` : '补标结束')
       } else if (fresh.done !== before) {
         // 跑的过程中把统计数字也刷新，用户不用等结束才看到变化
@@ -571,13 +572,13 @@ async function restoreRunningJob() {
 /** 人工复核：1 标对了 / 2 标错了。改过内容的走 openEdit（写 3 复核成功）。 */
 async function review(row: LabelComment, flag: 1 | 2) {
   await labelingApi.save(row.id, { flag, reviewer: '人工' })
-  ElMessage.success(flag === 1 ? '已记为「人工复核正确」' : '已记为「人工复核错误」')
+  toast.success(flag === 1 ? '已记为「人工复核正确」' : '已记为「人工复核错误」')
   await Promise.all([load(), loadStats()])
 }
 
 async function resetOne(row: LabelComment) {
   await labelingApi.reset(row.id)
-  ElMessage.success('已撤销复核')
+  toast.success('已撤销复核')
   await Promise.all([load(), loadStats()])
 }
 
@@ -585,7 +586,7 @@ async function relabelOne(row: LabelComment) {
   relabelingId.value = row.id
   try {
     await labelingApi.relabel(row.id)
-    ElMessage.success('已重新标注，请复核')
+    toast.success('已重新标注，请复核')
     await Promise.all([load(), loadStats()])
   } finally {
     relabelingId.value = null
@@ -629,7 +630,7 @@ async function saveEdit() {
     dims = JSON.parse(dimensionText.value || '[]')
     ents = JSON.parse(entityText.value || '[]')
   } catch {
-    ElMessage.error('维度/实体标签不是合法 JSON，检查一下括号和引号')
+    toast.danger('维度/实体标签不是合法 JSON，检查一下括号和引号')
     return
   }
   saving.value = true
@@ -641,7 +642,7 @@ async function saveEdit() {
       entity_tags: ents,
       reviewer: '人工',
     })
-    ElMessage.success('已保存')
+    toast.success('已保存')
     editVisible.value = false
     await Promise.all([load(), loadStats()])
   } finally {

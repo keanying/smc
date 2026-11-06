@@ -221,7 +221,7 @@ import ChannelTag from '../components/ChannelTag.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowDown, ArrowUp, Search } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+
 import {
   dataApi, scenicApi,
   type ChannelOption, type OverviewRow, type ScenicOption, type Work,
@@ -229,6 +229,7 @@ import {
 import { CHANNEL_COLORS, channelLabel, formatCount, formatTime } from '../constants'
 import CommentTree from '../components/CommentTree.vue'
 import MediaGallery from '../components/MediaGallery.vue'
+import { toast } from '../composables/toast'
 
 const overview = ref<OverviewRow[]>([])
 const works = ref<Work[]>([])
@@ -345,7 +346,7 @@ async function removeWork(row: Work) {
     const res = await dataApi.removeWork(row.id)
     works.value = works.value.filter((w) => w.id !== row.id)
     worksTotal.value = Math.max(0, worksTotal.value - 1)
-    ElMessage.success(`已删除作品及其 ${res?.comments_deleted ?? 0} 条评论`)
+    toast.success(`已删除作品及其 ${res?.comments_deleted ?? 0} 条评论`)
     loadOverview().catch(() => {})
   } finally {
     deletingId.value = null

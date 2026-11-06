@@ -12,12 +12,15 @@
   <!-- 景区版（景区盒子）换一套深色外框布局 -->
   <BoxLayout v-else-if="route.name && isScenicEdition" />
   <MainLayout v-else-if="route.name" />
+  <!-- 全站通知（composables/toast.ts）：放在 #app 里面，跟着全站缩放 -->
+  <ToastHost />
 </template>
 
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
 import MainLayout from './layout/MainLayout.vue'
 import BoxLayout from './layout/BoxLayout.vue'
+import ToastHost from './components/ToastHost.vue'
 import { isScenicEdition } from './composables/edition'
 
 const route = useRoute()

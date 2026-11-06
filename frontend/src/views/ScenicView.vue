@@ -142,10 +142,11 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import { Plus, Search, Upload, UploadFilled } from '@element-plus/icons-vue'
 import { scenicApi, type ChannelOption, type Scenic } from '../api'
 import ScenicDetail from '../components/ScenicDetail.vue'
+import { toast } from '../composables/toast'
 
 const router = useRouter()
 const loading = ref(false)
@@ -196,7 +197,7 @@ function openScenicDialog(row?: Scenic) {
 
 async function saveScenic() {
   if (!form.scenic_id.trim() || !form.scenic_name.trim()) {
-    ElMessage.warning('目标ID和目标名称都要填')
+    toast.warning('目标ID和目标名称都要填')
     return
   }
   saving.value = true
@@ -209,7 +210,7 @@ async function saveScenic() {
       remark: form.remark || null,
       enabled: form.enabledBool ? 1 : 0,
     })
-    ElMessage.success('已保存')
+    toast.success('已保存')
     scenicDialog.value = false
     await loadScenics()
   } finally {
@@ -219,7 +220,7 @@ async function saveScenic() {
 
 async function removeScenic(row: Scenic) {
   await scenicApi.remove(row.scenic_id)
-  ElMessage.success('已删除')
+  toast.success('已删除')
   await loadScenics()
 }
 
@@ -237,9 +238,9 @@ async function importCsv() {
   importing.value = true
   try {
     const result = await scenicApi.importCsv(csvFile.value)
-    ElMessage.success(`导入完成：新增 ${result.created} 个，更新 ${result.updated} 个`)
+    toast.success(`导入完成：新增 ${result.created} 个，更新 ${result.updated} 个`)
     if (result.errors?.length) {
-      ElMessage.warning(`有 ${result.errors.length} 行被跳过：${result.errors[0]}`)
+      toast.warning(`有 ${result.errors.length} 行被跳过：${result.errors[0]}`)
     }
     csvVisible.value = false
     csvFiles.value = []

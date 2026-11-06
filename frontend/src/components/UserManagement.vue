@@ -134,11 +134,12 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { usersApi, type SysUser, type UserRole } from '../api'
 import { formatTime } from '../constants'
 import { currentUser, loadAuth } from '../composables/auth'
+import { toast } from '../composables/toast'
 
 const ROLES: Record<UserRole, string> = { admin: '管理员', operator: '操作员', viewer: '只读' }
 
@@ -191,7 +192,7 @@ async function save() {
     saving.value = true
     try {
       await usersApi.update(editing.value.id, { display_name: form.display_name })
-      ElMessage.success('已保存')
+      toast.success('已保存')
       formVisible.value = false
       await load()
       if (editing.value.id === currentUser.value?.id) await loadAuth(true)
@@ -207,7 +208,7 @@ async function save() {
       username: form.username.trim(), display_name: form.display_name.trim(),
       role: form.role, password: form.password,
     })
-    ElMessage.success(`已添加 ${form.username}，把初始密码告诉他`)
+    toast.success(`已添加 ${form.username}，把初始密码告诉他`)
     formVisible.value = false
     await load()
   } finally {
@@ -218,7 +219,7 @@ async function save() {
 async function changeRole(row: SysUser, role: UserRole) {
   try {
     await usersApi.update(row.id, { role })
-    ElMessage.success(`${row.username} 改成了${ROLES[role]}`)
+    toast.success(`${row.username} 改成了${ROLES[role]}`)
   } finally {
     await load()
   }
@@ -227,7 +228,7 @@ async function changeRole(row: SysUser, role: UserRole) {
 async function toggle(row: SysUser, enabled: boolean) {
   try {
     await usersApi.update(row.id, { enabled })
-    ElMessage.success(enabled ? '已启用' : '已停用，他的登录都已退出')
+    toast.success(enabled ? '已启用' : '已停用，他的登录都已退出')
   } finally {
     await load()
   }
@@ -244,7 +245,7 @@ async function doReset() {
   saving.value = true
   try {
     await usersApi.resetPassword(resetTarget.value.id, resetPassword.value)
-    ElMessage.success('密码已重置')
+    toast.success('密码已重置')
     resetVisible.value = false
     await load()
   } finally {
@@ -254,13 +255,13 @@ async function doReset() {
 
 async function unlock(row: SysUser) {
   await usersApi.unlock(row.id)
-  ElMessage.success('已解锁')
+  toast.success('已解锁')
   await load()
 }
 
 async function remove(row: SysUser) {
   await usersApi.remove(row.id)
-  ElMessage.success('已删除')
+  toast.success('已删除')
   await load()
 }
 

@@ -202,7 +202,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter, type RouteLocationRaw } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import { ArrowRight, LocationFilled, Plus, Refresh } from '@element-plus/icons-vue'
 import {
   accountApi, dataApi, editionApi, labelingApi, taskApi,
@@ -211,6 +211,7 @@ import {
 } from '../api'
 import { TASK_STATUS_LABELS, TASK_STATUS_TYPES, channelLabel, formatCount } from '../constants'
 import { isAdmin } from '../composables/auth'
+import { toast } from '../composables/toast'
 
 const router = useRouter()
 function go(to: RouteLocationRaw) {
@@ -346,7 +347,7 @@ async function syncNow() {
   syncing.value = true
   try {
     await editionApi.sync()
-    ElMessage.success('已和主同步')
+    toast.success('已和主同步')
     await load()
   } finally {
     syncing.value = false

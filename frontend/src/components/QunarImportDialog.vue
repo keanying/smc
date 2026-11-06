@@ -107,10 +107,11 @@
  * 景区和采集目标都已经建好，去任务管理建任务就能直接跑。
  */
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import {
   qunarApi, type QunarCity, type QunarPoi, type QunarProvince,
 } from '../api'
+import { toast } from '../composables/toast'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{
@@ -168,7 +169,7 @@ async function syncRegions() {
   syncing.value = true
   try {
     const r = await qunarApi.syncRegions()
-    ElMessage.success(`行政区划 ${r.saved} 行，其中 ${r.matched} 行接上了去哪儿城市`)
+    toast.success(`行政区划 ${r.saved} 行，其中 ${r.matched} 行接上了去哪儿城市`)
     await loadProvinces()
   } finally {
     syncing.value = false
@@ -223,7 +224,7 @@ async function doImport() {
       city_name: cityName.value,
       with_detail: withDetail.value,
     })
-    ElMessage.success(
+    toast.success(
       `新建 ${result.created} 个，更新 ${result.updated} 个`
       + (result.failed?.length ? `，失败 ${result.failed.length} 个` : ''),
     )

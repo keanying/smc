@@ -31,8 +31,9 @@
 
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import { authApi } from '../api'
+import { toast } from '../composables/toast'
 
 const visible = defineModel<boolean>({ default: false })
 const formRef = ref<FormInstance>()
@@ -60,7 +61,7 @@ async function submit() {
   saving.value = true
   try {
     await authApi.changePassword(form.old, form.password)
-    ElMessage.success('密码已修改')
+    toast.success('密码已修改')
     visible.value = false
   } finally {
     saving.value = false

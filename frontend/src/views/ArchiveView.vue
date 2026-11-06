@@ -330,13 +330,14 @@ defineProps<{ embedded?: boolean }>()
  * 唯一的写操作就是把某条建成景区 / 挂到景区上。
  */
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { ArrowRight, Refresh, Search } from '@element-plus/icons-vue'
 import {
   archiveApi, qunarApi, scenicApi,
   type ArchiveChannel, type ArchiveItem, type ArchiveJob, type ArchiveRegion,
   type ArchiveStat,
 } from '../api'
+import { toast } from '../composables/toast'
 
 const channels = ref<ArchiveChannel[]>([])
 const channel = ref('')
@@ -446,7 +447,7 @@ async function syncQunarRegions() {
   syncingRegions.value = true
   try {
     const r = await qunarApi.syncRegions()
-    ElMessage.success(`行政区划 ${r.saved} 行，其中 ${r.matched} 行接上了去哪儿城市`)
+    toast.success(`行政区划 ${r.saved} 行，其中 ${r.matched} 行接上了去哪儿城市`)
   } finally {
     syncingRegions.value = false
   }
@@ -476,7 +477,7 @@ async function refreshRegions() {
   loadingRegions.value = true
   try {
     const r = await archiveApi.refreshRegions(channel.value)
-    ElMessage.success(`区域清单 ${r.saved} 条`)
+    toast.success(`区域清单 ${r.saved} 条`)
     await loadRegions()
   } finally {
     loadingRegions.value = false
@@ -485,7 +486,7 @@ async function refreshRegions() {
 
 async function addManualRegion() {
   if (!manualForm.region_id.trim() || !manualForm.region_name.trim()) {
-    ElMessage.warning('编号和名称都要填')
+    toast.warning('编号和名称都要填')
     return
   }
   await archiveApi.addRegion(channel.value, manualForm.region_id.trim(),
@@ -516,13 +517,13 @@ async function startCollect() {
     region_ids: selectedRegions.value,
     with_detail: withDetail.value && !!currentChannel.value?.supports_detail,
   })
-  ElMessage.success('已开始采集，可以离开这个页面，进度不会丢')
+  toast.success('已开始采集，可以离开这个页面，进度不会丢')
 }
 
 async function cancelJob() {
   if (!job.value) return
   await archiveApi.cancelJob(job.value.job_id)
-  ElMessage.info('已请求停止，正在收尾')
+  toast.info('已请求停止，正在收尾')
 }
 
 /**
@@ -584,7 +585,7 @@ async function doImport() {
   try {
     const r = await archiveApi.importPois(
       channel.value, selected.value.map((x) => x.poi_id))
-    ElMessage.success(
+    toast.success(
       `新建目标 ${r.created} 个，更新 ${r.updated} 个`
       + (r.failed?.length ? `，失败 ${r.failed.length} 个` : ''))
     await Promise.all([load(query.page), loadStats()])
@@ -596,7 +597,7 @@ async function doImport() {
 async function refreshOne(row: ArchiveItem) {
   const fresh = await archiveApi.refreshOne(row.channel, row.poi_id)
   if (fresh) Object.assign(row, fresh)
-  ElMessage.success('已重新采集')
+  toast.success('已重新采集')
 }
 
 // ---------------- 详情 / 挂景区 ----------------
@@ -640,7 +641,7 @@ async function doAttach() {
   await archiveApi.attach(
     attachRow.value.channel, attachRow.value.poi_id, attachScenic.value)
   attachVisible.value = false
-  ElMessage.success('已挂上去')
+  toast.success('已挂上去')
   await Promise.all([load(query.page), loadStats()])
 }
 

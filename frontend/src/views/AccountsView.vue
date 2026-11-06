@@ -391,7 +391,7 @@
 import ChannelTag from '../components/ChannelTag.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { Odometer, Plus, Refresh, Setting } from '@element-plus/icons-vue'
 import {
   accountApi, settingsApi, type Account, type AccountQuotaInfo, type AccountQuotaLimits,
@@ -406,6 +406,7 @@ import {
 import LoginBrowser from '../components/LoginBrowser.vue'
 import CookieDialog from '../components/CookieDialog.vue'
 import ProbeDialog from '../components/ProbeDialog.vue'
+import { toast } from '../composables/toast'
 
 const accounts = ref<Account[]>([])
 const channels = ref<ChannelOption[]>([])
@@ -618,7 +619,7 @@ async function saveQuota() {
         per_channel: perChannel,
       },
     })
-    ElMessage.success('已保存，下次挑号/采集时生效')
+    toast.success('已保存，下次挑号/采集时生效')
     quotaDialog.value = false
     await loadQuota()
   } finally {
@@ -631,7 +632,7 @@ async function unlockRotation(row: Account) {
   //    先上"的软偏好，解掉它顶多是这个号被连着用两轮，配额和冷却那两道
   //    闸还在。为一个没风险的操作加一次点击，只会让人烦。
   await accountApi.unlockRotation(row.channel, row.account_name)
-  ElMessage.success('已解除轮换锁')
+  toast.success('已解除轮换锁')
   await loadQuota()
 }
 
@@ -640,7 +641,7 @@ async function releaseCooldown(row: Account) {
     `解除冷却之后这个账号会立刻被重新使用。配额闸门本来就是为了别把账号用到被封——确定吗？`,
     '解除冷却', { type: 'warning' })
   await accountApi.clearCooldown(row.channel, row.account_name)
-  ElMessage.success('已解除冷却')
+  toast.success('已解除冷却')
   await Promise.all([load(), loadQuota()])
 }
 
@@ -659,7 +660,7 @@ function toggleGroupFilter(name: string) {
 
 async function save() {
   if (!form.account_name.trim()) {
-    ElMessage.warning('给账号起个标识名')
+    toast.warning('给账号起个标识名')
     return
   }
   saving.value = true
@@ -691,7 +692,7 @@ async function save() {
     addDialog.value = false
     await Promise.all([load(), loadGroups()])
     if (editing) {
-      ElMessage.success('已保存')
+      toast.success('已保存')
       editingRow.value = null
       return
     }
@@ -724,7 +725,7 @@ function openLogin(row: Account, mode: 'login' | 'browse' = 'login') {
 
 async function onLoginClosed(loggedIn: boolean) {
   loginVisible.value = false
-  if (loggedIn) ElMessage.success('登录态已保存')
+  if (loggedIn) toast.success('登录态已保存')
   await Promise.all([load(), loadGroups()])
 }
 
@@ -733,9 +734,9 @@ async function check(row: Account) {
   try {
     const result = await accountApi.harvest(row.channel, row.account_name)
     if (result.logged_in) {
-      ElMessage.success(`${result.message}（${result.cookie_count} 个 Cookie）`)
+      toast.success(`${result.message}（${result.cookie_count} 个 Cookie）`)
     } else {
-      ElMessage.warning(result.message)
+      toast.warning(result.message)
     }
     await Promise.all([load(), loadGroups()])
   } finally {
@@ -749,10 +750,10 @@ async function checkAll() {
     const results = await accountApi.list({})
     const total = results.items.filter((a) => a.enabled).length
     if (!total) {
-      ElMessage.info('没有启用的账号')
+      toast.info('没有启用的账号')
       return
     }
-    ElMessage.success(`批量检测完成：${total} 个账号`)
+    toast.success(`批量检测完成：${total} 个账号`)
     await Promise.all([load(), loadGroups()])
   } finally {
     checkingAll.value = false
@@ -763,7 +764,7 @@ async function logout(row: Account) {
   try {
     await ElMessageBox.confirm(`确定退出 ${row.account_name} 的登录吗？`, '提示', { type: 'warning' })
     await accountApi.logout(row.channel, row.account_name)
-    ElMessage.success('已退出登录')
+    toast.success('已退出登录')
     await Promise.all([load(), loadGroups()])
   } catch {
     // 用户取消
@@ -781,9 +782,9 @@ async function toggle(row: Account, enabled: boolean) {
   try {
     await accountApi.toggle(row.channel, row.account_name, enabled)
     row.enabled = enabled ? 1 : 0
-    ElMessage.success(enabled ? '已启用' : '已停用')
+    toast.success(enabled ? '已启用' : '已停用')
   } catch (e: any) {
-    ElMessage.error(e?.message || '操作失败')
+    toast.danger(e?.message || '操作失败')
     await load()          // 失败就把界面拨回真实状态，别让开关停在假的位置
   }
 }
@@ -792,7 +793,7 @@ async function remove(row: Account) {
   try {
     await ElMessageBox.confirm(`确定删除账号 ${row.account_name} 吗？`, '警告', { type: 'error' })
     await accountApi.remove(row.channel, row.account_name)
-    ElMessage.success('删除成功')
+    toast.success('删除成功')
     await Promise.all([load(), loadGroups()])
   } catch {
     // 用户取消
@@ -813,9 +814,9 @@ async function runProbeAll() {
     )
     probeAllReports.value = reports || []
     const passed = (reports || []).filter((r) => r.ok).length
-    ElMessage.success(`体检完成：${passed}/${(reports || []).length} 个平台能采到数据`)
+    toast.success(`体检完成：${passed}/${(reports || []).length} 个平台能采到数据`)
   } catch (e: any) {
-    ElMessage.error(e.message || '体检失败')
+    toast.danger(e.message || '体检失败')
   } finally {
     probingAll.value = false
   }

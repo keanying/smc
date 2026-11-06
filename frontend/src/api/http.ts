@@ -5,7 +5,7 @@
 // 首次运行即表示已阅读并同意根目录 LICENSE，使用风险与法律责任由使用者自行承担。
 
 import axios, { type AxiosRequestConfig } from 'axios'
-import { ElMessage } from 'element-plus'
+import { toast } from '../composables/toast'
 
 /**
  * 后端统一响应结构：{ code: 0, data: ..., message: '' }
@@ -55,7 +55,7 @@ async function request<T>(config: AxiosRequestConfig, silent = false): Promise<T
     }
     return body as unknown as T
   } catch (error) {
-    if (!silent) ElMessage.error((error as Error).message)
+    if (!silent) toast.danger((error as Error).message)
     throw error
   }
 }

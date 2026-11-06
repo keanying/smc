@@ -660,12 +660,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import {
   metricsApi, type MetricCatalogTable, type MetricRun, type MetricsConfig,
 } from '../api'
 import { MetricLogSocket } from '../api/ws'
 import ParamNote from '../components/ParamNote.vue'
+import { toast } from '../composables/toast'
 
 const router = useRouter()
 const loading = ref(false)
@@ -821,7 +822,7 @@ async function startRun() {
       scenics: runScenics.value.length ? runScenics.value : undefined,
       no_push: runNoPush.value,
     })
-    ElMessage.success('已开始计算')
+    toast.success('已开始计算')
     await refreshLive()
     openRun(run)
   } finally {
@@ -837,7 +838,7 @@ async function openRun(row: MetricRun) {
 
 async function cancelRun(row: MetricRun) {
   await metricsApi.cancel(row.run_id)
-  ElMessage.info('已停止')
+  toast.info('已停止')
   await refreshLive()
 }
 
@@ -860,7 +861,7 @@ async function initTables() {
   try {
     const res = await metricsApi.initTables()
     const created = res.filter((r) => r.result === '已创建').length
-    ElMessage.success(created ? `已创建 ${created} 张表` : '表都已经在了')
+    toast.success(created ? `已创建 ${created} 张表` : '表都已经在了')
     await loadTables()
   } finally {
     initing.value = false
@@ -897,9 +898,9 @@ async function openPreview() {
 async function copyPreview() {
   try {
     await navigator.clipboard.writeText(preview.value?.curl || '')
-    ElMessage.success('已复制')
+    toast.success('已复制')
   } catch {
-    ElMessage.warning('浏览器不让复制，手动选中复制吧')
+    toast.warning('浏览器不让复制，手动选中复制吧')
   }
 }
 
@@ -984,15 +985,15 @@ function fillMockName() {
 async function startMock() {
   const to = mock.to_scenic.trim()
   if (!mock.from_scenic || !to || !mock.to_name.trim()) {
-    ElMessage.warning('源目标、替换目标编号和名称都要填')
+    toast.warning('源目标、替换目标编号和名称都要填')
     return
   }
   if (mock.from_scenic === to) {
-    ElMessage.error('目标编号和源目标一样：这样会用演示数据覆盖真实目标')
+    toast.danger('目标编号和源目标一样：这样会用演示数据覆盖真实目标')
     return
   }
   if (!mock.tables.length) {
-    ElMessage.warning('至少勾一张表')
+    toast.warning('至少勾一张表')
     return
   }
   // 目标景区要是已经有真实数据，推出去会按主键覆盖下游里它的数据——说清楚再让人确认
@@ -1020,7 +1021,7 @@ async function startMock() {
       from_scenic: mock.from_scenic, to_scenic: to, to_name: mock.to_name.trim(),
       start_date: mock.dates[0], end_date: mock.dates[1], tables: mock.tables, dry_run: mock.dry_run,
     })
-    ElMessage.success(mock.dry_run ? '已开始组报文' : '已开始推送演示数据')
+    toast.success(mock.dry_run ? '已开始组报文' : '已开始推送演示数据')
     await refreshLive()
     openRun(run)
   } finally {
@@ -1105,7 +1106,7 @@ async function saveConfig() {
   saving.value = true
   try {
     cfg.value = await metricsApi.saveConfig(out)
-    ElMessage.success('已保存，下次计算按新配置')
+    toast.success('已保存，下次计算按新配置')
     await Promise.all([loadStatus(), loadTables()])
   } finally {
     saving.value = false

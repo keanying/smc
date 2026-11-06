@@ -344,11 +344,12 @@
 <script setup lang="ts">
 import ChannelTag from './ChannelTag.vue'
 import { computed, onUnmounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import {
   archiveApi, scenicApi, type ArchiveItem, type ChannelOption,
   type FilterWord, type Keyword, type MarkWordsJob, type Target,
 } from '../api'
+import { toast } from '../composables/toast'
 
 const props = defineProps<{ scenicId: string; channels: ChannelOption[] }>()
 
@@ -413,7 +414,7 @@ async function saveLabelRule() {
   savingLabel.value = true
   try {
     await scenicApi.saveLabelPrompt(props.scenicId, { prompt: labelRule.prompt, broad_keywords: labelRule.broad_keywords })
-    ElMessage.success('已保存，之后标注的评论都会带上')
+    toast.success('已保存，之后标注的评论都会带上')
   } finally { savingLabel.value = false }
 }
 
@@ -439,12 +440,12 @@ function splitWords(raw: string): string[] {
 async function addWords(kind: 'aux' | 'exclude' | 'mark', raw: string) {
   const parts = splitWords(raw)
   if (!parts.length) {
-    ElMessage.warning(`先输入${KIND_LABEL[kind]}`)
+    toast.warning(`先输入${KIND_LABEL[kind]}`)
     return false
   }
   const r = await scenicApi.addFilterWords(props.scenicId, kind, parts)
   // 超上限被丢掉的必须说出来，否则用户会以为 250 个全存上了
-  ElMessage.success(
+  toast.success(
     `新增 ${r.added} 个，跳过重复 ${r.skipped} 个`
     + (r.dropped
       ? `；超出 ${KIND_MAX[kind]} 个上限，丢弃 ${r.dropped} 个`
@@ -473,7 +474,7 @@ async function addMark() {
   try {
     if (await addWords('mark', markInput.value)) {
       markInput.value = ''
-      ElMessage.info('新采的评论会自动识别；已有的评论点「重新识别历史评论」')
+      toast.info('新采的评论会自动识别；已有的评论点「重新识别历史评论」')
     }
   } finally { savingMark.value = false }
 }
@@ -494,8 +495,8 @@ function watchMarkJob() {
     markJob.value = job
     if (job?.status !== 'running') {
       window.clearInterval(markTimer)
-      if (job?.status === 'done') ElMessage.success(`重新识别完成：${job.hit} 条命中标注字，${job.changed} 条有变化`)
-      if (job?.status === 'failed') ElMessage.error(`重新识别失败：${job.error}`)
+      if (job?.status === 'done') toast.success(`重新识别完成：${job.hit} 条命中标注字，${job.changed} 条有变化`)
+      if (job?.status === 'failed') toast.danger(`重新识别失败：${job.error}`)
     }
   }, 1000)
 }
@@ -596,7 +597,7 @@ async function refreshArchive(row: ArchiveItem) {
   try {
     const fresh = await archiveApi.refreshOne(row.channel, row.poi_id)
     if (fresh) Object.assign(row, fresh)
-    ElMessage.success('已重新采集')
+    toast.success('已重新采集')
   } finally {
     refreshing.value = ''
   }
@@ -622,13 +623,13 @@ async function addKeywords() {
     .map((s) => s.trim())
     .filter(Boolean)
   if (!parts.length) {
-    ElMessage.warning('先输入关键字')
+    toast.warning('先输入关键字')
     return
   }
   savingKeyword.value = true
   try {
     const result = await scenicApi.addKeywords(props.scenicId, parts)
-    ElMessage.success(`新增 ${result.added} 个，跳过重复 ${result.skipped} 个`)
+    toast.success(`新增 ${result.added} 个，跳过重复 ${result.skipped} 个`)
     keywordInput.value = ''
     await loadAll()
   } finally {
@@ -648,7 +649,7 @@ async function toggleKeyword(item: Keyword) {
 
 async function saveTarget() {
   if (!targetForm.target_id.trim()) {
-    ElMessage.warning('目标ID不能为空')
+    toast.warning('目标ID不能为空')
     return
   }
   savingTarget.value = true
@@ -661,7 +662,7 @@ async function saveTarget() {
       target_url: isPoiHomepageTarget(targetForm) ? targetForm.target_url.trim() || null : null,
       enabled: 1,
     })
-    ElMessage.success('已添加')
+    toast.success('已添加')
     targetForm.target_id = ''
     targetForm.target_name = ''
     targetForm.target_url = ''
@@ -708,7 +709,7 @@ async function editTargetUrl(row: Target) {
     extra: row.extra,
     enabled: row.enabled,
   })
-  ElMessage.success('已保存，下次采集生效')
+  toast.success('已保存，下次采集生效')
   await loadAll()
 }
 

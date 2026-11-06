@@ -187,7 +187,7 @@ import ChannelTag from '../components/ChannelTag.vue'
 import { isCluster, loadCluster, nodeLabel, workerNodes } from '../composables/cluster'
 import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { scenicApi, taskApi, type ChannelOption, type ScenicOption, type Task } from '../api'
 import { COLLECT_ENGINES, POI_CHANNELS, normalizeEngine } from '../constants'
@@ -198,6 +198,7 @@ import {
   SCHEDULE_LABELS, TASK_STATUS_LABELS, TASK_STATUS_TYPES,
   channelLabel, formatTime,
 } from '../constants'
+import { toast } from '../composables/toast'
 
 const tasks = ref<Task[]>([])
 const scenics = ref<ScenicOption[]>([])
@@ -241,13 +242,13 @@ async function load(silent = false) {
 
 async function run(row: Task) {
   await taskApi.run(row.task_id)
-  ElMessage.success('已开始执行')
+  toast.success('已开始执行')
   await load(true)
 }
 
 async function cancel(row: Task) {
   await taskApi.cancel(row.task_id)
-  ElMessage.success('已发送取消信号')
+  toast.success('已发送取消信号')
   await load(true)
 }
 
@@ -257,7 +258,7 @@ function edit(row: Task) {
 }
 
 async function onSaved(updated: Task) {
-  ElMessage.success(
+  toast.success(
     updated.is_running
       ? '已保存，任务正在运行，改动从下一轮开始生效'
       : '已保存',
@@ -278,7 +279,7 @@ async function toggleAi(row: Task) {
     const enabled = !row.params?.ai_filter
     await taskApi.toggleAiFilter(row.task_id, enabled)
     row.params = { ...(row.params || {}), ai_filter: enabled }
-    ElMessage.success(enabled ? 'AI 过滤已开启，下一轮采集生效' : 'AI 过滤已关闭')
+    toast.success(enabled ? 'AI 过滤已开启，下一轮采集生效' : 'AI 过滤已关闭')
   } finally {
     aiToggling.value = ''
   }
@@ -291,7 +292,7 @@ async function toggleSchedule(row: Task) {
 
 async function remove(row: Task) {
   await taskApi.remove(row.task_id)
-  ElMessage.success('已删除')
+  toast.success('已删除')
   await load()
 }
 

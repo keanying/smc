@@ -249,7 +249,7 @@ import { isCluster, loadCluster, workerNodes } from '../composables/cluster'
 import { isScenicEdition } from '../composables/edition'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+
 import { Download } from '@element-plus/icons-vue'
 import {
   accountApi, scenicApi, settingsApi, taskApi,
@@ -257,6 +257,7 @@ import {
 } from '../api'
 import { CRON_PRESETS, POI_CHANNELS, channelLabel } from '../constants'
 import CollectParamsForm from '../components/CollectParamsForm.vue'
+import { toast } from '../composables/toast'
 
 const route = useRoute()
 const router = useRouter()
@@ -350,13 +351,13 @@ async function pullKeywords() {
       enabled_only: true, limit: keywordLimit.value,
     })
     if (!rows.length) {
-      ElMessage.warning(isScenicEdition.value
+      toast.warning(isScenicEdition.value
         ? '该目标还没有启用的关键字，请联系总部补上后重新下发分配包'
         : '该目标还没有启用的关键字，先去目标管理里添加')
       return
     }
     form.keywords = rows.map((r) => r.keyword)
-    ElMessage.success(`已带入 ${rows.length} 个关键字`)
+    toast.success(`已带入 ${rows.length} 个关键字`)
   } finally {
     loadingKeywords.value = false
   }
@@ -387,9 +388,9 @@ async function previewSchedule() {
 }
 
 async function submit() {
-  if (!form.task_name.trim()) return ElMessage.warning('填一下任务名称')
-  if (!form.scenic_id) return ElMessage.warning('选一个目标')
-  if (!form.channels.length) return ElMessage.warning('请选择采集平台')
+  if (!form.task_name.trim()) return toast.warning('填一下任务名称')
+  if (!form.scenic_id) return toast.warning('选一个目标')
+  if (!form.channels.length) return toast.warning('请选择采集平台')
 
   creating.value = true
   try {
@@ -414,7 +415,7 @@ async function submit() {
     if (form.schedule_type === 'cron') payload.cron_expression = form.cron_expression.trim()
 
     const task = await taskApi.create(payload)
-    ElMessage.success('任务已创建')
+    toast.success('任务已创建')
     router.push({ name: 'task-detail', params: { taskId: task.task_id } })
   } finally {
     creating.value = false

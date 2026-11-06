@@ -68,10 +68,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import { authApi } from '../api'
 import { authStatus, currentUser, loadAuth, setLoggedIn } from '../composables/auth'
 import { editionInfo, isScenicEdition } from '../composables/edition'
+import { toast } from '../composables/toast'
 
 const route = useRoute()
 const router = useRouter()
@@ -123,7 +124,7 @@ async function submitSetup() {
       username: setupForm.username.trim(), password: setupForm.password,
       display_name: setupForm.display_name.trim(),
     }))
-    ElMessage.success('管理员已创建')
+    toast.success('管理员已创建')
     goBack()
   } finally {
     submitting.value = false

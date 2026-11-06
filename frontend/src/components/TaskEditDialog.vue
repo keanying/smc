@@ -126,10 +126,11 @@
 <script setup lang="ts">
 import { isCluster, loadCluster, workerNodes } from '../composables/cluster'
 import { computed, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import { taskApi, type ChannelOption, type Task } from '../api'
 import { CRON_PRESETS, POI_CHANNELS } from '../constants'
 import CollectParamsForm from './CollectParamsForm.vue'
+import { toast } from '../composables/toast'
 
 const props = defineProps<{
   modelValue: boolean
@@ -230,8 +231,8 @@ async function previewSchedule() {
 
 async function save() {
   if (!props.task) return
-  if (!form.task_name.trim()) return ElMessage.warning('填一下任务名称')
-  if (!form.channels.length) return ElMessage.warning('请选择采集平台')
+  if (!form.task_name.trim()) return toast.warning('填一下任务名称')
+  if (!form.channels.length) return toast.warning('请选择采集平台')
 
   saving.value = true
   try {
