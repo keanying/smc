@@ -180,6 +180,10 @@ EXTRA_COLUMNS = [
      "TEXT NULL COMMENT '命中的标注字（JSON 数组），给 AI 关键词做补充；页面和导出里合并显示'"),
     (COMMENTS, "source_box",
      "VARCHAR(64) NOT NULL DEFAULT '' COMMENT '上报这条数据的景区盒子编号；主自己采的为空'"),
+    # 归因明细：keyword_tags 里每个关键词「为什么提取它」，和 keyword_tags 一一对应、顺序一致。
+    # AI 标注时由引擎写；人工复核改关键词、重新识别标注字时跟着同步（见 core/attribution.py）
+    (COMMENTS, "attribution_details",
+     "LONGTEXT NULL COMMENT '归因明细（JSON 数组）：[{\"word\":\"关键词\",\"reason\":\"为什么提取这个关键词\"}]，与 keyword_tags 一一对应'"),
 ]
 
 #: 后加的索引：(表名, 索引名, 索引定义)

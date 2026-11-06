@@ -238,7 +238,11 @@
 
         <el-table-column label="关键词" min-width="160">
           <template #default="{ row }">
-            <el-tag v-for="(k, i) in row.keyword_tags" :key="i" size="small" class="tag">{{ k }}</el-tag>
+            <!-- 悬停看归因：为什么提取这个关键词（attribution_details） -->
+            <el-tooltip v-for="(k, i) in row.keyword_tags" :key="i" placement="top" :show-after="200"
+                        :content="reasonOf(row, k)" :disabled="!reasonOf(row, k)">
+              <el-tag size="small" class="tag" :class="{ 'has-reason': !!reasonOf(row, k) }">{{ k }}</el-tag>
+            </el-tooltip>
             <!-- 标注字补充：AI 已经提到的不重复显示 -->
             <el-tag v-for="k in extraMarks(row)" :key="`m-${k}`" size="small" type="warning"
                     class="tag" title="标注字（景区配置的词，原文里出现）">{{ k }}</el-tag>
@@ -592,6 +596,10 @@ async function relabelOne(row: LabelComment) {
 const editVisible = ref(false)
 const saving = ref(false)
 const editing = ref<LabelComment | null>(null)
+/** 归因明细里这个关键词的原因（为什么提取它）；历史数据没有就是空 */
+function reasonOf(row: LabelComment, word: string): string {
+  return (row.attribution_details || []).find((d) => d.word === word)?.reason || ''
+}
 /** 标注字里 AI 关键词还没有的那些（列表里接在 AI 关键词后面显示） */
 function extraMarks(row: LabelComment): string[] {
   const ai = new Set(row.keyword_tags || [])
@@ -722,6 +730,8 @@ onUnmounted(() => window.clearInterval(timer))
 .meta { font-size: 12px; color: var(--smc-text-secondary); margin-top: 4px; }
 .muted { color: var(--el-text-color-placeholder); font-size: 12px; }
 .tag { margin: 2px 4px 2px 0; }
+/* 有归因原因的关键词：虚线下划线提示可以悬停看原因 */
+.tag.has-reason { text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
 .row-actions { display: inline-flex; align-items: center; }
 
 /* 复核状态：圆点 + 文字，比一列实心色块更好扫 */

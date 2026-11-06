@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-__all__ = ["ScenicRule", "set_rules", "rule_for", "match_marks", "merge_marks",
+__all__ = ["ScenicRule", "set_rules", "rule_for", "match_marks", "merge_marks", "MARK_WORD_REASON",
            "BROAD_KEYWORD_MAX_LENGTH", "BROAD_KEYWORD_MAX_COUNT"]
 
 #: 放宽后每个关键词最长多少字、每条最多多少个
@@ -72,6 +72,10 @@ def match_marks(content: str, words: Sequence[str]) -> List[str]:
         if pos >= 0:
             found.append((pos, word))
     return [w for _, w in sorted(found, key=lambda x: x[0])]
+
+
+#: 标注字补进关键词时，归因明细里写的原因（smc 的 app/core/mark_words.py 用同一句，有测试盯着）
+MARK_WORD_REASON = "命中本景区标注字"
 
 
 def merge_marks(keywords: Iterable[str], marks: Iterable[str]) -> List[str]:

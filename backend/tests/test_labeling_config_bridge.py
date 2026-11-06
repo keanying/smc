@@ -52,7 +52,8 @@ def test_engine_tuning_is_passed_through(engine_yaml):
     """引擎配的输出预算必须原样到达引擎，不能被 smc 改小。"""
     built = _build()
     assert built["llm"]["max_output_tokens"] == engine_yaml["llm"]["max_output_tokens"]
-    assert built["llm"]["max_output_tokens"] == 9096, "1024 那个老毛病回来了"
+    # 以引擎配置文件里的值为准（会被调，别钉死数字），关键是不能被 smc 这边的旧值压下去
+    assert built["llm"]["max_output_tokens"] == config_bridge.engine_defaults()["llm"]["max_output_tokens"], "1024 那个老毛病回来了"
     assert built["llm"]["max_output_tokens_cap"] == engine_yaml["llm"]["max_output_tokens_cap"]
 
 
@@ -106,10 +107,10 @@ def test_stale_db_setting_cannot_override_engine():
 
     built = config_bridge.build_engine_config(cfg)
 
-    assert built["llm"]["max_output_tokens"] == 9096, "库里的 1024 又把引擎压下去了"
-    assert built["llm"]["temperature"] == 0.01
-    assert built["llm"]["max_retries"] == 3
-    assert built["llm"]["read_timeout"] == 60
+    # 都以引擎配置文件里的值为准（会被调，别钉死数字），关键是库里那份旧值（1024/0.9/99/1）进不来
+    engine_llm = config_bridge.engine_defaults()["llm"]
+    for key in ("max_output_tokens", "temperature", "max_retries", "read_timeout"):
+        assert built["llm"][key] == engine_llm[key], f"库里的旧值又把引擎的 {key} 压下去了"
 
 
 def test_smc_owned_keys_still_win():

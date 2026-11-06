@@ -35,6 +35,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from ..core import attribution
 from ..core.config import Config
 from ..core.logging import get_logger
 from . import config_bridge
@@ -905,6 +906,9 @@ def _result_to_dict(result: Any) -> Dict[str, Any]:
         "dimension_tags": _tags("dimension_tags"),
         "entity_tags": _tags("entity_tags"),
         "keyword_tags": list(_g("keyword_tags", []) or []),
+        # 归因明细：每个关键词为什么提取（老版本引擎没有这个字段时原因为空）
+        "attribution_details": attribution.align(_g("keyword_tags", []) or [],
+                                                 _g("attribution_details", []) or []),
         "confidence": _g("confidence", None),
         "relevant": _g("relevant", True),
         "reason": _g("reason", ""),
