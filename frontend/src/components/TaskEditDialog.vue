@@ -8,7 +8,7 @@
 
 <template>
   <el-dialog
-    v-model="visible" title="编辑任务" width="760px" destroy-on-close
+    v-model="visible" title="编辑任务" width="900px" destroy-on-close class="task-edit-dialog"
     :close-on-click-modal="false" @open="onOpen"
   >
     <!-- 本轮已经开始的平台仍用启动时的配置，改动从下一轮开始生效——不需要重新建任务 -->
@@ -18,7 +18,8 @@
       title="任务运行中，改动从下一轮开始生效"
     />
 
-    <el-form :model="form" label-width="110px">
+    <!-- 标签宽度、对齐方式和下面的采集参数（CollectParamsForm）一致，整张表单左边一条线 -->
+    <el-form :model="form" :label-width="LABEL_WIDTH" label-position="left">
       <el-form-item label="任务名称">
         <el-input v-model="form.task_name" />
       </el-form-item>
@@ -39,7 +40,8 @@
 
       <div class="form-section">运行模式</div>
 
-      <el-form-item label="调度模式">
+      <div class="param-grid">
+      <el-form-item label="调度模式" class="full">
         <el-radio-group v-model="form.schedule_type" @change="previewSchedule">
           <el-radio-button value="once">立即执行一次</el-radio-button>
           <el-radio-button value="at">定时一次</el-radio-button>
@@ -64,7 +66,7 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item v-if="form.schedule_type === 'cron'">
+      <el-form-item v-if="form.schedule_type === 'cron'" class="full">
         <template #label>
           cron 表达式<InfoTip>
             5 段 = 分 时 日 月 周<br>
@@ -100,19 +102,20 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item v-if="nextRuns.length" label="下次执行">
+      <el-form-item v-if="nextRuns.length" label="下次执行" class="full">
         <el-tag v-for="(t, i) in nextRuns" :key="i" type="info" effect="plain" class="mono" style="margin: 0 6px 4px 0">
           {{ t }}
         </el-tag>
       </el-form-item>
-      <el-form-item v-if="scheduleError" label=" ">
+      <el-form-item v-if="scheduleError" label=" " class="full">
         <el-alert type="error" :closable="false" :title="scheduleError" />
       </el-form-item>
+      </div>
     </el-form>
 
     <div class="form-section">采集参数</div>
     <CollectParamsForm
-      ref="paramsForm" v-model="params"
+      ref="paramsForm" v-model="params" :label-width="LABEL_WIDTH"
       :channels="form.channels" :initial="task?.params || null"
     />
 
@@ -131,6 +134,9 @@ import { taskApi, type ChannelOption, type Task } from '../api'
 import { CRON_PRESETS, POI_CHANNELS } from '../constants'
 import CollectParamsForm from './CollectParamsForm.vue'
 import { toast } from '../composables/toast'
+
+/** 整张表单统一的标签宽度（上面的任务设置和下面的采集参数共用） */
+const LABEL_WIDTH = '136px'
 
 const props = defineProps<{
   modelValue: boolean
@@ -266,14 +272,42 @@ async function save() {
 <style scoped>
 /* 标签里的说明图标：label 是 flex 容器，图标默认会顶到上沿，这里让它和文字居中对齐 */
 :deep(.el-form-item__label .info-tip) { align-self: center; }
+/* 分组标题：左边一道主题色短竖条，右边一根细线拉到头 */
 .form-section {
-  margin: 4px 0 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--smc-border);
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 22px 0 14px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--smc-text);
 }
+.form-section::before {
+  content: '';
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--smc-primary);
+}
+.form-section::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--smc-border);
+}
+/* 短字段（数字、开关、下拉）一行两个；放不下自动变一列 */
+.param-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+  column-gap: 28px;
+}
+.param-grid > .full { grid-column: 1 / -1; }
+.param-grid :deep(.filter-fields) { display: contents; }
+/* 弹窗：内容区自己滚，标题和「取消 / 保存」一直看得见 */
+:global(.task-edit-dialog.el-dialog) { display: flex; flex-direction: column; max-height: calc(var(--vh100) - 80px); margin-top: 40px !important; margin-bottom: 0; }
+:global(.task-edit-dialog .el-dialog__body) { flex: 1; min-height: 0; overflow-y: auto; padding-right: 20px; }
+:global(.task-edit-dialog .el-dialog__footer) { border-top: 1px solid var(--smc-border); padding-top: 14px; }
+.param-grid :deep(.el-form-item) { margin-bottom: 16px; }
 .legacy-warn {
   width: 100%;
   margin-top: 6px;
