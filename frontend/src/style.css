@@ -494,3 +494,154 @@ html.edition-scenic .el-table__fixed-right-patch { background: #f5f6f9; }
 html.edition-scenic .el-card { border: 1px solid var(--smc-border) !important; box-shadow: none !important; }
 /* 主按钮的投影跟着换成中性色（总部版是紫色光晕） */
 html.edition-scenic .el-button--primary:not(.is-plain):not(.is-link):not(.is-text) { box-shadow: 0 6px 16px rgba(20, 22, 30, 0.18); }
+
+/* ---------------- 下拉菜单 / 下拉选择框：照 HeroUI v3 的 Dropdown / ListBox ----------------
+ * - 弹层：白底大圆角（22px）、三层柔和阴影、无边框无箭头；内边距 6px
+ * - 每一项：至少 36px 高、圆角 14px，悬停浅灰底，按下微微缩小（0.98）；项与项间距 2px
+ * - 分隔线占 94% 宽居中；危险项（加 class="is-danger"）文字图标都是红色；禁用半透明
+ * - 进场：从 90% 放大 + 淡入，150ms，朝触发按钮的方向偏 4px
+ *
+ * ⚠️ 外观和动画都放在弹层的「里面那一层」上，不放在 .el-popper 本身：
+ *    Element 用 transform: translate() 给弹层定位（gpuAcceleration），弹层自己再加 transform 会被行内样式顶掉，
+ *    它自带的 el-zoom-in-top 动画其实一直没生效。里层同时也是全站缩放（zoom）作用的那一层。
+ */
+:root {
+  --smc-overlay-radius: 22px;
+  --smc-overlay-item-radius: 14px;
+  --smc-overlay-shadow: 0 2px 8px rgba(30, 24, 70, 0.06), 0 -6px 12px rgba(30, 24, 70, 0.03), 0 14px 28px rgba(30, 24, 70, 0.10);
+  --smc-overlay-hover: #f3f2f8;
+}
+.el-dropdown__popper.el-popper,
+.el-select__popper.el-popper {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: var(--smc-overlay-radius);
+}
+.el-dropdown__popper.el-popper > .el-popper__arrow,
+.el-select__popper.el-popper > .el-popper__arrow { display: none; }
+.el-dropdown__popper.el-popper > .el-scrollbar,
+.el-select__popper.el-popper > .el-select-dropdown {
+  background: #fff;
+  border: none;
+  border-radius: var(--smc-overlay-radius);
+  box-shadow: var(--smc-overlay-shadow);
+  overflow: hidden;
+}
+/* 进场动画（Element 在进场的那 300ms 挂着 el-zoom-in-top-enter-active） */
+@keyframes smc-overlay-in-down { from { opacity: 0; transform: translateY(-4px) scale(0.9); } }
+@keyframes smc-overlay-in-up { from { opacity: 0; transform: translateY(4px) scale(0.9); } }
+.el-dropdown__popper.el-zoom-in-top-enter-active > :not(.el-popper__arrow),
+.el-select__popper.el-zoom-in-top-enter-active > :not(.el-popper__arrow) {
+  transform-origin: top center;
+  animation: smc-overlay-in-down 150ms ease;
+}
+.el-dropdown__popper.el-zoom-in-top-enter-active[data-popper-placement^="top"] > :not(.el-popper__arrow),
+.el-select__popper.el-zoom-in-top-enter-active[data-popper-placement^="top"] > :not(.el-popper__arrow) {
+  transform-origin: bottom center;
+  animation-name: smc-overlay-in-up;
+}
+/* 退场快一点淡掉（HeroUI 100ms） */
+.el-dropdown__popper.el-zoom-in-top-leave-active,
+.el-select__popper.el-zoom-in-top-leave-active { transition: opacity 100ms ease !important; }
+@media (prefers-reduced-motion: reduce) {
+  .el-dropdown__popper > :not(.el-popper__arrow), .el-select__popper > :not(.el-popper__arrow) { animation: none !important; }
+}
+
+/* ---- el-dropdown 菜单项 ---- */
+.el-dropdown-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+  padding: 6px !important;
+  background: transparent !important;
+}
+.el-dropdown-menu__item {
+  position: relative;
+  min-height: 36px;
+  gap: 10px;
+  padding: 6px 10px !important;
+  border-radius: var(--smc-overlay-item-radius);
+  font-size: 14px !important;
+  line-height: 22px !important;
+  color: var(--smc-text) !important;
+  transition: transform 250ms cubic-bezier(0.25, 1, 0.5, 1), background-color 120ms ease;
+}
+.el-dropdown-menu__item .el-icon { margin-right: 0 !important; font-size: 16px; color: var(--smc-text-secondary); }
+.el-dropdown-menu__item:not(.is-disabled):hover,
+.el-dropdown-menu__item:not(.is-disabled):focus {
+  background: var(--smc-overlay-hover) !important;
+  color: var(--smc-text) !important;
+}
+.el-dropdown-menu__item:not(.is-disabled):active { transform: scale(0.98); }
+.el-dropdown-menu__item.is-disabled { opacity: 0.5; color: var(--smc-text-secondary) !important; }
+.el-dropdown-menu__item.is-danger,
+.el-dropdown-menu__item.is-danger .el-icon,
+.el-dropdown-menu__item.is-danger:not(.is-disabled):hover,
+.el-dropdown-menu__item.is-danger:not(.is-disabled):focus { color: var(--el-color-danger) !important; }
+/* 分隔线（divided）：94% 宽居中 */
+.el-dropdown-menu__item--divided {
+  height: 1px !important;
+  margin: 3px 3% !important;
+  border: none !important;
+  background: var(--el-border-color-lighter) !important;
+}
+.el-dropdown-menu__item--divided::before { display: none !important; }
+/* 菜单里可以放的几样东西（照 HeroUI 的写法）：
+ *   .dd-check   左边的勾（单选菜单当前项）：给菜单项加 class="has-check"，当前项再加 is-checked
+ *   .dd-text    标题 + 下面一行说明（.dd-desc）
+ *   .dd-kbd     右边的快捷键 / 附注
+ *   .dd-header  菜单顶上一块不可点的说明（比如当前登录的人）
+ */
+.el-dropdown-menu__item.has-check { padding-left: 30px !important; }
+.el-dropdown-menu__item .dd-check {
+  position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
+  display: inline-flex; font-size: 14px; color: var(--el-color-primary);
+  opacity: 0; scale: 0.7; transition: opacity 200ms ease, scale 200ms ease;
+}
+.el-dropdown-menu__item.is-checked .dd-check { opacity: 1; scale: 1; }
+.el-dropdown-menu__item.is-checked { font-weight: 500; }
+.el-dropdown-menu__item .dd-text, .el-dropdown-menu .dd-header .dd-text { display: flex; flex-direction: column; min-width: 0; }
+.el-dropdown-menu__item .dd-desc, .el-dropdown-menu .dd-header .dd-desc { font-size: 12px; line-height: 18px; color: var(--smc-text-secondary); }
+.el-dropdown-menu__item .dd-kbd { margin-left: auto; padding-left: 16px; font-size: 12px; color: var(--smc-text-tertiary); }
+.el-dropdown-menu .dd-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px 10px; list-style: none; cursor: default;
+}
+
+/* ---- el-select 下拉项 ---- */
+.el-select-dropdown__list { padding: 6px !important; display: flex; flex-direction: column; gap: 2px; }
+.el-select-dropdown__item {
+  height: auto !important;
+  min-height: 36px;
+  padding: 7px 32px 7px 10px !important;
+  border-radius: var(--smc-overlay-item-radius);
+  font-size: 14px !important;
+  line-height: 22px !important;
+  color: var(--smc-text);
+  transition: transform 250ms cubic-bezier(0.25, 1, 0.5, 1), background-color 120ms ease;
+}
+.el-select-dropdown__item.is-hovering { background: var(--smc-overlay-hover) !important; }
+.el-select-dropdown__item:not(.is-disabled):active { transform: scale(0.98); }
+/* 选中：主题色 + 右边一个勾（单选、多选一样） */
+.el-select-dropdown__item.is-selected { color: var(--el-color-primary) !important; font-weight: 500 !important; }
+.el-select-dropdown .el-select-dropdown__item.is-selected::after,
+.el-select-dropdown.is-multiple .el-select-dropdown__item.is-selected::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border: none !important;
+  transform: translateY(-50%);
+  background: var(--el-color-primary) !important;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3.2L13 4.8' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3.2L13 4.8' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.el-select-dropdown__item.is-disabled { opacity: 0.5; }
+.el-select-group__wrap:not(:last-of-type)::after { left: 3% !important; right: 3% !important; background: var(--el-border-color-lighter) !important; }
+.el-select-group__title { padding-left: 10px !important; font-size: 12px !important; color: var(--smc-text-secondary) !important; }
+.el-select-group .el-select-dropdown__item { padding-left: 10px !important; }
+.el-select-dropdown__empty { padding: 14px 0 !important; color: var(--smc-text-secondary) !important; }

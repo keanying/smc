@@ -129,21 +129,22 @@
             </el-icon>
           </el-tooltip>
           <!-- 显示比例：默认按屏幕宽度自动缩放（composables/zoom.ts） -->
-          <el-dropdown trigger="click" @command="setZoomMode">
+          <el-dropdown trigger="click" placement="bottom-end" @command="setZoomMode">
             <span class="zoom-chip" title="显示比例">
               <el-icon><Monitor /></el-icon>{{ Math.round(zoom * 100) }}%
             </span>
             <template #dropdown>
               <el-dropdown-menu>
+                <!-- 单选菜单：当前那一项左边打勾（HeroUI Dropdown 的单选样式） -->
                 <el-dropdown-item v-for="o in ZOOM_OPTIONS" :key="o.value" :command="o.value"
-                                  :class="{ 'is-current': o.value === zoomMode }">
-                  {{ o.label }}
+                                  class="has-check" :class="{ 'is-checked': o.value === zoomMode }">
+                  <span class="dd-check"><el-icon><Checkmark /></el-icon></span>{{ o.label }}
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
           <!-- 当前登录的人：改密码、退出 -->
-          <el-dropdown v-if="currentUser" trigger="click" @command="onUserCommand">
+          <el-dropdown v-if="currentUser" trigger="click" placement="bottom-end" @command="onUserCommand">
             <span class="user-chip">
               <span class="user-avatar">{{ (currentUser.display_name || currentUser.username).slice(0, 1) }}</span>
               <span class="user-name">{{ currentUser.display_name || currentUser.username }}</span>
@@ -152,9 +153,20 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item disabled>登录名：{{ currentUser.username }}</el-dropdown-item>
-                <el-dropdown-item command="password" divided>修改密码</el-dropdown-item>
-                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+                <!-- 顶上一块：现在是谁登录着（不可点） -->
+                <li class="dd-header" role="presentation">
+                  <span class="user-avatar">{{ (currentUser.display_name || currentUser.username).slice(0, 1) }}</span>
+                  <span class="dd-text">
+                    <span class="dd-user-name">{{ currentUser.display_name || currentUser.username }}</span>
+                    <span class="dd-desc">登录名 {{ currentUser.username }} · {{ currentUser.role_label }}</span>
+                  </span>
+                </li>
+                <el-dropdown-item command="password" divided>
+                  <el-icon><component :is="NAV_ICONS.password" /></el-icon>修改密码
+                </el-dropdown-item>
+                <el-dropdown-item command="logout" class="is-danger">
+                  <el-icon><component :is="NAV_ICONS.logout" /></el-icon>退出登录
+                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -174,7 +186,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ArrowDown, Monitor, Setting } from '@element-plus/icons-vue'
-import { ChevronBack, ChevronForward } from '@vicons/ionicons5'
+import { Checkmark, ChevronBack, ChevronForward } from '@vicons/ionicons5'
 import { authApi, settingsApi } from '../api'
 import { loadFeatures, metricsEnabled } from '../composables/features'
 import { currentUser, isAdmin, loadAuth } from '../composables/auth'
@@ -494,7 +506,11 @@ onUnmounted(() => window.clearInterval(timer))
 }
 .zoom-chip { padding: 0 12px; font-size: 12px; }
 .zoom-chip:hover { box-shadow: var(--smc-shadow-hover); color: var(--el-color-primary); }
-:global(.el-dropdown-menu__item.is-current) { color: var(--el-color-primary); font-weight: 600; }
+:global(.el-dropdown-menu .dd-user-name) { font-size: 14px; font-weight: 600; color: var(--smc-text); line-height: 20px; }
+:global(.el-dropdown-menu .dd-header .user-avatar) {
+  width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  flex: none; background: var(--smc-gradient); color: #fff; font-size: 14px; font-weight: 600;
+}
 
 /* 顶栏悬停卡片：分行列出在跑的任务、浏览器被谁占着（弹层在 body 下，要用 :global） */
 :global(.meta-tip.el-popper) { max-width: 380px; line-height: 1.6; font-size: 12px; padding: 10px 12px; }
