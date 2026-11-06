@@ -763,8 +763,9 @@ async function checkAll() {
 async function logout(row: Account) {
   try {
     await ElMessageBox.confirm(`确定退出 ${row.account_name} 的登录吗？`, '提示', { type: 'warning' })
-    await accountApi.logout(row.channel, row.account_name)
-    toast.success('已退出登录')
+    const result = await accountApi.logout(row.channel, row.account_name)
+    if (result?.profile_left) toast.warning('已退出登录', { description: result.profile_left, timeout: 8000 })
+    else toast.success('已退出登录')
     await Promise.all([load(), loadGroups()])
   } catch {
     // 用户取消
@@ -792,8 +793,10 @@ async function toggle(row: Account, enabled: boolean) {
 async function remove(row: Account) {
   try {
     await ElMessageBox.confirm(`确定删除账号 ${row.account_name} 吗？`, '警告', { type: 'error' })
-    await accountApi.remove(row.channel, row.account_name)
-    toast.success('删除成功')
+    const result = await accountApi.remove(row.channel, row.account_name)
+    // 浏览器 profile 删不干净也照样删账号，只是提醒一下哪里还留着文件
+    if (result?.profile_left) toast.warning('账号已删除', { description: result.profile_left, timeout: 8000 })
+    else toast.success('删除成功')
     await Promise.all([load(), loadGroups()])
   } catch {
     // 用户取消

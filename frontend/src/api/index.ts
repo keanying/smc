@@ -653,7 +653,8 @@ export const accountApi = {
     api.put<null>(`/api/accounts/${channel}/${encodeURIComponent(accountName)}/node`, { node_id: nodeId }),
   create: (payload: Record<string, unknown>) => api.post<null>('/api/accounts', payload),
   remove: (channel: string, accountName: string) =>
-    api.del<null>(`/api/accounts/${channel}/${encodeURIComponent(accountName)}`),
+    // profile_left：账号删了，但浏览器 profile 目录没删干净（原因 + 路径，可以手动删）
+    api.del<{ profile_left?: string } | null>(`/api/accounts/${channel}/${encodeURIComponent(accountName)}`),
   toggle: (channel: string, accountName: string, enabled: boolean) =>
     api.put<null>(`/api/accounts/${channel}/${encodeURIComponent(accountName)}/enabled`, undefined, { enabled }),
   /** 试搜一个关键字，返回完整诊断报告 */
@@ -682,7 +683,7 @@ export const accountApi = {
       `/api/accounts/${channel}/${encodeURIComponent(accountName)}/check`,
     ),
   logout: (channel: string, accountName: string) =>
-    api.post<null>(`/api/accounts/${channel}/${encodeURIComponent(accountName)}/logout`),
+    api.post<{ profile_left?: string } | null>(`/api/accounts/${channel}/${encodeURIComponent(accountName)}/logout`),
   /** mode=browse：已登录的号直接打开浏览器，不跳登录页 */
   createLoginSession: (channel: string, accountName: string, mode: 'login' | 'browse' = 'login') =>
     api.post<{ session_id: string; ws_path: string }>(
