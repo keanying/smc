@@ -97,6 +97,20 @@ scripts\start.bat
 
 首次运行会自动生成 `config/config.yaml` 并提示你填写，填完再跑一次即可。
 
+**Linux 服务器一键部署**（建虚拟环境 → 装依赖 → 装 Playwright 浏览器并试启动 → 自检 → 后台启动）：
+
+```bash
+bash scripts/setup.sh                       # 一键：装好就后台启动
+bash scripts/setup.sh --mirror              # 国内网络：pip 走清华源，浏览器走 npmmirror
+sudo bash scripts/setup.sh --user opinion --system-deps --xvfb
+                                            # root 部署：装系统库和中文字体，以 opinion 用户运行，带虚拟屏幕（有头登录用）
+bash scripts/setup.sh status | stop | restart | start
+bash scripts/setup.sh --help                # 全部参数
+```
+
+已经装过再跑一遍也没关系：装好的会跳过；虚拟环境坏了或想换 Python 版本用 `--recreate`。
+日志在 `data/logs/server.out`，PID 在 `data/smc.pid`。
+
 ### 环境自检
 
 ```bash
@@ -831,7 +845,7 @@ scenic-media-collector/
 │   ├── src/components/         评论树、图片视频画廊、采集数量表单、任务编辑弹窗、实时流登录浏览器
 │   └── dist/                   构建产物，被后端直接托管
 ├── docker/                     Dockerfile / compose / nginx
-├── scripts/                    start.sh、start.bat、selfcheck.py、probe_tongcheng.py
+├── scripts/                    setup.sh（一键部署）、start.sh、start.bat、selfcheck.py、probe_tongcheng.py
 └── docs/
 ```
 
