@@ -1346,6 +1346,9 @@ class TaskRunner:
         取消是例外，必须继续往上抛，否则用户点了停止会停不下来。
         """
         count = 0
+        # 评论总数回填（快手的搜索接口给不出，要翻完评论才知道）：记下翻之前的值，
+        # 翻完变了、而作品已经先落库了，就单独补一句 UPDATE（见 finally）
+        comment_cnt_before = work.comment_cnt
         # ⚠️ 先攒着，等这条作品的评论**全部到齐**再排序打印。
         # 不能边到边打：回复是后到的（要滚到那儿、点开「查看更多回复」才拉），
         # 按到货顺序打出来就是"七条一级评论 + 三条不知道挂谁下面的二级评论"。
@@ -1371,6 +1374,7 @@ class TaskRunner:
                         printable.append(comment)
             finally:
                 self._log_comments(ctx.logger, printable, count)
+                await buffer.sync_comment_cnt(work, comment_cnt_before)
         except TaskCancelled:
             raise
         except LoginRequired:
@@ -1517,6 +1521,18 @@ class _Buffer:
         self.works.append(item)
         await self._flush_if_due()
         return True
+
+    async def sync_comment_cnt(self, work: WorkItem, before) -> None:
+        """作品的评论总数在翻评论时被回填了：还在缓冲区里就不用管（落库时带上），
+        已经写进库了就补一句 UPDATE。写失败只记日志，不影响采集。"""
+        if work.comment_cnt == before or not work.comment_cnt:
+            return
+        if any(w is work for w in self.works):
+            return
+        try:
+            await self.data.update_work_comment_cnt(work)
+        except Exception as exc:  # noqa: BLE001
+            self.log.warn(f"作品 {work.work_id} 的评论总数回填没写进库：{exc}")
 
     def is_deleted(self, work: WorkItem) -> bool:
         return bool(self.deleted) and \

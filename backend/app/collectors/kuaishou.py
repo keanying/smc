@@ -524,50 +524,68 @@ class KuaishouCollector(BaseCollector):
         photo_id = work.work_id
         pcursor = ""
         emitted = 0
-
-        while True:
-            ctx.raise_if_cancelled()
-            if self.limit_reached(emitted, ctx.max_comments_per_work):
-                break
-
-            data = await self._post_plain(COMMENT_URI, {
-                "photoId": photo_id, "pcursor": pcursor,
-            })
-            comments = data.get("rootCommentsV2") or data.get("rootComments") or []
-            if not comments:
-                break
-
-            for raw in comments:
-                item = self.safe_map(ctx, self._to_comment, ctx, raw, photo_id,
-                                     depth=1, parent_id="", what="评论")
-                if item is None:
-                    continue
-                yield item
-                emitted += 1
-
-                has_sub = raw.get("hasSubComments") or nz.to_int(
-                    raw.get("subCommentCount") or raw.get("commentCount")
-                ) > 0
-                if ctx.enable_sub_comments and ctx.max_comment_level >= 2 and has_sub:
-                    async for sub in self._collect_sub_comments(
-                        ctx, photo_id, raw, item.comment_id
-                    ):
-                        yield sub
-                        emitted += 1
-                        if self.limit_reached(emitted, ctx.max_comments_per_work):
-                            break
-
+        roots = 0
+        total_known = False
+        try:
+            while True:
+                ctx.raise_if_cancelled()
                 if self.limit_reached(emitted, ctx.max_comments_per_work):
                     break
 
-            pcursor = nz.to_text(data.get("pcursorV2") or data.get("pcursor"))
-            if not pcursor or pcursor == "no_more":
-                break
-            # 快手评论接口限流较严，固定间隔上再加抖动
-            await asyncio.sleep(
-                float(self.config.get("crawl.request_interval_seconds", 1.0))
-                + random.uniform(1, 3)
-            )
+                data = await self._post_plain(COMMENT_URI, {
+                    "photoId": photo_id, "pcursor": pcursor,
+                })
+                # ⚠️ 作品的评论总数**只有评论接口给得出**（搜索接口里是 0）：第一页就带着 commentCountV2。
+                # 以前只有拟人版回填，接口 / 混合模式采的作品「评论」一栏永远是 0，
+                # 下面明明挂着上百条评论。
+                if not total_known:
+                    total = nz.to_int(data.get("commentCountV2") or data.get("commentCount"))
+                    if total > 0:
+                        total_known = True
+                        if total != work.comment_cnt:
+                            work.comment_cnt = total
+                            ctx.log(f"[快手] 作品 {photo_id} 评论总数 {total}（取自评论接口）")
+                comments = data.get("rootCommentsV2") or data.get("rootComments") or []
+                if not comments:
+                    break
+
+                for raw in comments:
+                    item = self.safe_map(ctx, self._to_comment, ctx, raw, photo_id,
+                                         depth=1, parent_id="", what="评论")
+                    if item is None:
+                        continue
+                    yield item
+                    emitted += 1
+                    roots += 1
+
+                    has_sub = raw.get("hasSubComments") or nz.to_int(
+                        raw.get("subCommentCount") or raw.get("commentCount")
+                    ) > 0
+                    if ctx.enable_sub_comments and ctx.max_comment_level >= 2 and has_sub:
+                        async for sub in self._collect_sub_comments(
+                            ctx, photo_id, raw, item.comment_id
+                        ):
+                            yield sub
+                            emitted += 1
+                            if self.limit_reached(emitted, ctx.max_comments_per_work):
+                                break
+
+                    if self.limit_reached(emitted, ctx.max_comments_per_work):
+                        break
+
+                pcursor = nz.to_text(data.get("pcursorV2") or data.get("pcursor"))
+                if not pcursor or pcursor == "no_more":
+                    break
+                # 快手评论接口限流较严，固定间隔上再加抖动
+                await asyncio.sleep(
+                    float(self.config.get("crawl.request_interval_seconds", 1.0))
+                    + random.uniform(1, 3)
+                )
+        finally:
+            # 评论接口没给总数（老接口 / 字段变了）：至少别写 0——真采到了 roots 条一级评论，
+            # 评论数不会比这个少。拿到了真总数就不碰。
+            if not total_known and roots > (work.comment_cnt or 0):
+                work.comment_cnt = roots
 
     async def _collect_sub_comments(
         self, ctx: CollectContext, photo_id: str, root_raw: Dict, root_comment_id: str
@@ -651,7 +669,8 @@ class KuaishouCollector(BaseCollector):
             likes=nz.to_int(photo.get("realLikeCount") or photo.get("likeCount")),
             # 搜索接口**给不出真实评论数**：photo 里没有 commentCount，
             # feed["comment"] 只有 {"us_c": 0}。真值来自评论接口的
-            # commentCountV2，由拟人版在翻完评论后回填（_apply_comment_count）。
+            # commentCountV2，翻完评论后回填：接口版在 collect_comments 里，
+            # 拟人版在 _apply_comment_count；作品已经先落库的话由 runner 补 UPDATE。
             comment_cnt=nz.to_int(photo.get("commentCount")
                                   or (feed.get("comment") or {}).get("us_c")),
             shares=nz.to_int(photo.get("shareCount")),
