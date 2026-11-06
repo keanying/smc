@@ -19,8 +19,9 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import datetime
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -58,6 +59,8 @@ class TaskScheduler:
         self._cancel_events: Dict[str, asyncio.Event] = {}
         #: 任务启动时刻（事件循环单调时钟），看门狗据此判断"跑了太久"
         self._started_at: Dict[str, float] = {}
+        #: 运行中任务的名称 / 目标 / 平台 / 开始时间，顶栏悬停提示「现在在跑哪些任务」用
+        self._running_meta: Dict[str, Dict[str, Any]] = {}
         self._poll_lock = asyncio.Lock()
 
     @property
@@ -234,6 +237,7 @@ class TaskScheduler:
                 self._running.pop(task_id, None)
                 self._cancel_events.pop(task_id, None)
                 self._started_at.pop(task_id, None)
+                self._running_meta.pop(task_id, None)
                 cancelled = handle.cancelled()
                 exception = handle.exception() if not cancelled else None
                 if exception:
@@ -268,6 +272,13 @@ class TaskScheduler:
         cancel_event = asyncio.Event()
         self._cancel_events[task_id] = cancel_event
         self._started_at[task_id] = asyncio.get_event_loop().time()
+        self._running_meta[task_id] = {
+            "task_id": task_id,
+            "task_name": task.get("task_name") or task_id,
+            "scenic_name": task.get("scenic_name") or task.get("scenic_id") or "",
+            "channels": list(task.get("channels") or []) if isinstance(task.get("channels"), (list, tuple)) else [],
+            "started_at": time.time(),
+        }
         self._running[task_id] = asyncio.create_task(self._run_and_reschedule(task, cancel_event))
         logger.info("任务已启动：%s（%s）", task["task_name"], task_id)
 
@@ -333,11 +344,23 @@ class TaskScheduler:
     def running_task_ids(self) -> Set[str]:
         return set(self._running)
 
+    def _running_brief(self) -> List[Dict[str, Any]]:
+        now = time.time()
+        out = []
+        for task_id in self._running:
+            meta = self._running_meta.get(task_id) or {"task_id": task_id, "task_name": task_id,
+                                                       "scenic_name": "", "channels": [], "started_at": now}
+            out.append({**{k: v for k, v in meta.items() if k != "started_at"},
+                        "running_seconds": int(now - meta["started_at"])})
+        return sorted(out, key=lambda x: -x["running_seconds"])
+
     def status(self) -> Dict[str, Any]:
         return {
             "enabled": self._scheduler is not None,
             "running": sorted(self._running),
             "running_count": len(self._running),
+            # 在跑的是哪些任务（按开始时间排）：顶栏「运行中任务」悬停时列出来
+            "running_tasks": self._running_brief(),
             "max_running": self.max_running,
             "poll_interval_seconds": POLL_INTERVAL_SECONDS,
         }

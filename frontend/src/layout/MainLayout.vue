@@ -95,18 +95,59 @@
             </template>
             <template v-else-if="health.scheduler">
               <span class="meta-sep" />
-              <!-- 管理员点一下直接去改上限（系统设置 → 调度与浏览器） -->
-              <component :is="isAdmin ? 'router-link' : 'span'" :to="RUNTIME_SETTINGS"
-                         class="meta-item" :class="{ 'meta-link': isAdmin }">
-                运行中任务 {{ health.scheduler.running_count }}/{{ health.scheduler.max_running }}
-              </component>
+              <!-- 悬停：在跑哪些任务；管理员点一下直接去改上限（系统设置 → 调度与浏览器） -->
+              <el-tooltip placement="bottom-end" popper-class="meta-tip" :show-after="150" @show="loadHealth">
+                <template #content>
+                  <div class="tip-title">
+                    运行中任务 {{ health.scheduler.running_count }}/{{ health.scheduler.max_running }}
+                  </div>
+                  <ul v-if="runningTasks.length" class="tip-list">
+                    <li v-for="t in runningTasks" :key="t.task_id">
+                      <b>{{ t.task_name }}</b>
+                      <div class="tip-sub">
+                        {{ [t.scenic_name, (t.channels || []).map(channelLabel).join('、')].filter(Boolean).join(' · ') }}
+                        · 已运行 {{ durationText(t.running_seconds) }}
+                      </div>
+                    </li>
+                  </ul>
+                  <div v-else class="tip-sub">现在没有任务在跑</div>
+                  <div v-if="isAdmin" class="tip-foot">点击去「系统设置 → 调度与浏览器」调整上限</div>
+                </template>
+                <component :is="isAdmin ? 'router-link' : 'span'" :to="RUNTIME_SETTINGS"
+                           class="meta-item" :class="{ 'meta-link': isAdmin }">
+                  运行中任务 {{ health.scheduler.running_count }}/{{ health.scheduler.max_running }}
+                </component>
+              </el-tooltip>
             </template>
             <!-- 浏览器占用。一个 Chromium 实测 ~700MB/10 个进程，是整台机器
                  最稀缺的资源——全量采集把机器跑死那次，事后完全查不到
                  "当时开了几个浏览器"，只能对着监控猜。 -->
             <template v-if="health.browser_capacity">
               <span class="meta-sep" />
-              <el-tooltip :content="browserTip" placement="bottom">
+              <el-tooltip placement="bottom-end" popper-class="meta-tip" :show-after="150" @show="loadHealth">
+                <template #content>
+                  <div class="tip-title">
+                    浏览器 {{ health.browser_capacity.active }}/{{ health.browser_capacity.limit }}
+                    <span class="tip-sub">（{{ health.browser_capacity.configured ? '手工设置的上限' : '上限按内存自动推算' }}）</span>
+                  </div>
+                  <ul v-if="browserHolders.length" class="tip-list">
+                    <li v-for="(h, i) in browserHolders" :key="i">
+                      <b>{{ h.label }}</b><span class="tip-sub"> · 已占 {{ durationText(h.seconds) }}</span>
+                    </li>
+                  </ul>
+                  <div v-else class="tip-sub">现在没有开着的浏览器</div>
+                  <div v-if="health.browser_capacity.waiting" class="tip-warn">
+                    {{ health.browser_capacity.waiting }} 个在排队等名额
+                  </div>
+                  <div class="tip-line">
+                    <template v-if="health.browser_capacity.memory_available_gb != null">
+                      内存可用 {{ health.browser_capacity.memory_available_gb }}/{{ health.browser_capacity.memory_total_gb }} GB，
+                    </template>
+                    低于 {{ health.browser_capacity.min_free_gb }} GB 暂停开新浏览器
+                  </div>
+                  <div class="tip-line">一个浏览器约 {{ health.browser_capacity.footprint_gb }} GB、10 个进程</div>
+                  <div v-if="isAdmin" class="tip-foot">点击去「系统设置 → 调度与浏览器」调整上限</div>
+                </template>
                 <component :is="isAdmin ? 'router-link' : 'span'" :to="RUNTIME_SETTINGS"
                            class="meta-item" :class="{ 'is-warn': browserBusy, 'meta-link': isAdmin }">
                   浏览器 {{ health.browser_capacity.active }}/{{ health.browser_capacity.limit }}
@@ -181,6 +222,7 @@ import { authApi, settingsApi } from '../api'
 import { loadFeatures, metricsEnabled } from '../composables/features'
 import { currentUser, isAdmin, loadAuth } from '../composables/auth'
 import ChangePasswordDialog from '../components/ChangePasswordDialog.vue'
+import { channelLabel } from '../constants'
 import { layoutWidth, setZoomMode, zoom, zoomMode, ZOOM_OPTIONS } from '../composables/zoom'
 
 const route = useRoute()
@@ -264,20 +306,28 @@ const browserBusy = computed(() => {
   return !!c && (c.waiting > 0 || c.active >= c.limit)
 })
 
-const browserTip = computed(() => {
-  const c = health.value?.browser_capacity
-  if (!c) return ''
-  const parts = [
-    `同时最多开 ${c.limit} 个浏览器，现在开着 ${c.active} 个`,
-  ]
-  if (c.waiting) parts.push(`${c.waiting} 个任务在排队等名额`)
-  if (c.memory_available_gb != null && c.memory_total_gb != null) {
-    parts.push(`内存 ${c.memory_available_gb}/${c.memory_total_gb} GB 可用`)
-  }
-  parts.push(`一个浏览器约占 ${c.footprint_gb} GB、10 个进程`)
-  if (isAdmin.value) parts.push('点击去「系统设置 → 调度与浏览器」调整上限')
-  return parts.join('；')
-})
+/** 在跑的任务（本机）。悬停「运行中任务」时列出来 */
+const runningTasks = computed<Array<Record<string, any>>>(() => health.value?.scheduler?.running_tasks || [])
+
+/** 浏览器名额被谁占着：把闸门里的标识（login/平台/账号、cookie/平台、平台/账号）翻成人话 */
+const browserHolders = computed(() => (health.value?.browser_capacity?.holders || []).map(
+  (h: { who: string; seconds: number }) => ({ label: holderLabel(h.who), seconds: h.seconds })))
+
+function holderLabel(who: string): string {
+  const parts = String(who || '').split('/')
+  if (parts[0] === 'login') return `登录窗口 · ${channelLabel(parts[1] || '')} · ${parts.slice(2).join('/') || '—'}`
+  if (parts[0] === 'cookie') return `采集 Cookie · ${channelLabel(parts[1] || '')}`
+  if (who === 'cookie-inject') return '导入 Cookie'
+  if (parts.length >= 2) return `采集 · ${channelLabel(parts[0])} · 账号 ${parts.slice(1).join('/') || '—'}`
+  return who || '任务'
+}
+
+function durationText(seconds: number): string {
+  const n = Math.max(0, Number(seconds) || 0)
+  if (n < 60) return `${n} 秒`
+  if (n < 3600) return `${Math.floor(n / 60)} 分钟`
+  return `${Math.floor(n / 3600)} 小时 ${Math.floor((n % 3600) / 60)} 分`
+}
 
 const healthText = computed(() => {
   const h = health.value
@@ -492,6 +542,16 @@ onUnmounted(() => window.clearInterval(timer))
 .zoom-chip { padding: 0 12px; font-size: 12px; }
 .header-btn:hover, .zoom-chip:hover { box-shadow: var(--smc-shadow-hover); color: var(--el-color-primary); }
 :global(.el-dropdown-menu__item.is-current) { color: var(--el-color-primary); font-weight: 600; }
+
+/* 顶栏悬停卡片：分行列出在跑的任务、浏览器被谁占着（弹层在 body 下，要用 :global） */
+:global(.meta-tip.el-popper) { max-width: 380px; line-height: 1.6; font-size: 12px; padding: 10px 12px; }
+:global(.meta-tip .tip-title) { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+:global(.meta-tip .tip-list) { margin: 4px 0 6px; padding-left: 16px; }
+:global(.meta-tip .tip-list li) { margin: 2px 0; }
+:global(.meta-tip .tip-sub) { opacity: 0.72; font-weight: normal; }
+:global(.meta-tip .tip-warn) { color: #fbbf24; margin: 2px 0; }
+:global(.meta-tip .tip-line) { opacity: 0.85; }
+:global(.meta-tip .tip-foot) { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.18); opacity: 0.85; }
 
 /* 侧边栏收起：只留图标，文字靠悬停提示 */
 .aside-menu { transition: width 0.2s ease; }

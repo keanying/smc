@@ -139,8 +139,10 @@
 
       <!-- 采集参数 -->
       <el-tab-pane v-if="isAdmin" label="采集参数" name="crawl">
-        <el-card shadow="never" class="narrow-card">
-          <el-form :model="crawl" label-width="150px" class="settings-form">
+        <!-- 参数多：分组按两栏流式排（宽屏左右各几组，窄了自动一栏），不再一长条拖到底 -->
+        <el-card shadow="never" class="wide-card">
+          <el-form :model="crawl" label-width="150px" class="settings-form is-columns">
+            <div class="form-group">
             <div class="section-title form-section">任务默认值</div>
             <el-form-item>
               <template #label>
@@ -165,6 +167,8 @@
               <span class="unit">层</span>
             </el-form-item>
 
+            </div>
+            <div class="form-group">
             <div class="section-title form-section">请求与超时</div>
             <el-form-item>
               <template #label>
@@ -196,6 +200,8 @@
               平台判「机器号」不只看请求间隔，还看单个账号的总量和连续在线时长，
               所以单独设这两道闸：任一超限账号就进入冷却，挑号时跳过，到期自动恢复。
             -->
+            </div>
+            <div class="form-group">
             <div class="section-title form-section">
               单账号配额与冷却
               <InfoTip :width="380">
@@ -265,6 +271,8 @@
             <!--
               Redis 没连上时水印自动退化为「不跳过」——宁可重复采，也不能因为记号读不到就漏采。
             -->
+            </div>
+            <div class="form-group">
             <div class="section-title form-section">
               采集水印
               <InfoTip>
@@ -297,6 +305,7 @@
               <span class="unit">秒 · {{ hoursOf(crawl.dedup.work_ttl_seconds) }}</span>
             </el-form-item>
 
+            </div>
             <el-form-item class="form-actions">
               <el-button type="primary" :loading="saving" @click="saveSection('crawl', crawl)">
                 保存采集参数
@@ -342,6 +351,7 @@
           <div class="grid-cell">
             <el-card shadow="never" header="浏览器">
               <el-form :model="browser" label-width="150px" class="settings-form">
+                <div class="section-title form-section">并发与资源</div>
                 <el-form-item>
                   <template #label>
                     <span class="lbl">同时最多开<InfoTip :width="340">
@@ -368,6 +378,7 @@
                     现在可用 {{ capacity.memory_available_gb }}/{{ capacity.memory_total_gb }} GB
                   </div>
                 </el-form-item>
+                <div class="section-title form-section">窗口模式</div>
                 <el-form-item>
                   <template #label>
                     <span class="lbl">采集用无头模式<InfoTip>
@@ -385,6 +396,7 @@
                   </template>
                   <el-switch v-model="browser.headless_login" />
                 </el-form-item>
+                <div class="section-title form-section">登录态</div>
                 <el-form-item>
                   <template #label>
                     <span class="lbl">定时采集 Cookie<InfoTip content="后台按这个间隔重抓各账号 Cookie，失效的自动标红。0 = 关闭" /></span>
@@ -409,6 +421,7 @@
                   <el-input-number v-model="browser.login_timeout_seconds" :min="60" :step="30" class="num" />
                   <span class="unit">秒</span>
                 </el-form-item>
+                <div class="section-title form-section">其他</div>
                 <el-form-item label="浏览器可执行文件">
                   <el-input v-model="browser.executable_path" placeholder="留空用 Playwright 自带的" />
                 </el-form-item>
@@ -891,24 +904,51 @@ onMounted(() => {
 }
 .grid-cell { min-width: 0; }
 .narrow-card { max-width: 760px; }
+.wide-card { max-width: 1560px; }
+/* 分组两栏：每栏至少 520 宽；一组不拆到两栏里 */
+.settings-form.is-columns { column-width: 520px; column-gap: 40px; }
+.settings-form.is-columns .form-group { break-inside: avoid; }
+.settings-form.is-columns .form-group > .form-section { margin-top: 0; }
+/* 组间距放在下面：放到上面的话，排到第二栏顶上的那组会比第一栏低一截 */
+.settings-form.is-columns .form-group { padding-bottom: 22px; }
+.settings-form.is-columns > .form-actions { column-span: all; }
 
 /* 字段名 + ⓘ：包一层 span，避免 label 的 flex 布局把图标顶到上沿 */
 .lbl { display: inline-block; white-space: nowrap; }
 
-.settings-form :deep(.el-form-item) { margin-bottom: 18px; }
-.settings-form :deep(.el-form-item__label) { font-size: 13px; }
+/* 每个参数一行：左边参数名（左对齐，好扫），右边控件，说明在控件下面；行与行之间一条细线 */
+.settings-form :deep(.el-form-item) {
+  margin: 0;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--smc-border);
+}
+.settings-form :deep(.el-form-item:has(+ .form-section)),
+.settings-form :deep(.el-form-item:last-child),
+.settings-form :deep(.el-form-item.form-actions) { border-bottom: none; }
+.settings-form :deep(.el-form-item__label) {
+  justify-content: flex-start;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--el-text-color-primary);
+  padding-right: 16px;
+}
+.settings-form :deep(.el-form-item__content) { column-gap: 8px; row-gap: 2px; }
 .settings-form .num { width: 160px; }
 /* 文本框 / 下拉框别跟着卡片无限拉宽：420 够填 Key、地址这类最长的值 */
 .settings-form :deep(.el-input:not(.el-input-number .el-input)),
 .settings-form :deep(.el-select),
 .settings-form :deep(.el-textarea) { max-width: 420px; }
-.field-note { width: 100%; margin-top: 2px; line-height: 1.5; }
+.field-note { width: 100%; margin-top: 2px; line-height: 1.5; color: var(--smc-text-secondary); }
 
-/* 卡片内分段标题：首段贴顶，后续段落用细分隔线隔开 */
+/* 卡片内分段标题：小号、主题色，段与段之间留白（每行自己有分隔线，标题上不再画线） */
 .form-section {
-  margin: 28px 0 16px;
-  padding-top: 20px;
-  border-top: 1px solid var(--smc-border);
+  margin: 22px 0 2px;
+  padding: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-color-primary);
+  border-bottom: 1px solid var(--smc-border-strong);
 }
 .settings-form > .form-section:first-child {
   margin-top: 0;
@@ -924,7 +964,8 @@ onMounted(() => {
 .small { font-size: 12px; }
 
 .form-actions {
-  margin-top: 8px;
+  margin-top: 4px;
+  padding-top: 16px !important;
   margin-bottom: 0 !important;
 }
 

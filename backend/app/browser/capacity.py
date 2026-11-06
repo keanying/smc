@@ -136,6 +136,9 @@ class BrowserCapacity:
         self._debt = 0
         #: 配置里写的上限（0 = 按内存自动）。页面上显示「自动 / 手工」要用
         self._configured = 0
+        #: 谁占着名额：[(who, 拿到名额的时间)]。顶栏悬停「浏览器被谁占着」用
+        #: who 是调用方传的标识：login/平台/账号、cookie/平台、平台/账号（采集）……
+        self._holders: list = []
         self._state_lock = threading.Lock()
 
     # ---------------- 配置 ----------------
@@ -162,6 +165,7 @@ class BrowserCapacity:
             self._sem = threading.Semaphore(self._limit)
             self._active = 0
             self._debt = 0
+            self._holders = []
         total = total_memory_gb()
         logger.info(
             "浏览器并发上限：%d 个（%s；机器内存 %s，一个 Chromium 实测约 %.1fGB/10 进程），"
@@ -252,6 +256,7 @@ class BrowserCapacity:
         with self._state_lock:
             self._active += 1
             self._peak = max(self._peak, self._active)
+            self._holders.append((who or "任务", time.time()))
             active = self._active
         waited = time.monotonic() - started
         logger.info("[浏览器闸门] %s 拿到名额（%d/%d 在用%s）",
@@ -301,6 +306,11 @@ class BrowserCapacity:
                 return
             self._active -= 1
             active = self._active
+            # 按 who 找到那一条去掉；对不上（调用方 who 写得不一致）就去掉最早的，条数始终和在用数一致
+            key = who or "任务"
+            idx = next((i for i, (w, _) in enumerate(self._holders) if w == key), 0)
+            if self._holders:
+                self._holders.pop(idx)
             if self._debt > 0:
                 # 上限调小时欠下的：这个名额不放回去
                 self._debt -= 1
@@ -320,6 +330,8 @@ class BrowserCapacity:
             # 配置的上限：0 = 按内存自动推算（auto_limit 是自动推算出来的值，页面提示用）
             "configured": self._configured,
             "auto_limit": auto_limit(),
+            # 现在被谁占着（按拿到名额的先后），seconds = 占了多久
+            "holders": [{"who": w, "seconds": int(time.time() - t)} for w, t in list(self._holders)],
             "waiting": self._waiting,
             "peak": self._peak,
             "min_free_gb": self._min_free_gb,

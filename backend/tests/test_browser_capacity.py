@@ -246,3 +246,14 @@ def test_waiter_picks_up_the_new_limit():
         assert cap.stats()["active"] == 2
 
     asyncio.run(scenario())
+
+
+def test_stats_lists_who_holds_the_browsers():
+    cap = _cap(**{"browser.max_concurrent": 3, "browser.min_free_memory_gb": 0})
+    asyncio.run(cap.acquire("login/douyin/cs"))
+    asyncio.run(cap.acquire("kuaishou/acc1"))
+    assert [h["who"] for h in cap.stats()["holders"]] == ["login/douyin/cs", "kuaishou/acc1"]
+    cap.release("login/douyin/cs")
+    assert [h["who"] for h in cap.stats()["holders"]] == ["kuaishou/acc1"]
+    cap.release("写错的标识")                 # 对不上也要去掉一条，和在用数保持一致
+    assert cap.stats()["holders"] == [] and cap.stats()["active"] == 0
