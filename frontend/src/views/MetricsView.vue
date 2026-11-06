@@ -68,7 +68,7 @@
               <el-button link type="primary" @click="loadRuns">刷新</el-button>
             </div>
           </template>
-          <el-table :data="runs" size="small" class="data-table" max-height="calc(100vh - 430px)">
+          <el-table :data="runs" size="small" class="data-table" max-height="calc(var(--vh100) - 430px)">
             <el-table-column label="开始时间" width="160" prop="started_at" />
             <el-table-column label="触发" width="70">
               <template #default="{ row }">

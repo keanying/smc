@@ -139,7 +139,7 @@ onMounted(async () => {
 
 <style scoped>
 .login-page {
-  min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px;
+  min-height: var(--vh100); display: flex; align-items: center; justify-content: center; padding: 24px 16px;
   background:
     radial-gradient(1000px 600px at 0% 0%, rgba(124, 111, 226, 0.35), transparent 60%),
     radial-gradient(900px 500px at 100% 100%, rgba(244, 107, 143, 0.22), transparent 60%),

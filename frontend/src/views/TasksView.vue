@@ -41,7 +41,7 @@
       <el-switch v-model="autoRefresh" active-text="自动刷新" style="margin-left: auto" />
     </div>
 
-    <el-table :data="tasks" v-loading="loading" class="data-table" max-height="calc(100vh - 290px)">
+    <el-table :data="tasks" v-loading="loading" class="data-table" max-height="calc(var(--vh100) - 290px)">
       <el-table-column prop="task_name" label="任务名称" min-width="180">
         <template #default="{ row }">
           <el-link type="primary" @click="$router.push(`/tasks/${row.task_id}`)">

@@ -142,7 +142,7 @@ onUnmounted(() => window.clearInterval(timer))
 
 <style scoped>
 .box-frame {
-  height: 100vh;
+  height: var(--vh100);
   display: flex;
   gap: 0;
   /* 白色面板贴着窗口上、右、下三边，只有左边挨着深色图标栏 */
