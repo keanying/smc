@@ -338,6 +338,81 @@ def test_09c_stale_running_runs_are_marked_interrupted(client):
     assert trig({"status": "completed", "schedule_type": "cron"}, False) == "schedule"
     assert trig({"status": "queued"}, True) == "dispatch"
 
+def test_09d_delete_runs(client):
+    """删运行记录：运行中的不删；区间封闭的连日志一起删，区间开着的（中断）只删记录，别殃及后面的日志。"""
+    from app.api.deps import get_state
+    from app.db import tables
+    from app.repositories.run_repo import RunRepository
+
+    state = get_state()
+    repo = RunRepository(state.db)
+    call = client.portal.call
+    task = {"task_id": "T-del", "task_name": "删除测试", "channels": ["douyin"]}
+
+    async def log(msg):
+        await state.db.execute(
+            f"INSERT INTO `{tables.TASK_LOG}` (task_id, log_time, level, message) VALUES (%s, NOW(3), 'INFO', %s)",
+            ["T-del", msg])
+
+    # 第一次：跑完（区间封闭），日志 2 条
+    done = call(lambda: repo.begin(task, trigger_type="manual", node_id="n1"))
+    call(lambda: log("第一次-1")); call(lambda: log("第一次-2"))
+    from datetime import datetime
+    call(lambda: repo.finish(done, "T-del", status="completed", started=datetime.now()))
+    # 第二次：中断（log_end_id 没写，区间是开的），后面还有第三次的日志
+    broken = call(lambda: repo.begin(task, trigger_type="schedule", node_id="n-dead"))
+    call(lambda: log("第二次"))
+    call(lambda: repo.mark_interrupted("n-dead"))
+    # 第三次：还在跑
+    running = call(lambda: repo.begin(task, trigger_type="manual", node_id="n1"))
+    call(lambda: log("第三次"))
+
+    # 运行中的单删：拒绝
+    assert client.delete(f"/api/runs/{running}").status_code == 400
+
+    result = _data(client.post("/api/runs/delete", json={"run_nos": [done, broken, running]}))
+    assert result == {"deleted": 2, "skipped_running": 1, "deleted_logs": 2}
+    left = _data(client.get("/api/runs", params={"task_id": "T-del"}))
+    assert [r["run_no"] for r in left["items"]] == [running]
+    # 只删了第一次自己的两条日志；第二次（中断）和第三次的日志都还在
+    messages = [r["message"] for r in call(lambda: state.db.fetch_all(
+        f"SELECT message FROM `{tables.TASK_LOG}` WHERE task_id = %s ORDER BY id", ["T-del"]))]
+    assert messages == ["第二次", "第三次"]
+    # 删过的再删：单删 404，批量删 0 条
+    assert client.delete(f"/api/runs/{done}").status_code == 404
+    assert _data(client.post("/api/runs/delete", json={"run_nos": [done]}))["deleted"] == 0
+
+
+def test_09e_rerun_zero_comment_count_keeps_stored_value(client):
+    """搜索结果里评论数是 0（快手）时，重复写入不能把上次回填好的真值盖成 0。"""
+    from app.api.deps import get_state
+    from app.collectors.base import WorkItem
+    from app.db import tables
+    from app.repositories.data_repo import DataRepository
+
+    state = get_state()
+    data = DataRepository(state.db)
+    call = client.portal.call
+
+    def work(cnt):
+        return WorkItem(scenic_id="SC-CNT", scenic_name="评论数测试", channel="kuaishou",
+                        work_id="ks-cnt-1", title="t", comment_cnt=cnt).finalize()
+
+    call(lambda: data.save_works([work(0)]))
+    w = work(305)
+    call(lambda: data.update_work_comment_cnt(w))          # 翻完评论回填
+    call(lambda: data.save_works([work(0)]))               # 再跑一次，搜索结果又是 0
+    stored = call(lambda: state.db.fetch_value(
+        f"SELECT comment_cnt FROM `{tables.WORKS}` WHERE scenic_id = %s AND work_id = %s",
+        ["SC-CNT", "ks-cnt-1"]))
+    assert int(stored) == 305
+    call(lambda: data.save_works([work(310)]))             # 有真值就照常更新
+    stored = call(lambda: state.db.fetch_value(
+        f"SELECT comment_cnt FROM `{tables.WORKS}` WHERE scenic_id = %s AND work_id = %s",
+        ["SC-CNT", "ks-cnt-1"]))
+    assert int(stored) == 310
+
+
 def test_10_data_center_overview(client):
     overview = _data(client.get("/api/data/overview"))
     xihu = next(row for row in overview if row["scenic_id"] == "SC001")

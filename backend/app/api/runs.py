@@ -4,13 +4,15 @@
 # 不得用于大规模抓取、绕过平台防护或非法获取个人信息。
 # 首次运行即表示已阅读并同意根目录 LICENSE，使用风险与法律责任由使用者自行承担。
 
-"""运行记录 API：任务每执行一次一条（列表 / 详情 / 这次运行的日志）。只读。"""
+"""运行记录 API：任务每执行一次一条（列表 / 详情 / 这次运行的日志 / 删除）。"""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from typing import List
+
+from fastapi import APIRouter, Body, Depends
 
 from ..repositories.run_repo import RUN_STATUS_LABELS, TRIGGER_LABELS, RunRepository
-from .common import not_found, ok
+from .common import bad_request, not_found, ok
 from .deps import AppState, get_state
 
 router = APIRouter(prefix="/api/runs", tags=["运行记录"])
@@ -56,3 +58,39 @@ async def run_logs(run_no: str, after_id: int = 0, limit: int = 500,
         raise not_found("运行记录不存在")
     return ok({"items": await repo.logs(run, after_id=after_id, limit=limit),
                "run_status": run["run_status"]})
+
+
+def _delete_message(result: dict) -> str:
+    parts = [f"已删除 {result['deleted']} 条运行记录"]
+    if result["deleted_logs"]:
+        parts.append(f"连同 {result['deleted_logs']} 条日志")
+    if result["skipped_running"]:
+        parts.append(f"{result['skipped_running']} 条还在运行，没删")
+    return "，".join(parts)
+
+
+@router.post("/delete")
+async def delete_runs(
+    run_nos: List[str] = Body(..., embed=True),
+    with_logs: bool = Body(True, embed=True),
+    state: AppState = Depends(get_state),
+):
+    """批量删除（列表勾选）。运行中的跳过。"""
+    if not run_nos:
+        raise bad_request("没有选中要删除的运行记录")
+    if len(run_nos) > 1000:
+        raise bad_request("一次最多删 1000 条")
+    result = await _repo(state).delete(run_nos, with_logs=with_logs)
+    return ok(result, _delete_message(result))
+
+
+@router.delete("/{run_no}")
+async def delete_run(run_no: str, with_logs: bool = True, state: AppState = Depends(get_state)):
+    repo = _repo(state)
+    run = await repo.get(run_no)
+    if run is None:
+        raise not_found("运行记录不存在（可能已经删过了）")
+    if run["run_status"] == "running":
+        raise bad_request("这次运行还没结束，结束后才能删除")
+    result = await repo.delete([run_no], with_logs=with_logs)
+    return ok(result, _delete_message(result))

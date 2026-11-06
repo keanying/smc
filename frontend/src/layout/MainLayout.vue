@@ -120,13 +120,24 @@
                为什么是"一直转"而不是"有问题才转"：不转的图标和
                页面卡死、JS 挂掉长得一模一样，正好在最需要它的时候
                失去意义。转着就是"前端还活着，而且刚问过后端"。 -->
-          <el-tooltip :content="healthText" placement="bottom">
-            <el-icon
-              class="health-gear" :class="healthOk ? 'is-ok' : 'is-bad'"
-              @click="loadHealth"
-            >
-              <Setting />
-            </el-icon>
+          <!-- 悬停：一张卡片列出各部分的状态；点一下立即重新检查 -->
+          <el-tooltip placement="bottom-end" popper-class="meta-tip health-tip" :show-after="120" @show="loadHealth">
+            <template #content>
+              <div class="tip-title">
+                <span class="health-dot sm" :class="healthOk ? 'ok' : 'bad'" />
+                {{ health ? (healthOk ? '服务正常' : '服务有问题') : '正在检查…' }}
+              </div>
+              <dl v-if="health" class="tip-kv">
+                <template v-for="item in healthItems" :key="item.label">
+                  <dt>{{ item.label }}</dt>
+                  <dd :class="{ 'tip-bad': item.bad, 'tip-warn-text': item.warn }">{{ item.value }}</dd>
+                </template>
+              </dl>
+              <div class="tip-foot">{{ checkedAtText }} · 点齿轮立即重新检查</div>
+            </template>
+            <button type="button" class="health-btn" aria-label="系统状态" @click="loadHealth">
+              <el-icon class="health-gear" :class="healthOk ? 'is-ok' : 'is-bad'"><Setting /></el-icon>
+            </button>
           </el-tooltip>
           <!-- 显示比例：默认按屏幕宽度自动缩放（composables/zoom.ts） -->
           <el-dropdown trigger="click" placement="bottom-end" @command="setZoomMode">
@@ -326,19 +337,66 @@ function durationText(seconds: number): string {
   return `${Math.floor(n / 3600)} 小时 ${Math.floor((n % 3600) / 60)} 分`
 }
 
-const healthText = computed(() => {
+/** 齿轮悬停卡片：一行一项 */
+const healthItems = computed(() => {
   const h = health.value
-  if (!h) return '正在检查服务状态……'
-  if (!h.mysql) return '数据库连不上'
-  if (!redisOk.value) return 'Redis 连不上，代理与去重状态只在本进程内有效'
-  return '服务正常（点一下立即重新检查）'
+  if (!h) return []
+  const items: Array<{ label: string; value: string; bad?: boolean; warn?: boolean }> = []
+  items.push({ label: '数据库', value: h.mysql ? 'MySQL 已连接' : 'MySQL 连不上', bad: !h.mysql })
+  items.push({
+    label: 'Redis',
+    value: h.redis_enabled === false ? '未启用（去重、代理状态只在本进程内）' : (h.redis_is_real ? '已连接' : '连不上，已退化为进程内缓存'),
+    bad: h.redis_enabled !== false && !h.redis_is_real,
+  })
+  if (h.scheduler) {
+    items.push({
+      label: '调度器',
+      value: h.scheduler.enabled
+        ? `运行中 · 在跑任务 ${h.scheduler.running_count}/${h.scheduler.max_running}`
+        : '没开（定时任务不会自动跑）',
+      warn: !h.scheduler.enabled,
+    })
+  }
+  if (h.browser_capacity) {
+    const c = h.browser_capacity
+    items.push({
+      label: '浏览器',
+      value: `占用 ${c.active}/${c.limit}${c.waiting ? ` · ${c.waiting} 个排队` : ''}`
+        + (c.memory_available_gb != null ? ` · 可用内存 ${c.memory_available_gb} GB` : ''),
+      warn: c.waiting > 0 || c.active >= c.limit,
+    })
+  }
+  if (h.browser_headless) {
+    items.push({
+      label: '浏览器窗口',
+      value: `采集${h.browser_headless.collect ? '无头' : '有头'} · 登录${h.browser_headless.login ? '无头' : '有头'}`,
+    })
+  }
+  items.push({ label: '代理', value: h.proxy_enabled ? '已开启' : '未开启' })
+  if (h.cluster) {
+    items.push({
+      label: '集群',
+      value: `本机 ${h.cluster.node_name}${h.cluster.is_leader ? '（主机）' : ''} · 在线 ${h.cluster.nodes_online} 台`,
+    })
+  }
+  if (Array.isArray(h.collectors)) {
+    items.push({ label: '可用平台', value: h.collectors.map(channelLabel).join('、') || '—' })
+  }
+  return items
 })
+const checkedAt = ref<Date | null>(null)
+const checkedAtText = computed(() => (checkedAt.value
+  ? `${checkedAt.value.toLocaleTimeString('zh-CN', { hour12: false })} 检查`
+  : '还没检查'))
+
 
 async function loadHealth() {
   try {
     health.value = await settingsApi.health()
   } catch {
     health.value = { mysql: false, redis: false }
+  } finally {
+    checkedAt.value = new Date()
   }
 }
 
@@ -527,6 +585,17 @@ onUnmounted(() => window.clearInterval(timer))
 }
 :global(.meta-tip .tip-kv dt) { opacity: 0.65; }
 :global(.meta-tip .tip-kv dd) { margin: 0; }
+:global(.meta-tip .tip-title .health-dot) { width: 7px; height: 7px; margin-right: 4px; vertical-align: 1px; }
+:global(.meta-tip.health-tip .tip-kv) { margin-top: 6px; }
+:global(.meta-tip .tip-kv dd.tip-bad) { color: #fca5a5; font-weight: 600; }
+:global(.meta-tip .tip-kv dd.tip-warn-text) { color: #fbbf24; }
+:global(.meta-tip .tip-foot) { margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.18); opacity: 0.6; }
+.health-btn {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+  padding: 0; border: none; border-radius: 50%; background: transparent; cursor: pointer;
+}
+.health-btn:hover { background: rgba(108, 93, 211, 0.08); }
+.health-btn:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 1px; }
 
 /* 顶栏只放右边的状态和当前用户（页面标题各页自己有，不再重复显示面包屑） */
 .header-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
