@@ -87,10 +87,19 @@ def author_uk(channel: str, author_id: str) -> str:
     return hashlib.md5(f"{channel}{_SEP}{author_id}".encode("utf-8")).hexdigest()
 
 
+#: 重复命中时，新值是 0 就**保留库里的旧值**的列。
+#: 评论数：有的平台搜索结果里给不出（快手是 0），真值要翻完评论、从评论接口回填；
+#: 再跑一次时搜索结果的 0 不能把上次回填好的真值盖掉（这次可能没翻评论，就再也补不回来了）。
+KEEP_WHEN_ZERO_COLUMNS = {"comment_cnt"}
+
+
 def _upsert_sql(table: str, columns: Sequence[str], update_columns: Sequence[str]) -> str:
     placeholders = ", ".join(["%s"] * len(columns))
     column_list = ", ".join(f"`{c}`" for c in columns)
-    updates = ", ".join(f"`{c}` = VALUES(`{c}`)" for c in update_columns)
+    updates = ", ".join(
+        (f"`{c}` = IF(VALUES(`{c}`) > 0, VALUES(`{c}`), `{c}`)" if c in KEEP_WHEN_ZERO_COLUMNS
+         else f"`{c}` = VALUES(`{c}`)")
+        for c in update_columns)
     return (
         f"INSERT INTO `{table}` ({column_list}) VALUES ({placeholders}) "
         f"ON DUPLICATE KEY UPDATE {updates}"
@@ -168,6 +177,16 @@ class DataRepository:
             f"WHERE work_uk IN ({placeholders})", list(keys))
         return {r["work_uk"]: (r.get("hit_keywords") or "", r.get("hit_aux_keywords") or "")
                 for r in rows}
+
+    async def update_work_comment_cnt(self, item: WorkItem) -> int:
+        """只改作品的评论总数（别的列不动）。
+
+        有的平台搜索接口给不出评论数（快手），要等翻完评论、从评论接口拿到总数才回填；
+        那时候作品可能已经先写进库了，原地改对象就落不了库，得补一句 UPDATE。
+        """
+        return int(await self.db.execute(
+            f"UPDATE `{tables.WORKS}` SET comment_cnt = %s WHERE work_uk = %s",
+            [int(item.comment_cnt or 0), work_uk(item.scenic_id, item.channel, item.work_id)]) or 0)
 
     async def merge_work_hits(self, items: Sequence[WorkItem]) -> int:
         """只合并命中关键字，别的列不动。

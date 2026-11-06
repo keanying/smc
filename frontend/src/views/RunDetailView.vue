@@ -17,6 +17,9 @@
       <div>
         <el-button v-if="run?.task_exists" @click="$router.push(`/tasks/${run.task_id}`)">去任务</el-button>
         <el-button @click="$router.push(backTo)">返回运行记录</el-button>
+        <el-button
+          v-if="run && run.run_status !== 'running'" type="danger" plain :loading="deleting" @click="removeRun"
+        >删除</el-button>
       </div>
     </div>
 
@@ -42,7 +45,9 @@
                 <span v-if="run.run_status === 'running'" class="running-dot" />{{ run.run_status_label }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="触发方式">{{ run.trigger_label || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="触发方式">
+              {{ run.trigger_label || '—' }}<span v-if="run.trigger_hint" class="muted small">（{{ run.trigger_hint }}）</span>
+            </el-descriptions-item>
             <el-descriptions-item label="任务">{{ run.task_name || run.task_id }}</el-descriptions-item>
             <el-descriptions-item label="目标">{{ run.scenic_name || run.scenic_id || '—' }}</el-descriptions-item>
             <el-descriptions-item label="平台">
@@ -95,10 +100,12 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessageBox } from 'element-plus'
 import { runApi, type TaskLog, type TaskRunDetail } from '../api'
 import { channelLabel, formatTime } from '../constants'
 import ChannelTag from '../components/ChannelTag.vue'
+import { toast } from '../composables/toast'
 
 const RUN_STATUS_TYPES: Record<string, 'success' | 'warning' | 'info' | 'danger' | 'primary'> = {
   running: 'primary', completed: 'success', failed: 'danger', canceled: 'info',
@@ -106,6 +113,8 @@ const RUN_STATUS_TYPES: Record<string, 'success' | 'warning' | 'info' | 'danger'
 }
 
 const route = useRoute()
+const router = useRouter()
+const deleting = ref(false)
 const runNo = String(route.params.runNo || '')
 const run = ref<TaskRunDetail | null>(null)
 const logs = ref<TaskLog[]>([])
@@ -147,6 +156,25 @@ async function loadLogs() {
   if (atBottom) {
     await nextTick()
     terminal.value?.scrollTo({ top: terminal.value.scrollHeight })
+  }
+}
+
+async function removeRun() {
+  if (!run.value) return
+  try {
+    await ElMessageBox.confirm(
+      '会一起删掉这次运行自己的日志（任务本身和采到的数据不受影响），删了找不回来。',
+      '删除这条运行记录', { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' })
+  } catch {
+    return
+  }
+  deleting.value = true
+  try {
+    const r = await runApi.remove([run.value.run_no])
+    toast.success('已删除这条运行记录', r.deleted_logs ? { description: `连同 ${r.deleted_logs} 条日志` } : undefined)
+    router.replace(backTo.value)
+  } finally {
+    deleting.value = false
   }
 }
 

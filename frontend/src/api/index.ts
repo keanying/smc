@@ -502,9 +502,11 @@ export interface TaskRun {
   scenic_id: string
   scenic_name: string
   channels: string[]
-  /** manual 手动 / schedule 定时 / once 新建后立即执行 / resume 排队恢复 / dispatch 集群派发 */
+  /** manual 手动执行 / schedule 定时触发 / once 立即执行 / resume 排队恢复 / dispatch 集群派发 */
   trigger_type: string
   trigger_label: string
+  /** 触发方式的一句话说明（悬停提示） */
+  trigger_hint?: string
   /** running / completed / failed / canceled / waiting / interrupted */
   run_status: string
   run_status_label: string
@@ -543,6 +545,15 @@ export const runApi = {
   detail: (runNo: string, silent = false) => api.get<TaskRunDetail>(`/api/runs/${runNo}`, undefined, silent),
   logs: (runNo: string, afterId = 0, limit = 500) =>
     api.get<{ items: TaskLog[]; run_status: string }>(`/api/runs/${runNo}/logs`, { after_id: afterId, limit }, true),
+  /** 删除（勾选的一批 / 单条）。运行中的跳过；with_logs=true 连这次运行自己的日志一起删 */
+  remove: (runNos: string[], withLogs = true) =>
+    api.post<RunDeleteResult>('/api/runs/delete', { run_nos: runNos, with_logs: withLogs }),
+}
+
+export interface RunDeleteResult {
+  deleted: number
+  skipped_running: number
+  deleted_logs: number
 }
 
 export const taskApi = {

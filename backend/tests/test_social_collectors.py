@@ -1901,3 +1901,60 @@ def test_kuaishou_browser_selectors_are_from_the_real_recording():
     assert "_hover_autoplay" in autoplay and "_switch_unlocked" in autoplay, (
         "关联播没先 hover/等解锁——实跑会报 element is not enabled"
     )
+
+
+# ---- 快手：接口 / 混合模式也要回填作品的评论总数（搜索接口里是 0）----
+@pytest.mark.asyncio
+async def test_kuaishou_api_comments_backfill_comment_count(server):
+    httpd, base = server
+    from app.collectors.kuaishou import KuaishouCollector
+
+    RouteServer.routes["/rest/v/photo/comment/list"] = {
+        "result": 1, "commentCountV2": 305, "rootCommentsV2": [KS_COMMENT], "pcursorV2": "no_more",
+    }
+    RouteServer.routes["/rest/v/photo/comment/sublist"] = {
+        "result": 1, "subCommentsV2": [], "pcursorV2": "no_more",
+    }
+    config = load_config(use_cache=False)
+    collector = KuaishouCollector(config, ProxyManager(config, RedisClient(config)))
+    collector.host = base
+    collector._session = FakePageSession()
+    await attach_client(collector, base, {})
+
+    ctx = make_ctx()
+    work = collector._to_work(ctx, KS_FEED)
+    work.comment_cnt = 0              # 搜索接口给的是 0
+    try:
+        _ = [c async for c in collector.collect_comments(ctx, work)]
+    finally:
+        await collector._client.close()
+    assert work.comment_cnt == 305
+
+
+@pytest.mark.asyncio
+async def test_kuaishou_api_comments_without_total_use_collected_roots(server):
+    """评论接口没给总数：至少写成真采到的一级评论数，别是 0。"""
+    httpd, base = server
+    from app.collectors.kuaishou import KuaishouCollector
+
+    second = dict(KS_COMMENT, comment_id=55667789)
+    RouteServer.routes["/rest/v/photo/comment/list"] = {
+        "result": 1, "rootCommentsV2": [KS_COMMENT, second], "pcursorV2": "no_more",
+    }
+    RouteServer.routes["/rest/v/photo/comment/sublist"] = {
+        "result": 1, "subCommentsV2": [], "pcursorV2": "no_more",
+    }
+    config = load_config(use_cache=False)
+    collector = KuaishouCollector(config, ProxyManager(config, RedisClient(config)))
+    collector.host = base
+    collector._session = FakePageSession()
+    await attach_client(collector, base, {})
+
+    ctx = make_ctx()
+    work = collector._to_work(ctx, KS_FEED)
+    work.comment_cnt = 0
+    try:
+        _ = [c async for c in collector.collect_comments(ctx, work)]
+    finally:
+        await collector._client.close()
+    assert work.comment_cnt == 2

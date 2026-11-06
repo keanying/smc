@@ -23,15 +23,23 @@ from typing import Any, Dict, List, Optional, Tuple
 from ..core.db import Database
 from ..db import tables
 
-__all__ = ["RunRepository", "RUN_STATUS_LABELS", "TRIGGER_LABELS", "trigger_of_task"]
+__all__ = ["RunRepository", "RUN_STATUS_LABELS", "TRIGGER_LABELS", "TRIGGER_HINTS", "trigger_of_task"]
 
 RUN_STATUS_LABELS = {
     "running": "运行中", "completed": "完成", "failed": "失败", "canceled": "已取消",
     "waiting": "排队等账号", "interrupted": "中断",
 }
+#: 触发方式的叫法：一律四个字，表格里一行放得下；细的说明放在 TRIGGER_HINTS（悬停提示）
 TRIGGER_LABELS = {
-    "manual": "手动执行", "schedule": "定时", "once": "新建后立即执行",
+    "manual": "手动执行", "schedule": "定时触发", "once": "立即执行",
     "resume": "排队恢复", "dispatch": "集群派发",
+}
+TRIGGER_HINTS = {
+    "manual": "在任务列表 / 任务详情里点了「执行」",
+    "schedule": "到了定时设置的时间自动跑（定时一次、固定间隔、cron）",
+    "once": "任务的调度方式是「立即执行一次」，保存后马上跑",
+    "resume": "上次没有可用账号在排队，等到账号后自动接着跑",
+    "dispatch": "集群主机把任务派给了这台机器",
 }
 
 def trigger_of_task(task: Dict[str, Any]) -> str:
@@ -121,6 +129,38 @@ class RunRepository:
             f"error_message = COALESCE(error_message, '运行中服务重启，这次运行没有正常结束') "
             f"WHERE run_status = 'running' AND node_id = %s", [node_id]) or 0)
 
+    async def delete(self, run_nos: List[str], *, with_logs: bool = True) -> Dict[str, Any]:
+        """删运行记录。还在跑的不删（跑完会回写结局，删了它会写到空处）。
+
+        with_logs：顺带删掉这次运行自己的那段日志（task_log 里 (log_start_id, log_end_id]）。
+        ⚠️ 只删**区间是封闭的**：中断 / 异常结束的记录可能没有 log_end_id，
+        那样的「区间」往后是开的，会把同一任务之后几次运行的日志也删掉——这种只删记录不删日志。
+        """
+        run_nos = [str(r) for r in dict.fromkeys(run_nos) if r]
+        if not run_nos:
+            return {"deleted": 0, "skipped_running": 0, "deleted_logs": 0}
+        marks = ", ".join(["%s"] * len(run_nos))
+        rows = await self.db.fetch_all(
+            f"SELECT run_no, task_id, run_status, log_start_id, log_end_id FROM `{tables.TASK_RUN}` "
+            f"WHERE run_no IN ({marks})", run_nos)
+        running = [r for r in rows if r.get("run_status") == "running"]
+        targets = [r for r in rows if r.get("run_status") != "running"]
+        deleted_logs = 0
+        if with_logs:
+            for r in targets:
+                start, end = int(r.get("log_start_id") or 0), int(r.get("log_end_id") or 0)
+                if end > start:
+                    deleted_logs += int(await self.db.execute(
+                        f"DELETE FROM `{tables.TASK_LOG}` WHERE task_id = %s AND id > %s AND id <= %s",
+                        [r["task_id"], start, end]) or 0)
+        deleted = 0
+        if targets:
+            keep = ", ".join(["%s"] * len(targets))
+            deleted = int(await self.db.execute(
+                f"DELETE FROM `{tables.TASK_RUN}` WHERE run_status <> 'running' AND run_no IN ({keep})",
+                [r["run_no"] for r in targets]) or 0)
+        return {"deleted": deleted, "skipped_running": len(running), "deleted_logs": deleted_logs}
+
     # ------------------------------------------------------------------ 读
     @staticmethod
     def _where(filters: Dict[str, Any]) -> Tuple[str, List[Any]]:
@@ -188,6 +228,7 @@ class RunRepository:
         item["channels"] = [c for c in (row.get("channel_code") or "").split(",") if c]
         item["run_status_label"] = RUN_STATUS_LABELS.get(row.get("run_status") or "", row.get("run_status") or "")
         item["trigger_label"] = TRIGGER_LABELS.get(row.get("trigger_type") or "", row.get("trigger_type") or "")
+        item["trigger_hint"] = TRIGGER_HINTS.get(row.get("trigger_type") or "", "")
         if item.get("run_status") == "running" and isinstance(row.get("start_time"), datetime):
             item["duration_seconds"] = max(0, int((datetime.now() - row["start_time"]).total_seconds()))
         return item

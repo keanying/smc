@@ -184,7 +184,7 @@ class TaskScheduler:
                 continue
             if not await self.tasks.start_assigned(task["task_id"], node_id):
                 continue        # 刚被取消了
-            # 主机派给自己的，派发时记下了触发原因（手动 / 定时 / 排队恢复 / 新建后立即执行）
+            # 主机派给自己的，派发时记下了触发原因（手动执行 / 定时触发 / 排队恢复 / 立即执行）
             pop = getattr(self.cluster, "pop_trigger", None)
             await self._launch(task, claimed=True, trigger=pop(task["task_id"]) if pop else "")
 

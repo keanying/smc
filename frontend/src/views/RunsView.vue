@@ -17,7 +17,13 @@
           点一行看这次运行的详情——结局、采集量、当时按什么参数跑的、这次的完整日志。
         </InfoTip>
       </h2>
-      <el-button :icon="Refresh" @click="load()">刷新</el-button>
+      <div class="header-actions">
+        <!-- 勾选了才出现：批量删除（运行中的勾不上） -->
+        <el-button v-if="selected.length" type="danger" plain :icon="Delete" :loading="deleting" @click="removeSelected">
+          删除选中（{{ selected.length }}）
+        </el-button>
+        <el-button :icon="Refresh" @click="load()">刷新</el-button>
+      </div>
     </div>
 
     <div class="toolbar">
@@ -49,11 +55,13 @@
 
     <el-table
       stripe :data="runs" v-loading="loading" class="data-table run-table" row-key="run_no"
-      max-height="calc(var(--vh100) - 290px)" @row-click="openRun"
+      max-height="calc(var(--vh100) - 290px)" @row-click="onRowClick" @selection-change="onSelect"
     >
-      <el-table-column label="开始时间" width="170">
+      <!-- 运行中的不能删（跑完要回写结局），勾不上 -->
+      <el-table-column type="selection" width="44" :selectable="(row: TaskRun) => row.run_status !== 'running'" />
+      <el-table-column label="开始时间" width="190">
         <template #default="{ row }">
-          <div>{{ formatTime(row.start_time) }}</div>
+          <div class="nowrap">{{ formatTime(row.start_time) }}</div>
           <div class="muted mono small">{{ row.run_no }}</div>
         </template>
       </el-table-column>
@@ -68,8 +76,12 @@
           <ChannelTag v-for="c in row.channels" :key="c" :channel="c" block class="ch-gap" />
         </template>
       </el-table-column>
-      <el-table-column label="触发方式" width="120">
-        <template #default="{ row }">{{ row.trigger_label || '—' }}</template>
+      <el-table-column label="触发方式" width="110">
+        <template #default="{ row }">
+          <el-tooltip :disabled="!row.trigger_hint" :content="row.trigger_hint" placement="top" :show-after="200">
+            <span class="trigger">{{ row.trigger_label || '—' }}</span>
+          </el-tooltip>
+        </template>
       </el-table-column>
       <el-table-column label="状态" width="120">
         <template #default="{ row }">
@@ -81,10 +93,10 @@
       <el-table-column label="耗时" width="110">
         <template #default="{ row }">{{ durationText(row.duration_seconds) }}</template>
       </el-table-column>
-      <el-table-column label="采集量" width="170">
+      <el-table-column label="采集量" width="200">
         <template #default="{ row }">
-          <div>作品 <b>{{ row.new_work_qty }}</b><span class="muted"> 新增 · {{ row.updated_work_qty }} 更新</span></div>
-          <div>评论 <b>{{ row.new_comment_qty }}</b><span class="muted"> 新增 · {{ row.updated_comment_qty }} 更新</span></div>
+          <div class="nowrap">作品 <b>{{ row.new_work_qty }}</b><span class="muted"> 新增 · {{ row.updated_work_qty }} 更新</span></div>
+          <div class="nowrap">评论 <b>{{ row.new_comment_qty }}</b><span class="muted"> 新增 · {{ row.updated_comment_qty }} 更新</span></div>
         </template>
       </el-table-column>
       <el-table-column label="说明" min-width="220">
@@ -99,9 +111,15 @@
         </template>
       </el-table-column>
       <el-table-column v-if="showNode" label="机器" width="120" prop="node_id" />
-      <el-table-column label="操作" width="70" align="center" fixed="right">
+      <el-table-column label="操作" width="96" align="center" fixed="right">
         <template #default="{ row }">
-          <IconAction icon="view" tip="运行详情" @click.stop="openRun(row)" />
+          <div class="row-actions" @click.stop>
+            <IconAction icon="view" tip="运行详情" @click="openRun(row)" />
+            <IconAction
+              icon="delete" :tip="row.run_status === 'running' ? '还在运行，结束后才能删' : '删除'"
+              :disabled="row.run_status === 'running'" @click="removeOne(row)"
+            />
+          </div>
         </template>
       </el-table-column>
       <template #empty>
@@ -122,10 +140,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Refresh, Search } from '@element-plus/icons-vue'
-import { runApi, scenicApi, type ScenicOption, type TaskRun } from '../api'
+import { ElMessageBox } from 'element-plus'
+import { Delete, Refresh, Search } from '@element-plus/icons-vue'
+import { runApi, scenicApi, type RunDeleteResult, type ScenicOption, type TaskRun } from '../api'
 import { CHANNEL_LABELS, formatTime } from '../constants'
 import ChannelTag from '../components/ChannelTag.vue'
+import { toast } from '../composables/toast'
 
 /** 运行状态 → 标签颜色 */
 const RUN_STATUS_TYPES: Record<string, 'success' | 'warning' | 'info' | 'danger' | 'primary'> = {
@@ -191,11 +211,57 @@ function openRun(row: TaskRun) {
   router.push(`/runs/${row.run_no}`)
 }
 
+/** 点一行进详情；点的是勾选框那一格就只是勾选 */
+function onRowClick(row: TaskRun, column: { type?: string }) {
+  if (column?.type === 'selection') return
+  openRun(row)
+}
+
+// ------------------------------------------------------------------ 删除
+const selected = ref<TaskRun[]>([])
+const deleting = ref(false)
+function onSelect(rows: TaskRun[]) {
+  selected.value = rows
+}
+
+async function removeRuns(runNos: string[], what: string) {
+  try {
+    await ElMessageBox.confirm(
+      `${what}会一起删掉这些运行自己的日志（任务本身和采到的数据不受影响），删了找不回来。`,
+      '删除运行记录', { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' })
+  } catch {
+    return
+  }
+  deleting.value = true
+  try {
+    const r: RunDeleteResult = await runApi.remove(runNos)
+    const tail = [r.deleted_logs ? `连同 ${r.deleted_logs} 条日志` : '', r.skipped_running ? `${r.skipped_running} 条还在运行没删` : '']
+      .filter(Boolean).join('，')
+    if (r.skipped_running) toast.warning(`已删除 ${r.deleted} 条运行记录`, { description: tail })
+    else toast.success(`已删除 ${r.deleted} 条运行记录`, tail ? { description: tail } : undefined)
+    selected.value = []
+    // 删完这一页空了就往前翻一页
+    if (runs.value.length <= r.deleted && query.page > 1) query.page -= 1
+    await load()
+  } finally {
+    deleting.value = false
+  }
+}
+
+function removeOne(row: TaskRun) {
+  return removeRuns([row.run_no], `删除运行 ${row.run_no}：`)
+}
+
+function removeSelected() {
+  return removeRuns(selected.value.map((r) => r.run_no), `删除选中的 ${selected.value.length} 条运行记录：`)
+}
+
 // 有在跑的就 5 秒刷一次（静默，不闪加载圈）；全结束了就不刷
 let timer: number | undefined
 watch(autoRefresh, (on) => {
   window.clearInterval(timer)
-  if (on) timer = window.setInterval(() => load(true), 5000)
+  // 勾选着的时候不刷：刷新会把勾选清掉，正要删的时候勾全没了
+  if (on) timer = window.setInterval(() => { if (!selected.value.length) load(true) }, 5000)
 }, { immediate: true })
 onBeforeUnmount(() => window.clearInterval(timer))
 
@@ -207,6 +273,10 @@ onMounted(async () => {
 
 <style scoped>
 .run-table :deep(.el-table__row) { cursor: pointer; }
+.header-actions { display: flex; align-items: center; gap: 8px; }
+.row-actions { display: inline-flex; align-items: center; gap: 2px; }
+.trigger { white-space: nowrap; cursor: default; }
+.nowrap { white-space: nowrap; }
 .task-name { font-weight: 500; color: var(--el-color-primary); }
 .small { font-size: 12px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
