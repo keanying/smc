@@ -23,8 +23,8 @@
     <el-tabs v-model="tab">
       <!-- 代理 -->
       <el-tab-pane v-if="isAdmin" label="代理设置" name="proxy">
-        <el-row :gutter="16">
-          <el-col :xs="24" :lg="14" class="col">
+        <div class="settings-grid">
+          <div class="grid-cell">
             <el-card shadow="never" header="快代理私密代理">
               <el-form :model="proxy" label-width="150px" class="settings-form">
                 <el-form-item>
@@ -92,9 +92,9 @@
                 </el-form-item>
               </el-form>
             </el-card>
-          </el-col>
+          </div>
 
-          <el-col :xs="24" :lg="10" class="col">
+          <div class="grid-cell">
             <el-card shadow="never" header="当前出口 IP">
               <div v-if="!proxyStatus?.enabled" class="muted small">代理未启用</div>
               <template v-else>
@@ -133,8 +133,8 @@
                 </el-descriptions-item>
               </el-descriptions>
             </el-card>
-          </el-col>
-        </el-row>
+          </div>
+        </div>
       </el-tab-pane>
 
       <!-- 采集参数 -->
@@ -308,8 +308,8 @@
 
       <!-- 调度与浏览器 -->
       <el-tab-pane v-if="isAdmin" label="调度与浏览器" name="runtime">
-        <el-row :gutter="16">
-          <el-col :xs="24" :lg="10" class="col">
+        <div class="settings-grid">
+          <div class="grid-cell">
             <el-card shadow="never" header="调度器">
               <el-form :model="scheduler" label-width="150px" class="settings-form">
                 <el-form-item>
@@ -318,9 +318,15 @@
                   </template>
                   <el-switch v-model="scheduler.enabled" />
                 </el-form-item>
-                <el-form-item label="同时运行任务数">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">同时运行任务数<InfoTip content="顶栏「运行中任务 x/y」里的 y。保存后对之后派发的任务生效" /></span>
+                  </template>
                   <el-input-number v-model="scheduler.max_running_tasks" :min="1" :max="20" class="num" />
                   <span class="unit">个</span>
+                  <div v-if="schedulerStatus" class="muted small field-note">
+                    现在运行 {{ schedulerStatus.running_count || 0 }}/{{ schedulerStatus.max_running || 0 }}
+                  </div>
                 </el-form-item>
                 <el-form-item label="时区">
                   <el-input v-model="scheduler.timezone" style="width: 200px" />
@@ -332,10 +338,36 @@
                 </el-form-item>
               </el-form>
             </el-card>
-          </el-col>
-          <el-col :xs="24" :lg="14" class="col">
+          </div>
+          <div class="grid-cell">
             <el-card shadow="never" header="浏览器">
               <el-form :model="browser" label-width="150px" class="settings-form">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">同时最多开<InfoTip :width="340">
+                      整台机器同时开着的 Chromium 上限（顶栏「浏览器 x/y」里的 y）。<b>0 = 按内存自动推算</b>。<br>
+                      一个 Chromium 约 {{ capacity?.footprint_gb ?? 0.7 }} GB、10 个进程，开多了整机会卡死。
+                      和「同时运行任务数」是两回事：携程 / 同程 / 去哪儿不开浏览器，不占这里的名额。<br>
+                      保存后立即生效，不用重启；调小时已经开着的不会被关，用完关掉后不再补。
+                    </InfoTip></span>
+                  </template>
+                  <el-input-number v-model="browser.max_concurrent" :min="0" :max="64" class="num" />
+                  <span class="unit">个浏览器</span>
+                  <div v-if="capacity" class="muted small field-note">
+                    <template v-if="!browser.max_concurrent">自动：这台机器算出来是 {{ capacity.auto_limit }} 个；</template>
+                    现在开着 {{ capacity.active }}/{{ capacity.limit }}<template v-if="capacity.waiting">，{{ capacity.waiting }} 个排队</template>
+                  </div>
+                </el-form-item>
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">内存低于<InfoTip content="可用内存低于这个数就先不开新浏览器、排队等着；0 = 不检查（不建议）" /></span>
+                  </template>
+                  <el-input-number v-model="browser.min_free_memory_gb" :min="0" :max="64" :step="0.5" :precision="1" class="num" />
+                  <span class="unit">GB 时暂停开新浏览器</span>
+                  <div v-if="capacity?.memory_available_gb != null" class="muted small field-note">
+                    现在可用 {{ capacity.memory_available_gb }}/{{ capacity.memory_total_gb }} GB
+                  </div>
+                </el-form-item>
                 <el-form-item>
                   <template #label>
                     <span class="lbl">采集用无头模式<InfoTip>
@@ -387,14 +419,14 @@
                 </el-form-item>
               </el-form>
             </el-card>
-          </el-col>
-        </el-row>
+          </div>
+        </div>
       </el-tab-pane>
 
       <!-- ==================== AI 标注 ==================== -->
       <el-tab-pane v-if="isAdmin" label="AI 标注" name="labeling">
-        <el-row :gutter="16">
-          <el-col :xs="24" :lg="14" class="col">
+        <div class="settings-grid">
+          <div class="grid-cell">
             <el-card shadow="never">
               <template #header>边采边标</template>
               <el-form label-width="150px" class="settings-form">
@@ -466,8 +498,8 @@
                 </el-form-item>
               </el-form>
             </el-card>
-          </el-col>
-          <el-col :xs="24" :lg="10" class="col">
+          </div>
+          <div class="grid-cell">
             <el-card shadow="never">
               <template #header>自检结果</template>
               <el-empty v-if="!labelCheck" :image-size="80" description="点「自检」检查模型配置与数据库是否就绪" />
@@ -491,14 +523,14 @@
                 </el-table>
               </template>
             </el-card>
-          </el-col>
-        </el-row>
+          </div>
+        </div>
       </el-tab-pane>
 
       <!-- ==================== 通知 ==================== -->
       <el-tab-pane v-if="isAdmin" label="通知" name="notify">
-        <el-row :gutter="16">
-          <el-col :xs="24" :lg="14" class="col">
+        <div class="settings-grid">
+          <div class="grid-cell">
             <el-card shadow="never">
               <template #header>飞书机器人</template>
               <el-form label-width="150px" class="settings-form">
@@ -559,8 +591,8 @@
                 </el-form-item>
               </el-form>
             </el-card>
-          </el-col>
-          <el-col :xs="24" :lg="10" class="col">
+          </div>
+          <div class="grid-cell">
             <el-card shadow="never">
               <template #header>消息预览</template>
               <el-alert v-if="notifyResult && notifyResult.error" type="error" :closable="false"
@@ -569,14 +601,14 @@
                         title="已发出，去飞书群里看看" style="margin-bottom: 12px" />
               <pre class="notify-preview">{{ notifyResult?.preview || previewPlaceholder }}</pre>
             </el-card>
-          </el-col>
-        </el-row>
+          </div>
+        </div>
       </el-tab-pane>
 
       <!-- ==================== 指标计算 ==================== -->
       <el-tab-pane v-if="isAdmin" label="指标计算" name="metrics">
-        <el-row :gutter="16">
-          <el-col :xs="24" :lg="14" class="col">
+        <div class="settings-grid">
+          <div class="grid-cell">
             <el-card shadow="never">
               <template #header>舆情指标计算</template>
               <el-form label-width="150px" class="settings-form">
@@ -597,8 +629,8 @@
                 </el-form-item>
               </el-form>
             </el-card>
-          </el-col>
-        </el-row>
+          </div>
+        </div>
       </el-tab-pane>
 
       <!-- 用户：登录本系统的人。登录关掉（auth.enabled=false）时没有这个分页 -->
@@ -691,6 +723,15 @@ const scheduler = reactive<Record<string, any>>({})
 const metrics = reactive<{ enabled: boolean }>({ enabled: false })
 const router = useRouter()
 const browser = reactive<Record<string, any>>({})
+/** 浏览器闸门的当前状态（在用 / 上限 / 自动推算值 / 内存），在 /api/health 里 */
+const capacity = ref<Record<string, any> | null>(null)
+async function loadCapacity() {
+  try {
+    capacity.value = (await settingsApi.health())?.browser_capacity || null
+  } catch {
+    capacity.value = null
+  }
+}
 
 /** 后端返回的密钥是打码的 ***，不能原样回填后再保存，否则会把真密钥覆盖成 *** */
 function stripMasked(value: unknown): string {
@@ -705,6 +746,7 @@ async function load() {
       settingsApi.proxyStatus().catch(() => null),
       settingsApi.redisStatus().catch(() => null),
       settingsApi.schedulerStatus().catch(() => null),
+      loadCapacity(),
     ])
     configFile.value = settings.config_file
     const config = settings.config
@@ -836,7 +878,18 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.col { margin-bottom: 16px; }
+/* 两栏：每栏至少 520 宽，整体最宽 1560（每栏到 770 就不再变宽）、靠左排；
+   放不下两栏（内容区不到约 1060）自动上下堆。
+   以前是 el-row 14/10 按比例分，屏幕一宽左边的输入框被拉到上千像素，右边空一大片 */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
+  gap: 16px;
+  align-items: start;
+  max-width: 1560px;
+  margin-bottom: 16px;
+}
+.grid-cell { min-width: 0; }
 .narrow-card { max-width: 760px; }
 
 /* 字段名 + ⓘ：包一层 span，避免 label 的 flex 布局把图标顶到上沿 */
@@ -845,6 +898,11 @@ onMounted(() => {
 .settings-form :deep(.el-form-item) { margin-bottom: 18px; }
 .settings-form :deep(.el-form-item__label) { font-size: 13px; }
 .settings-form .num { width: 160px; }
+/* 文本框 / 下拉框别跟着卡片无限拉宽：420 够填 Key、地址这类最长的值 */
+.settings-form :deep(.el-input:not(.el-input-number .el-input)),
+.settings-form :deep(.el-select),
+.settings-form :deep(.el-textarea) { max-width: 420px; }
+.field-note { width: 100%; margin-top: 2px; line-height: 1.5; }
 
 /* 卡片内分段标题：首段贴顶，后续段落用细分隔线隔开 */
 .form-section {

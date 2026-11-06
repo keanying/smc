@@ -132,6 +132,10 @@ class BrowserCapacity:
         self._active = 0
         self._waiting = 0
         self._peak = 0
+        #: 运行中把上限调小、而在用的比新上限还多时，先欠着：之后还回来的名额要扣掉这么多个才进计数器
+        self._debt = 0
+        #: 配置里写的上限（0 = 按内存自动）。页面上显示「自动 / 手工」要用
+        self._configured = 0
         self._state_lock = threading.Lock()
 
     # ---------------- 配置 ----------------
@@ -142,6 +146,7 @@ class BrowserCapacity:
             limit = int(raw or 0)
         except (TypeError, ValueError):
             limit = 0
+        self._configured = max(limit, 0)
         self._limit = limit if limit > 0 else auto_limit()
         try:
             self._min_free_gb = float(
@@ -156,6 +161,7 @@ class BrowserCapacity:
         with self._state_lock:
             self._sem = threading.Semaphore(self._limit)
             self._active = 0
+            self._debt = 0
         total = total_memory_gb()
         logger.info(
             "浏览器并发上限：%d 个（%s；机器内存 %s，一个 Chromium 实测约 %.1fGB/10 进程），"
@@ -164,6 +170,42 @@ class BrowserCapacity:
             f"{total:.1f}GB" if total else "读不到", BROWSER_FOOTPRINT_GB,
             self._min_free_gb,
         )
+
+    def apply_settings(self, config) -> None:
+        """页面上改了浏览器上限 / 内存阈值：**运行中直接生效**，不重启、不清零正在用的名额。
+
+        ⚠️ 不能直接调 configure()：它把在用数清零、换一个满额的新计数器，
+           已经开着的浏览器关掉时再还名额，计数就比上限多出来了。
+           这里按「新上限 - 在用数」建计数器；调小到比在用数还少时，差额记成欠账，
+           之后归还的名额先抵欠账，抵完了才真的放回去。
+        """
+        raw = config.get("browser.max_concurrent", 0)
+        try:
+            configured = max(int(raw or 0), 0)
+        except (TypeError, ValueError):
+            configured = 0
+        new_limit = configured if configured > 0 else auto_limit()
+        try:
+            self._min_free_gb = float(config.get("browser.min_free_memory_gb", DEFAULT_MIN_FREE_GB))
+        except (TypeError, ValueError):
+            pass
+        try:
+            self._wait_timeout = float(
+                config.get("browser.capacity_wait_timeout_seconds", DEFAULT_WAIT_TIMEOUT))
+        except (TypeError, ValueError):
+            pass
+        with self._state_lock:
+            self._configured = configured
+            if new_limit == self._limit and self._sem is not None:
+                return
+            old = self._limit
+            self._limit = new_limit
+            self._sem = threading.Semaphore(max(new_limit - self._active, 0))
+            self._debt = max(self._active - new_limit, 0)
+            active = self._active
+        logger.info("[浏览器闸门] 上限 %d → %d（%s；现在开着 %d 个%s）",
+                    old, new_limit, "手工配置" if configured else "按内存自动推算", active,
+                    f"，多出来的 {active - new_limit} 个用完关掉后不再补" if active > new_limit else "")
 
     @property
     def limit(self) -> int:
@@ -192,6 +234,9 @@ class BrowserCapacity:
                 # 轮询而不是阻塞等待：阻塞会把整个事件循环卡住，
                 # 连接口和心跳一起停——那比排队本身糟糕得多。
                 await asyncio.sleep(_POLL_SECONDS)
+                # 每次都重新取：页面上改了上限会换一个计数器（apply_settings），
+                # 一直盯着旧的那个就永远等不到
+                sem = self._semaphore()
                 got = sem.acquire(blocking=False)
         finally:
             with self._state_lock:
@@ -256,7 +301,12 @@ class BrowserCapacity:
                 return
             self._active -= 1
             active = self._active
-        sem.release()
+            if self._debt > 0:
+                # 上限调小时欠下的：这个名额不放回去
+                self._debt -= 1
+                sem = None
+        if sem is not None:
+            sem.release()
         logger.debug("[浏览器闸门] %s 已释放（%d/%d 在用）",
                      who or "任务", active, self.limit)
 
@@ -267,6 +317,9 @@ class BrowserCapacity:
         return {
             "active": self._active,
             "limit": self.limit,
+            # 配置的上限：0 = 按内存自动推算（auto_limit 是自动推算出来的值，页面提示用）
+            "configured": self._configured,
+            "auto_limit": auto_limit(),
             "waiting": self._waiting,
             "peak": self._peak,
             "min_free_gb": self._min_free_gb,

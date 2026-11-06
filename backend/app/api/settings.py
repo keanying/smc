@@ -53,6 +53,10 @@ async def save_settings(payload: SettingIn, state: AppState = Depends(get_state)
         relevance = getattr(getattr(state, "runner", None), "relevance", None)
         if relevance is not None:
             relevance.reset()
+    # 浏览器上限 / 内存阈值：运行中直接生效（不清零正在用的名额）
+    if payload.section == "browser":
+        from ..browser.capacity import BROWSER_CAPACITY
+        BROWSER_CAPACITY.apply_settings(state.config)
     # 集群：别的机器下一次心跳时读到这份新设置并同步（cluster/service.py 的 _sync_settings）
     from ..cluster import get_cluster
     cluster = get_cluster()

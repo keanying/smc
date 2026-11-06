@@ -95,9 +95,11 @@
             </template>
             <template v-else-if="health.scheduler">
               <span class="meta-sep" />
-              <span class="meta-item">
+              <!-- 管理员点一下直接去改上限（系统设置 → 调度与浏览器） -->
+              <component :is="isAdmin ? 'router-link' : 'span'" :to="RUNTIME_SETTINGS"
+                         class="meta-item" :class="{ 'meta-link': isAdmin }">
                 运行中任务 {{ health.scheduler.running_count }}/{{ health.scheduler.max_running }}
-              </span>
+              </component>
             </template>
             <!-- 浏览器占用。一个 Chromium 实测 ~700MB/10 个进程，是整台机器
                  最稀缺的资源——全量采集把机器跑死那次，事后完全查不到
@@ -105,12 +107,13 @@
             <template v-if="health.browser_capacity">
               <span class="meta-sep" />
               <el-tooltip :content="browserTip" placement="bottom">
-                <span class="meta-item" :class="{ 'is-warn': browserBusy }">
+                <component :is="isAdmin ? 'router-link' : 'span'" :to="RUNTIME_SETTINGS"
+                           class="meta-item" :class="{ 'is-warn': browserBusy, 'meta-link': isAdmin }">
                   浏览器 {{ health.browser_capacity.active }}/{{ health.browser_capacity.limit }}
                   <template v-if="health.browser_capacity.waiting">
                     （{{ health.browser_capacity.waiting }} 个排队）
                   </template>
-                </span>
+                </component>
               </el-tooltip>
             </template>
           </span>
@@ -176,7 +179,7 @@ import {
 } from '@element-plus/icons-vue'
 import { authApi, settingsApi } from '../api'
 import { loadFeatures, metricsEnabled } from '../composables/features'
-import { currentUser, loadAuth } from '../composables/auth'
+import { currentUser, isAdmin, loadAuth } from '../composables/auth'
 import ChangePasswordDialog from '../components/ChangePasswordDialog.vue'
 import { layoutWidth, setZoomMode, zoom, zoomMode, ZOOM_OPTIONS } from '../composables/zoom'
 
@@ -184,6 +187,8 @@ const route = useRoute()
 const router = useRouter()
 const health = ref<Record<string, any> | null>(null)
 const passwordVisible = ref(false)
+/** 顶栏「运行中任务」「浏览器」点过去改上限的地方 */
+const RUNTIME_SETTINGS = { path: '/settings', query: { tab: 'runtime' } }
 
 /**
  * 侧边栏收起：内容区摆不开（缩放后的布局宽度不到 1200）时自动收成图标。
@@ -270,6 +275,7 @@ const browserTip = computed(() => {
     parts.push(`内存 ${c.memory_available_gb}/${c.memory_total_gb} GB 可用`)
   }
   parts.push(`一个浏览器约占 ${c.footprint_gb} GB、10 个进程`)
+  if (isAdmin.value) parts.push('点击去「系统设置 → 调度与浏览器」调整上限')
   return parts.join('；')
 })
 

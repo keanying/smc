@@ -196,3 +196,53 @@ def test_every_browser_launch_goes_through_the_gate():
     assert not offenders, (
         f"这些文件会启动浏览器但没过闸门：{offenders}。"
         f"照着 page_session.py 的写法加 acquire/release。")
+
+
+# ---------------------------------------------------------------- 运行中改上限（系统设置页面）
+def _hold(cap: BrowserCapacity, n: int) -> None:
+    for i in range(n):
+        asyncio.run(cap.acquire(f"t{i}"))
+
+
+def test_apply_settings_raises_limit_without_losing_active():
+    cap = _cap(**{"browser.max_concurrent": 2, "browser.min_free_memory_gb": 0})
+    _hold(cap, 2)
+    cap.apply_settings(FakeConfig(**{"browser.max_concurrent": 4, "browser.min_free_memory_gb": 0}))
+    assert cap.limit == 4 and cap.stats()["active"] == 2 and cap.stats()["configured"] == 4
+    _hold(cap, 2)                                  # 新上限下还能再开 2 个
+    assert cap.stats()["active"] == 4
+    assert not cap._semaphore().acquire(blocking=False), "第 5 个不该拿到"
+    for i in range(4):
+        cap.release(f"t{i}")
+    # 全部还完：正好 4 个空位，不多不少
+    got = sum(cap._semaphore().acquire(blocking=False) for _ in range(6))
+    assert got == 4
+
+
+def test_apply_settings_lowering_below_active_does_not_overfill_later():
+    cap = _cap(**{"browser.max_concurrent": 4, "browser.min_free_memory_gb": 0})
+    _hold(cap, 4)
+    cap.apply_settings(FakeConfig(**{"browser.max_concurrent": 1, "browser.min_free_memory_gb": 0}))
+    assert cap.limit == 1 and cap.stats()["active"] == 4
+    assert not cap._semaphore().acquire(blocking=False), "开着 4 个、上限 1：不能再给"
+    for i in range(4):
+        cap.release(f"t{i}")
+    # 欠的 3 个抵掉了：只剩 1 个空位，不会因为还回来 4 个就变成 4 个空位
+    got = sum(cap._semaphore().acquire(blocking=False) for _ in range(6))
+    assert got == 1
+
+
+def test_waiter_picks_up_the_new_limit():
+    """排队中的任务每轮重新取计数器：改大上限后马上能拿到，不会卡在旧计数器上。"""
+    cap = _cap(**{"browser.max_concurrent": 1, "browser.min_free_memory_gb": 0})
+
+    async def scenario():
+        await cap.acquire("a")
+        waiter = asyncio.create_task(cap.acquire("b"))
+        await asyncio.sleep(0.1)
+        assert not waiter.done()
+        cap.apply_settings(FakeConfig(**{"browser.max_concurrent": 2, "browser.min_free_memory_gb": 0}))
+        await asyncio.wait_for(waiter, timeout=5)
+        assert cap.stats()["active"] == 2
+
+    asyncio.run(scenario())

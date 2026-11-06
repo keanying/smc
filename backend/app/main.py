@@ -109,6 +109,9 @@ async def lifespan(app: FastAPI):
         if "labeling" in keys:
             from .labeling import get_manager
             await get_manager(config).reset()
+        if "browser" in keys:
+            from .browser.capacity import BROWSER_CAPACITY
+            BROWSER_CAPACITY.apply_settings(config)
 
     # 集群：单机时角色是 all，自己当主机、派给自己，行为和以前一样
     cluster = Cluster(config, db, tasks=task_repo, accounts=account_repo,
