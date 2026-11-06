@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from .enums import LabelSource, Sentiment
 
-__all__ = ["CommentRecord", "DimensionTag", "EntityTag", "LabelResult"]
+__all__ = ["CommentRecord", "DimensionTag", "EntityTag", "LabelResult", "align_attribution"]
 
 
 def _as_str(value: Any) -> str:
@@ -198,6 +198,9 @@ class LabelResult:
     dimension_tags: List[DimensionTag] = field(default_factory=list)
     entity_tags: List[EntityTag] = field(default_factory=list)
     keyword_tags: List[str] = field(default_factory=list)
+    #: 归因明细：每个关键词「为什么提取它」。写库时按 keyword_tags 对齐（见 :func:`align_attribution`），
+    #: 关键词被过滤、被补标注字、被清空时不用逐处维护。落 ``attribution_details`` 列（配了映射才写）。
+    attribution_details: List[Dict[str, str]] = field(default_factory=list)
 
     # ---- 以下字段不落源表，用于监控、复核与问题回溯 ----------------------------
     confidence: float = 0.0
@@ -230,14 +233,22 @@ class LabelResult:
     def keyword_json(self, *, ensure_ascii: bool = False) -> str:
         return json.dumps(list(self.keyword_tags), ensure_ascii=ensure_ascii)
 
+    def attribution_json(self, *, ensure_ascii: bool = False) -> str:
+        return json.dumps(align_attribution(self.keyword_tags, self.attribution_details),
+                          ensure_ascii=ensure_ascii)
+
     def to_row(self, *, ensure_ascii: bool = False) -> Dict[str, Any]:
-        """转成写库用的列值字典（键是逻辑名，由 repository 映射到物理列名）。"""
+        """转成写库用的列值字典（键是逻辑名，由 repository 映射到物理列名）。
+
+        ``attribution_details`` 只有 storage.columns 里配了映射才会写，没配的库不受影响。
+        """
         return {
             "sentiment_label": self.sentiment_label,
             "sentiment_score": self.sentiment_score,
             "dimension_tags": self.dimension_json(ensure_ascii=ensure_ascii),
             "entity_tags": self.entity_json(ensure_ascii=ensure_ascii),
             "keyword_tags": self.keyword_json(ensure_ascii=ensure_ascii),
+            "attribution_details": self.attribution_json(ensure_ascii=ensure_ascii),
         }
 
     def summary(self) -> str:
@@ -248,3 +259,29 @@ class LabelResult:
             f"[{self.comment_id}] {self.sentiment_label}({self.sentiment_score}) "
             f"conf={self.confidence:.2f} src={self.source.value} dims={dims} kw={kws}"
         )
+
+
+#: 归因原因最长多少字（模型偶尔写成一大段，截掉）
+ATTRIBUTION_REASON_MAX = 60
+
+
+def align_attribution(words: Sequence[str], details: Sequence[Any],
+                      default_reason: str = "") -> List[Dict[str, str]]:
+    """按关键词顺序生成归因明细：``[{"word": 关键词, "reason": 为什么提取它}]``。
+
+    和 ``keyword_tags`` 严格一一对应：关键词里有的才出现，顺序一致；
+    ``details`` 里找不到原因的词用 ``default_reason``。``details`` 认 dict 列表，脏数据跳过。
+    """
+    reasons: Dict[str, str] = {}
+    for item in details or []:
+        if not isinstance(item, dict):
+            continue
+        word = str(item.get("word") or "").strip()
+        reason = str(item.get("reason") or "").strip()
+        if word and word not in reasons:
+            reasons[word] = reason[:ATTRIBUTION_REASON_MAX]
+    out: List[Dict[str, str]] = []
+    for word in words or []:
+        w = str(word)
+        out.append({"word": w, "reason": reasons.get(w.strip()) or default_reason})
+    return out

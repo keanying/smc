@@ -21,6 +21,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from ..core.config import Config
 from ..core.logging import get_logger
+from ..core import attribution
 from ..core.mark_words import loads as mark_loads, merge_keywords
 from ..db import tables
 from ..repositories.data_repo import DataRepository
@@ -76,6 +77,7 @@ COMMENTS_HEADERS: Dict[str, str] = {
     "entity_tags": "实体标签数组",
     "keyword_tags": "关键词数组",
     "mark_word_tags": "标注字",
+    "attribution_details": "归因明细",
     "publish_time": "发布时间",
     "crawl_time": "采集时间",
     "create_time": "创建时间",
@@ -98,6 +100,17 @@ def _export_value(table: str, row: Dict[str, Any], column: str) -> Any:
         return merge_keywords(ai if isinstance(ai, list) else [], row.get("mark_word_tags"))
     if column == "mark_word_tags":
         return mark_loads(row.get(column))
+    if table == tables.COMMENTS and column == "attribution_details":
+        # 和导出的「关键词数组」一一对应（那一列也合并了标注字）
+        words = _export_value(table, row, "keyword_tags")
+        if isinstance(words, str):
+            try:
+                words = json.loads(words or "[]")
+            except (TypeError, ValueError):
+                words = []
+        details = attribution.align(words if isinstance(words, list) else [], row.get(column),
+                                    mark_words=mark_loads(row.get("mark_word_tags")))
+        return details or None
     return row.get(column)
 
 

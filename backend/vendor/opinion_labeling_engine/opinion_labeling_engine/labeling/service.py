@@ -29,7 +29,7 @@ from ..llm.prompt import PromptBuilder
 from ..logging_conf import get_logger
 from ..preprocess.cleaner import ContentCleaner
 from .postprocess import LabelPostProcessor
-from .scenic_rules import match_marks, merge_marks, rule_for
+from .scenic_rules import MARK_WORD_REASON, match_marks, merge_marks, rule_for
 
 __all__ = ["LabelingService", "LabelingStats", "LabelingFailed"]
 
@@ -123,7 +123,10 @@ class LabelingService:
         if rule is not None and rule.mark_words:
             marks = match_marks(record.content, rule.mark_words)
             if marks:
+                had = set(result.keyword_tags)
                 result.keyword_tags = merge_marks(result.keyword_tags, marks)
+                result.attribution_details = list(result.attribution_details) + [
+                    {"word": m, "reason": MARK_WORD_REASON} for m in marks if m not in had]
         return result
 
     def _label(self, record: CommentRecord) -> LabelResult:

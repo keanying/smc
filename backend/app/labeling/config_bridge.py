@@ -219,6 +219,8 @@ def build_engine_config(config: Config) -> Dict[str, Any]:
                 "dimension_tags": "dimension_tags",
                 "entity_tags": "entity_tags",
                 "keyword_tags": "keyword_tags",
+                # 归因明细：每个关键词为什么提取（列由 db/tables.py 的 EXTRA_COLUMNS 启动时补上）
+                "attribution_details": "attribution_details",
             },
             # ⚠️ 这一列**必须**接上：新版引擎自己维护 AI 标注状态
             #   0未标注 1人工复核正确 2人工复核错误 3复核成功

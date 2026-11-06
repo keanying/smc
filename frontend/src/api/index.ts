@@ -397,6 +397,8 @@ export interface LabelComment {
   dimension_tags: Array<{ dim1: string; dim2: string; dim3: string; sentiment: number }>
   entity_tags: Array<{ type: string; value: string }>
   keyword_tags: string[]
+  /** 归因明细：和 keyword_tags 一一对应，reason 是为什么提取这个关键词 */
+  attribution_details?: Array<{ word: string; reason: string }>
   /** 命中的标注字（景区配置的词在评论原文里出现），给 AI 关键词做补充 */
   mark_word_tags?: string[]
   /** 0未标注 1人工复核正确 2人工复核错误 3复核成功 4AI标注成功 5AI标注错误 6未人工复核 */

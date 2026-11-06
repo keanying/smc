@@ -16,6 +16,7 @@ import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+from ..core import attribution
 from ..core.db import Database
 from ..core.scope import in_scope, scope_sql
 from ..core.logging import get_logger
@@ -30,7 +31,7 @@ REVIEW_COLUMNS = (
     "commenter_name", "content", "likes", "publish_time", "comment_level",
     "sentiment_label", "sentiment_score", "dimension_tags", "entity_tags",
     "keyword_tags", "label_review_flag", "label_review_by", "label_review_time",
-    "mark_word_tags",
+    "mark_word_tags", "attribution_details",
 )
 
 # ---------------------------------------------------------------------------
@@ -202,6 +203,17 @@ class LabelingRepository:
                 sets.append(f"`{column}` = %s")
                 # 和引擎写回保持一致：中文明文，不转义成 \uXXXX
                 params.append(json.dumps(value, ensure_ascii=False))
+        if keyword_tags is not None:
+            # 关键词改了，归因明细跟着对齐：留下的词原因不变，新加的记「人工复核添加」，删掉的跟着删
+            old = await self.db.fetch_one(
+                f"SELECT `attribution_details`, `mark_word_tags` FROM `{tables.COMMENTS}` WHERE `id` = %s",
+                [int(row_id)])
+            details = attribution.align(
+                keyword_tags, (old or {}).get("attribution_details"),
+                default_reason=attribution.HUMAN_REASON,
+                mark_words=_loads((old or {}).get("mark_word_tags"), []))
+            sets.append("`attribution_details` = %s")
+            params.append(attribution.dumps(details))
         sets.append("`label_review_flag` = %s")
         params.append(int(flag))
         sets.append("`label_review_by` = %s")
@@ -251,6 +263,10 @@ class LabelingRepository:
         item["dimension_tags"] = _loads(row.get("dimension_tags"), [])
         item["entity_tags"] = _loads(row.get("entity_tags"), [])
         item["keyword_tags"] = _loads(row.get("keyword_tags"), [])
+        # 归因明细按 keyword_tags 对齐给出：历史数据没有这一列的值，原因就是空串
+        item["attribution_details"] = attribution.align(
+            item["keyword_tags"], row.get("attribution_details"),
+            mark_words=_loads(row.get("mark_word_tags"), []))
         # 标注字（评论原文里出现的景区配置词），和 AI 关键词分开给，页面合并显示
         item["mark_word_tags"] = _loads(row.get("mark_word_tags"), [])
         item["labeled"] = bool(row.get("sentiment_label"))

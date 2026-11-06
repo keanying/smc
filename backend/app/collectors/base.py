@@ -142,6 +142,8 @@ class CommentItem:
     mark_word_tags: Optional[str] = None
     #: 入库时只放命中的标注字（之后 AI 标注会写成 AI 关键词 + 标注字）
     keyword_tags: Optional[str] = None
+    #: 归因明细，和 keyword_tags 一一对应（入库时是标注字的那几条，AI 标注后整列重写）
+    attribution_details: Optional[str] = None
 
     def finalize(self) -> "CommentItem":
         self.comment_id = nz.truncate(self.comment_id, 300)

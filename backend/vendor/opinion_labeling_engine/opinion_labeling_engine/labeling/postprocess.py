@@ -25,7 +25,7 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from ..config import LabelingConfig
 from ..domain.enums import LabelSource, Sentiment
-from ..domain.models import CommentRecord, DimensionTag, EntityTag, LabelResult
+from ..domain.models import CommentRecord, DimensionTag, EntityTag, LabelResult, align_attribution
 from ..domain.taxonomy import Taxonomy
 from ..llm.parser import RawLabel
 from .scenic_rules import BROAD_KEYWORD_MAX_COUNT, BROAD_KEYWORD_MAX_LENGTH, rule_for
@@ -116,6 +116,8 @@ class LabelPostProcessor:
             dimension_tags=dimensions,
             entity_tags=entities,
             keyword_tags=keywords,
+            # 归因明细：模型给每个关键词写的「为什么提取它」，只留通过校验的那些词
+            attribution_details=align_attribution(keywords, self._keyword_reasons(raw.keywords)),
             confidence=round(confidence, 2),
             source=LabelSource.LLM,
             relevant=bool(raw.relevant),
@@ -261,6 +263,16 @@ class LabelPostProcessor:
         limit = max(self._cfg.keyword_max_count, BROAD_KEYWORD_MAX_COUNT) if broad else self._cfg.keyword_max_count
         return kept[:limit]
 
+    @staticmethod
+    def _keyword_reasons(items: Sequence[Dict]) -> List[Dict[str, str]]:
+        """模型输出里每个关键词的 reason（字段名和 :meth:`_filter_keywords` 认的一致）。"""
+        out: List[Dict[str, str]] = []
+        for item in items:
+            word = str(item.get("word") or item.get("keyword") or "").strip()
+            if word:
+                out.append({"word": word, "reason": str(item.get("reason") or "").strip()})
+        return out
+
     def _keyword_reject_reason(self, word: str, source_text: str, broad: bool = False) -> str:
         """返回拒绝原因码；通过校验返回空串。broad=关键词放宽的景区。"""
         cfg = self._cfg
@@ -347,6 +359,7 @@ class LabelPostProcessor:
         result.sentiment = Sentiment.NEUTRAL
         result.dimension_tags = []
         result.keyword_tags = []
+        result.attribution_details = []
         result.source = LabelSource.RULE_IRRELEVANT
         if not result.reason:
             result.reason = "与景区主体无关"
