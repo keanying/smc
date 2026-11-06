@@ -21,8 +21,6 @@ const router = createRouter({
       meta: { title: '概览' } },
     { path: '/scenics', name: 'scenics', component: () => import('../views/ScenicView.vue'),
       meta: { title: '目标管理', hq: true } },
-    { path: '/archive', name: 'archive', component: () => import('../views/ArchiveView.vue'),
-      meta: { title: '档案', hq: true } },
     { path: '/tasks', name: 'tasks', component: () => import('../views/TasksView.vue'),
       meta: { title: '任务管理' } },
     { path: '/tasks/new', name: 'task-new', component: () => import('../views/NewTaskView.vue'),
@@ -39,12 +37,13 @@ const router = createRouter({
       meta: { title: '账号管理' } },
     { path: '/cluster', name: 'cluster', component: () => import('../views/ClusterView.vue'),
       meta: { title: '集群', hq: true } },
-    { path: '/boxes', name: 'boxes', component: () => import('../views/BoxesView.vue'),
-      meta: { title: '盒子管理', admin: true, hq: true } },
-    // 用户管理并进了系统设置；旧地址跳过去
+    // 用户管理、档案、盒子管理都并进了系统设置；旧地址跳过去
     { path: '/users', redirect: { path: '/settings', query: { tab: 'users' } } },
+    { path: '/archive', redirect: { path: '/settings', query: { tab: 'archive' } } },
+    { path: '/boxes', redirect: { path: '/settings', query: { tab: 'boxes' } } },
     { path: '/settings', name: 'settings', component: () => import('../views/SettingsView.vue'),
-      meta: { title: '系统设置', admin: true, hq: true } },
+      // 不限管理员：档案在这里面，操作员、只读也要用；别的页签页面里按角色藏（后端也拦着改设置）
+      meta: { title: '系统设置', hq: true } },
   ],
 })
 

@@ -8,7 +8,7 @@
 
 <template>
   <!-- 主：登记景区盒子、分景区、发令牌。盒子采到的数据报到这里存储和标注 -->
-  <div>
+  <div :class="{ 'is-embedded': embedded }">
     <div class="page-header">
       <h2 class="page-title">
         盒子管理
@@ -104,6 +104,8 @@
 </template>
 
 <script setup lang="ts">
+/** embedded：放在系统设置的页签里时为 true，标题缩小成页签内的小标题 */
+defineProps<{ embedded?: boolean }>()
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
@@ -212,6 +214,7 @@ onMounted(load)
 </script>
 
 <style scoped>
+.is-embedded .page-header .page-title { font-size: 15px; }
 .box-cell { display: flex; align-items: center; gap: 10px; }
 .box-name { font-weight: 600; }
 .small { font-size: 12px; }
