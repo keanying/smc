@@ -15,12 +15,14 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional, Sequence
 
 from .enums import LabelSource, Sentiment
 
-__all__ = ["CommentRecord", "DimensionTag", "EntityTag", "LabelResult", "align_attribution"]
+__all__ = ["CommentRecord", "DimensionTag", "EntityTag", "LabelResult", "align_attribution",
+           "clean_reason"]
 
 
 def _as_str(value: Any) -> str:
@@ -285,3 +287,33 @@ def align_attribution(words: Sequence[str], details: Sequence[Any],
         w = str(word)
         out.append({"word": w, "reason": reasons.get(w.strip()) or default_reason})
     return out
+
+
+#: 原因里「判定过程」的分句：模型不听话时还会写，整句删掉（只要归因到的事情本身）
+_JUDGE_CLAUSE = re.compile(
+    r"依据|支撑.{0,8}(判断|判定)|判为|判定为|判成|整体(情感|判断|判定)|主要原因|关键原因|褒贬"
+    r"|^(这|此|本条)?(是|属于|为)?.{0,4}(正向|负向|中性|好评|差评|中评)(的)?(评价|判断|表达)?$"
+    # 只给评论贴类别、没说具体事情的分句：「打卡记录」「对景区整体的评价」
+    r"|^(打卡|行程|游玩)?(记录|流水账)$|^对.{0,12}的(评价|描述|感受)$")
+#: 开头的转述动词：「夸螺蛳粉味道好」→「螺蛳粉味道好」
+_LEAD_VERB = re.compile(r"^(夸赞|夸奖|夸|称赞|赞扬|表扬|肯定|抱怨|吐槽|批评|指出|认为|觉得|表示|反映|交代|说明)(了)?")
+_CLAUSE_SPLIT = re.compile(r"[，,；;。]")
+
+
+def clean_reason(text: Any) -> str:
+    """把原因收敛成「归因到的事情」：删掉判定过程的分句、开头的转述动词。
+
+    「夸螺蛳粉味道好，是判为正向的依据」→「螺蛳粉味道好」。整句都是判定过程时返回空串。
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    clauses = [c.strip() for c in _CLAUSE_SPLIT.split(raw) if c.strip()]
+    kept = []
+    for clause in clauses:
+        if _JUDGE_CLAUSE.search(clause):
+            continue
+        stripped = _LEAD_VERB.sub("", clause)
+        # 去掉动词后太短就不去（「肯定」本身就是内容的情况）
+        kept.append(stripped if len(stripped) >= 2 else clause)
+    return "，".join(kept)[:ATTRIBUTION_REASON_MAX]

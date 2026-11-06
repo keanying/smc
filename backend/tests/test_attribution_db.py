@@ -103,20 +103,20 @@ def test_attribution_follows_keywords(app_client):
                   f"UPDATE `{TABLE}` SET sentiment_label='中性', sentiment_score=0, keyword_tags=%s, "
                   f"attribution_details=%s WHERE id=%s",
                   [json.dumps(["一般般", "海蓝星"], ensure_ascii=False),
-                   json.dumps([{"word": "一般般", "reason": "态度平淡，是判为中性的依据"},
+                   json.dumps([{"word": "一般般", "reason": "景区整体感受一般"},
                                {"word": "海蓝星", "reason": attribution.MARK_WORD_REASON}], ensure_ascii=False),
                    row_id])
     c.portal.call(state.db.execute,
                   f"UPDATE `{TABLE}` SET sentiment_label='正向', sentiment_score=1, keyword_tags=%s WHERE comment_id='c2'",
                   ['["梦梦好萌"]'])
     item = _ok(c.get(f"/api/labeling/comments/{row_id}"))
-    assert item["attribution_details"][0] == {"word": "一般般", "reason": "态度平淡，是判为中性的依据"}
+    assert item["attribution_details"][0] == {"word": "一般般", "reason": "景区整体感受一般"}
 
     # 3. 人工复核改关键词：留下的原因不变、新加的记「人工复核添加」、删掉的跟着删
     _ok(c.put(f"/api/labeling/comments/{row_id}", json={"keyword_tags": ["一般般", "海豹表演好看"]}))
     _, kw, attr = _row(c, "c1")
     assert kw == ["一般般", "海豹表演好看"]
-    assert json.loads(attr) == [{"word": "一般般", "reason": "态度平淡，是判为中性的依据"},
+    assert json.loads(attr) == [{"word": "一般般", "reason": "景区整体感受一般"},
                                 {"word": "海豹表演好看", "reason": attribution.HUMAN_REASON}]
 
     # 4. 加标注字后重新识别：AI / 人工的原因原样，补进来的标注字写标注字原因
@@ -125,7 +125,7 @@ def test_attribution_follows_keywords(app_client):
     _, kw, attr = _row(c, "c1")
     assert kw == ["一般般", "海豹表演好看", "海蓝星", "海豹"]
     assert json.loads(attr) == [
-        {"word": "一般般", "reason": "态度平淡，是判为中性的依据"},
+        {"word": "一般般", "reason": "景区整体感受一般"},
         {"word": "海豹表演好看", "reason": attribution.HUMAN_REASON},
         {"word": "海蓝星", "reason": attribution.MARK_WORD_REASON},
         {"word": "海豹", "reason": attribution.MARK_WORD_REASON},

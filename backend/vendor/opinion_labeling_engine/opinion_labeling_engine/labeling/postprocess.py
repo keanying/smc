@@ -25,7 +25,7 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from ..config import LabelingConfig
 from ..domain.enums import LabelSource, Sentiment
-from ..domain.models import CommentRecord, DimensionTag, EntityTag, LabelResult, align_attribution
+from ..domain.models import CommentRecord, DimensionTag, EntityTag, LabelResult, align_attribution, clean_reason
 from ..domain.taxonomy import Taxonomy
 from ..llm.parser import RawLabel
 from .scenic_rules import BROAD_KEYWORD_MAX_COUNT, BROAD_KEYWORD_MAX_LENGTH, rule_for
@@ -270,7 +270,7 @@ class LabelPostProcessor:
         for item in items:
             word = str(item.get("word") or item.get("keyword") or "").strip()
             if word:
-                out.append({"word": word, "reason": str(item.get("reason") or "").strip()})
+                out.append({"word": word, "reason": clean_reason(item.get("reason"))})
         return out
 
     def _keyword_reject_reason(self, word: str, source_text: str, broad: bool = False) -> str:
