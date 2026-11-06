@@ -493,6 +493,58 @@ export const labelingApi = {
 
 // ===================== 任务 =====================
 
+/** 运行记录：任务每执行一次一条（后端表 src_opr_crawl_task_run_di） */
+export interface TaskRun {
+  id: number
+  run_no: string
+  task_id: string
+  task_name: string
+  scenic_id: string
+  scenic_name: string
+  channels: string[]
+  /** manual 手动 / schedule 定时 / once 新建后立即执行 / resume 排队恢复 / dispatch 集群派发 */
+  trigger_type: string
+  trigger_label: string
+  /** running / completed / failed / canceled / waiting / interrupted */
+  run_status: string
+  run_status_label: string
+  start_time: string
+  end_time: string | null
+  duration_seconds: number
+  new_work_qty: number
+  updated_work_qty: number
+  new_comment_qty: number
+  updated_comment_qty: number
+  error_message: string | null
+  /** 这次运行的错误 / 警告日志条数（状态是「完成」也可能有，比如某个平台没账号被跳过） */
+  error_log_qty: number
+  warn_log_qty: number
+  node_id: string
+  travel_date: string
+}
+
+export interface TaskRunDetail extends TaskRun {
+  params_snapshot: Record<string, any> | null
+  log_start_id: number
+  log_end_id: number
+  task_exists: boolean
+}
+
+export interface RunListResult extends Paged<TaskRun> {
+  status_options: Array<{ value: string; label: string }>
+  trigger_options: Array<{ value: string; label: string }>
+}
+
+export const runApi = {
+  list: (params: {
+    task_id?: string; scenic_id?: string; channel?: string; status?: string; trigger?: string
+    keyword?: string; start_date?: string; end_date?: string; page?: number; page_size?: number
+  } = {}, silent = false) => api.get<RunListResult>('/api/runs', params, silent),
+  detail: (runNo: string, silent = false) => api.get<TaskRunDetail>(`/api/runs/${runNo}`, undefined, silent),
+  logs: (runNo: string, afterId = 0, limit = 500) =>
+    api.get<{ items: TaskLog[]; run_status: string }>(`/api/runs/${runNo}/logs`, { after_id: afterId, limit }, true),
+}
+
 export const taskApi = {
   /** sort='recent'：按最近一次运行排（定时任务跑了就排到前面）；默认按建的先后 */
   list: (params: { status?: string; scenic_id?: string; keyword?: string; node?: string; page?: number; page_size?: number; sort?: 'recent' } = {}, silent = false) =>

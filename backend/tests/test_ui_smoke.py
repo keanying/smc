@@ -173,6 +173,7 @@ async def test_all_pages_render_without_errors(server, page_factory):
     pages = [
         ("/#/", "概览"),
         ("/#/scenics", "目标管理"),
+        ("/#/runs", "运行记录"),
         ("/#/tasks", "任务管理"),
         ("/#/tasks/new", "新建采集任务"),
         ("/#/data", "数据中心"),

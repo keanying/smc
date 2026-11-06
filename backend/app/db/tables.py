@@ -86,6 +86,9 @@ SETTING = "src_opinion_sys_setting"
 TASK = "src_opinion_crawl_task"
 #: 系统任务日志
 TASK_LOG = "src_opinion_crawl_task_log"
+#: 采集任务运行记录：任务每执行一次一条（开始、结局、耗时、采集量、这次的日志范围）。
+#: 新表按 CLAUDE.md 的命名规范：src 层 · opr 运营域 · crawl_task_run 实体 · _di 天级增量
+TASK_RUN = "src_opr_crawl_task_run_di"
 
 #: 旧表名 -> 新表名。只用于启动时的一次性改名，不参与任何查询。
 LEGACY_RENAMES: Dict[str, str] = {

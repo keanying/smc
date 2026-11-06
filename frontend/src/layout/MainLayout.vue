@@ -23,7 +23,8 @@
       </div>
       <el-menu
         router
-        :default-active="route.path"
+        :default-active="activeMenu"
+        :default-openeds="['task-group']"
         :collapse="collapsed"
         :collapse-transition="false"
         class="side-menu"
@@ -37,9 +38,12 @@
         <el-menu-item index="/scenics">
           <el-icon><LocationFilled /></el-icon><template #title>目标管理</template>
         </el-menu-item>
-        <el-menu-item index="/tasks">
-          <el-icon><List /></el-icon><template #title>任务管理</template>
-        </el-menu-item>
+        <!-- 任务管理：任务列表 + 运行记录（每执行一次一条） -->
+        <el-sub-menu index="task-group" popper-class="side-menu-popper">
+          <template #title><el-icon><List /></el-icon><span>任务管理</span></template>
+          <el-menu-item index="/tasks"><template #title>任务列表</template></el-menu-item>
+          <el-menu-item index="/runs"><template #title>运行记录</template></el-menu-item>
+        </el-sub-menu>
         <el-menu-item index="/data">
           <el-icon><DataAnalysis /></el-icon><template #title>数据中心</template>
         </el-menu-item>
@@ -230,6 +234,13 @@ const route = useRoute()
 const router = useRouter()
 const health = ref<Record<string, any> | null>(null)
 const passwordVisible = ref(false)
+/** 侧边栏高亮哪一项：子页面（新建任务、任务详情、运行详情）高亮它所属的那一项 */
+const activeMenu = computed(() => {
+  const menu = route.meta.menu as string | undefined
+  if (menu) return menu
+  if (route.path.startsWith('/tasks')) return '/tasks'
+  return route.path
+})
 /** 顶栏「运行中任务」「浏览器」点过去改上限的地方 */
 const RUNTIME_SETTINGS = { path: '/settings', query: { tab: 'runtime' } }
 
@@ -442,6 +453,23 @@ onUnmounted(() => window.clearInterval(timer))
   border-radius: 8px;
   transition: background-color 0.15s ease;
 }
+.side-menu :deep(.el-sub-menu__title) {
+  height: 36px;
+  line-height: 36px;
+  margin: 2px 0;
+  padding: 0 8px !important;
+  border-radius: 11px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.72);
+}
+.side-menu :deep(.el-sub-menu__title .el-icon:not(.el-sub-menu__icon-arrow)) {
+  font-size: 14px; margin-right: 8px; width: 24px; height: 24px; border-radius: 8px;
+}
+.side-menu :deep(.el-sub-menu__title:hover) { background: rgba(255, 255, 255, 0.10); color: #fff; }
+.side-menu :deep(.el-sub-menu.is-active > .el-sub-menu__title) { color: #fff; font-weight: 600; }
+.side-menu :deep(.el-sub-menu .el-menu) { background: transparent; }
+/* 子项：和标题文字对齐（跳过图标那一格），不要图标块 */
+.side-menu :deep(.el-sub-menu .el-menu-item) { padding-left: 40px !important; height: 32px; line-height: 32px; }
 .side-menu :deep(.el-menu-item:hover) {
   background: rgba(255, 255, 255, 0.10);
   color: #fff;
@@ -543,6 +571,13 @@ onUnmounted(() => window.clearInterval(timer))
 .zoom-chip { padding: 0 12px; font-size: 12px; }
 .header-btn:hover, .zoom-chip:hover { box-shadow: var(--smc-shadow-hover); color: var(--el-color-primary); }
 :global(.el-dropdown-menu__item.is-current) { color: var(--el-color-primary); font-weight: 600; }
+
+/* 侧边栏收起时，「任务管理」的子菜单是悬浮弹出的（挂在 body 下）：给它紫色底，不然白字看不见 */
+:global(.side-menu-popper.el-popper) { border: none; border-radius: 12px; overflow: hidden; }
+:global(.side-menu-popper .el-menu) { background: var(--smc-gradient) !important; padding: 6px; border-radius: 12px; }
+:global(.side-menu-popper .el-menu-item) { height: 34px; line-height: 34px; border-radius: 8px; color: rgba(255, 255, 255, 0.85) !important; }
+:global(.side-menu-popper .el-menu-item:hover) { background: rgba(255, 255, 255, 0.12) !important; color: #fff !important; }
+:global(.side-menu-popper .el-menu-item.is-active) { background: rgba(255, 255, 255, 0.2) !important; color: #fff !important; font-weight: 600; }
 
 /* 顶栏悬停卡片：分行列出在跑的任务、浏览器被谁占着（弹层在 body 下，要用 :global） */
 :global(.meta-tip.el-popper) { max-width: 380px; line-height: 1.6; font-size: 12px; padding: 10px 12px; }

@@ -119,7 +119,15 @@ def test_every_table_name_carries_the_prefix():
     names = [v for k, v in vars(tables).items()
              if k.isupper() and isinstance(v, str)]
     assert names, "tables.py 里应该有表名常量"
-    assert all(n.startswith("src_opinion_") for n in names), names
+    #: 按 CLAUDE.md 数仓命名规范新建的表（分层_主题域_实体_粒度），不带老的 src_opinion_ 前缀。
+    #: 显式登记：新加一张表忘了守规范，或者老表被误改名，都会被抓出来
+    from app.db.tables import TASK_RUN
+    new_norm = {TASK_RUN}
+    import re
+    pattern = re.compile(r"^(ods|dwd|dws|ads|dim|src)_(prd|ord|cus|sup|inv|fin|opr|trf|mkt)_[a-z0-9_]+?"
+                         r"_(hrs|hrs_f|di|df|wk|wk_f|mo|mo_f|q|q_f|yr|yr_f|f|zip)$")
+    assert all(pattern.match(n) for n in new_norm), new_norm
+    assert all(n.startswith("src_opinion_") for n in names if n not in new_norm), names
 
     #: 改造之后**新增**的表，历史上没有对应的旧名，自然不在 LEGACY_RENAMES 里。
     #: 这里显式登记而不是把断言放宽，是为了"漏写旧名映射"仍然会被抓出来——
@@ -131,7 +139,7 @@ def test_every_table_name_carries_the_prefix():
     )
     born_after_rename = {SCENIC_FILTER_WORD, SCENIC_POI_INFO, QUNAR_REGION,
                          ARCHIVE_REGION, ACCOUNT_QUOTA, DELETED_WORK, METRIC_RUN,
-                         CLUSTER_NODE, CLUSTER_LEASE, SYS_USER, SYS_USER_SESSION, BOX}
+                         CLUSTER_NODE, CLUSTER_LEASE, SYS_USER, SYS_USER_SESSION, BOX, TASK_RUN}
 
     assert set(LEGACY_RENAMES.values()) == set(names) - born_after_rename
     # 旧名映射不能指向一个不存在的表名常量

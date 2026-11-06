@@ -286,6 +286,41 @@ CREATE TABLE IF NOT EXISTS `src_opinion_crawl_task_log` (
   KEY `idx_task_log_task` (`task_id`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='系统任务日志';
 
+-- 采集任务运行记录：任务每执行一次一条。表名、字段名按 CLAUDE.md 的数仓命名规范（新表）
+CREATE TABLE IF NOT EXISTS `src_opr_crawl_task_run_di` (
+  `id`               BIGINT        NOT NULL AUTO_INCREMENT COMMENT '自增主键',
+  `run_no`           VARCHAR(40)   NOT NULL              COMMENT '运行编号，一次执行一个，如 R20261106153000a1b2',
+  `task_id`          VARCHAR(64)   NOT NULL              COMMENT '任务ID（src_opinion_crawl_task.task_id）',
+  `task_name`        VARCHAR(200)  NOT NULL DEFAULT ''   COMMENT '任务名称（运行当时的名字）',
+  `scenic_id`        VARCHAR(100)  NOT NULL DEFAULT ''   COMMENT '采集目标ID（页面上叫「目标」）',
+  `scenic_name`      VARCHAR(100)  NOT NULL DEFAULT ''   COMMENT '采集目标名称',
+  `channel_code`     VARCHAR(100)  NOT NULL DEFAULT ''   COMMENT '平台代码，多个用逗号分隔：douyin-抖音 kuaishou-快手 xiaohongshu-小红书 weibo-微博 ctrip-携程 tongcheng-同程 qunar-去哪儿',
+  `trigger_type`     VARCHAR(20)   NOT NULL DEFAULT ''   COMMENT '触发方式：manual-手动立即执行 schedule-定时到点 once-新建后立即执行 resume-排队恢复（账号冷却结束后接着跑） dispatch-集群派发',
+  `run_status`       VARCHAR(20)   NOT NULL DEFAULT 'running' COMMENT '运行状态：running-运行中 completed-完成 failed-失败 canceled-已取消 waiting-排队等账号（这次没跑完，到点自动再跑一次） interrupted-中断（运行中服务重启）',
+  `start_time`       DATETIME      NOT NULL              COMMENT '开始时间',
+  `end_time`         DATETIME          NULL DEFAULT NULL COMMENT '结束时间，运行中为空',
+  `duration_seconds` INT           NOT NULL DEFAULT 0    COMMENT '耗时（秒）',
+  `new_work_qty`     INT           NOT NULL DEFAULT 0    COMMENT '新增作品数',
+  `updated_work_qty` INT           NOT NULL DEFAULT 0    COMMENT '更新作品数',
+  `new_comment_qty`  INT           NOT NULL DEFAULT 0    COMMENT '新增评论数',
+  `updated_comment_qty` INT        NOT NULL DEFAULT 0    COMMENT '更新评论数',
+  `error_message`    TEXT              NULL DEFAULT NULL COMMENT '失败 / 取消 / 排队的原因',
+  `error_log_qty`    INT           NOT NULL DEFAULT 0    COMMENT '这次运行的错误日志条数（完成了也可能有，如某个平台没账号被跳过）',
+  `warn_log_qty`     INT           NOT NULL DEFAULT 0    COMMENT '这次运行的警告日志条数',
+  `node_id`          VARCHAR(100)  NOT NULL DEFAULT ''   COMMENT '在哪台机器上运行（集群节点ID，单机为主机名）',
+  `log_start_id`     BIGINT        NOT NULL DEFAULT 0    COMMENT '这次运行的日志从 src_opinion_crawl_task_log 的哪个 id 之后开始（不含）',
+  `log_end_id`       BIGINT        NOT NULL DEFAULT 0    COMMENT '这次运行的最后一条日志 id（含），运行中为 0',
+  `params_snapshot`  TEXT              NULL DEFAULT NULL COMMENT '运行当时的任务参数快照（JSON），事后改了任务也能看到这次按什么跑的',
+  `travel_date`      CHAR(8)       NOT NULL DEFAULT ''   COMMENT '运行日期 YYYYMMDD（分区字段）',
+  `create_time`      TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`      TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_task_run_no` (`run_no`),
+  KEY `idx_task_run_task` (`task_id`, `id`),
+  KEY `idx_task_run_start` (`start_time`),
+  KEY `idx_task_run_date` (`travel_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='采集任务运行记录（每执行一次一条）';
+
 -- -------------------------------------------------------------------
 -- 四、核心数据表
 -- -------------------------------------------------------------------

@@ -79,6 +79,15 @@ class TaskScheduler:
             reset = await self.tasks.reset_stuck_running()
         if reset:
             logger.warning("发现 %d 个上次未正常结束的任务，已标记为失败", reset)
+        # 运行记录同理：本机还挂着「运行中」的，进程已经没了，记成「中断」
+        runs = getattr(self.runner, "runs", None)
+        if runs is not None:
+            try:
+                n = await runs.mark_interrupted(self._node_id())
+                if n:
+                    logger.warning("%d 条运行记录停在「运行中」（上次没正常结束），已记为中断", n)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("清理运行记录失败（不影响调度）：%s", exc)
 
         if not self.config.get("scheduler.enabled", True):
             if self.cluster is None:
@@ -175,7 +184,9 @@ class TaskScheduler:
                 continue
             if not await self.tasks.start_assigned(task["task_id"], node_id):
                 continue        # 刚被取消了
-            await self._launch(task, claimed=True)
+            # 主机派给自己的，派发时记下了触发原因（手动 / 定时 / 排队恢复 / 新建后立即执行）
+            pop = getattr(self.cluster, "pop_trigger", None)
+            await self._launch(task, claimed=True, trigger=pop(task["task_id"]) if pop else "")
 
     async def _poll(self) -> None:
         async with self._poll_lock:
@@ -265,8 +276,29 @@ class TaskScheduler:
         except Exception as exc:  # noqa: BLE001
             logger.error("补标任务 %s 状态失败：%s", task_id, exc)
 
-    async def _launch(self, task: Dict[str, Any], claimed: bool = False) -> None:
+    def _node_id(self) -> str:
+        """本机编号：集群里用节点 ID，单机用主机名。运行记录里记「在哪台机器上跑的」"""
+        me = getattr(self.cluster, "me", None) if self.cluster is not None else None
+        if me is not None and getattr(me, "node_id", ""):
+            return me.node_id
+        import socket
+        return socket.gethostname()
+
+    @staticmethod
+    def _trigger_of(task: Dict[str, Any], claimed: bool) -> str:
+        """这次是怎么触发的（运行记录的 trigger_type）。看的是启动前任务在库里的状态。
+
+        集群派过来的（claimed）看不到派发前的状态：主机派给自己时会留下原因（cluster.pop_trigger），
+        派给别的机器的拿不到，记「集群派发」。"""
+        if claimed:
+            return "dispatch"
+        from ..repositories.run_repo import trigger_of_task
+        return trigger_of_task(task)
+
+    async def _launch(self, task: Dict[str, Any], claimed: bool = False, trigger: str = "") -> None:
         task_id = task["task_id"]
+        # 运行记录要的两样：怎么触发的、在哪台机器上（runner.run 读这两个键）
+        task = {**task, "_trigger": trigger or self._trigger_of(task, claimed), "_node_id": self._node_id()}
         if not claimed:
             await self.tasks.update(task_id, {"status": TaskStatus.QUEUED.value})
         cancel_event = asyncio.Event()
@@ -314,7 +346,7 @@ class TaskScheduler:
             raise RuntimeError(
                 f"当前已有 {len(self._running)} 个任务在跑，达到上限 {self.max_running}，请稍后再试"
             )
-        await self._launch(task)
+        await self._launch(task, trigger="manual")
         return True
 
     async def cancel(self, task_id: str) -> bool:

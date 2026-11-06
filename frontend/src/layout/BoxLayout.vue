@@ -79,7 +79,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import {
-  DataAnalysis, HomeFilled, Key, List, MagicStick, SwitchButton, User,
+  DataAnalysis, HomeFilled, Key, List, MagicStick, SwitchButton, Tickets, User,
 } from '@element-plus/icons-vue'
 import { authApi, settingsApi } from '../api'
 import { currentUser, loadAuth } from '../composables/auth'
@@ -94,6 +94,7 @@ const health = ref<Record<string, any> | null>(null)
 const menu = [
   { path: '/', label: '概览', icon: HomeFilled },
   { path: '/tasks', label: '任务管理', icon: List },
+  { path: '/runs', label: '运行记录', icon: Tickets },
   { path: '/data', label: '数据中心', icon: DataAnalysis },
   { path: '/labeling', label: '标注审核', icon: MagicStick },
   { path: '/accounts', label: '账号管理', icon: User },

@@ -25,6 +25,11 @@ const router = createRouter({
       meta: { title: '任务管理' } },
     { path: '/tasks/new', name: 'task-new', component: () => import('../views/NewTaskView.vue'),
       meta: { title: '新建任务' } },
+    // 运行记录：任务每执行一次一条；点进去看这次运行的详情（侧边栏在「任务管理」下面）
+    { path: '/runs', name: 'runs', component: () => import('../views/RunsView.vue'),
+      meta: { title: '运行记录', menu: '/runs' } },
+    { path: '/runs/:runNo', name: 'run-detail', component: () => import('../views/RunDetailView.vue'),
+      meta: { title: '运行详情', menu: '/runs' } },
     { path: '/tasks/:taskId', name: 'task-detail', component: () => import('../views/TaskDetailView.vue'),
       meta: { title: '任务详情' } },
     { path: '/data', name: 'data', component: () => import('../views/DataView.vue'),

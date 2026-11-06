@@ -276,6 +276,68 @@ def test_09_rerun_is_idempotent(client):
     assert current["runs_count"] == 2
 
 
+
+def test_09b_each_run_is_recorded_with_its_own_logs(client):
+    """运行记录：上面同一个任务手动跑了两次，应该有两条记录，各自的日志只含自己那一次。"""
+    listing = _data(client.get("/api/tasks", params={"keyword": "立即执行"}))
+    task_id = listing["items"][0]["task_id"]
+
+    runs = _data(client.get("/api/runs", params={"task_id": task_id}))
+    assert runs["total"] == 2
+    second, first = runs["items"]                     # 新的在前
+    for run in (first, second):
+        assert run["run_status"] == "completed" and run["run_status_label"] == "完成"
+        assert run["trigger_type"] == "manual" and run["trigger_label"] == "手动执行"
+        assert run["channels"] == ["ctrip"] and run["scenic_name"] == "西湖风景区"
+        assert run["end_time"] and run["duration_seconds"] >= 0 and run["travel_date"]
+    assert first["new_comment_qty"] == 3 and first["new_work_qty"] == 1
+    assert second["new_comment_qty"] == 0, "第二次是重复采集，不该算新增"
+    assert first["error_log_qty"] == 0 and isinstance(first["warn_log_qty"], int)
+    # 状态 / 触发方式的下拉选项由后端给
+    assert {"value": "waiting", "label": "排队等账号"} in runs["status_options"]
+
+    # 详情：带当时的参数快照
+    detail = _data(client.get(f"/api/runs/{first['run_no']}"))
+    assert detail["params_snapshot"]["max_comments_per_work"] == 100
+    assert detail["task_exists"] is True
+    assert detail["log_end_id"] > detail["log_start_id"]
+
+    # 日志按运行分开：第一次的日志里有自己的运行编号、没有第二次的
+    logs1 = " ".join(l["message"] for l in _data(client.get(f"/api/runs/{first['run_no']}/logs"))["items"])
+    logs2 = " ".join(l["message"] for l in _data(client.get(f"/api/runs/{second['run_no']}/logs"))["items"])
+    assert first["run_no"] in logs1 and second["run_no"] not in logs1
+    assert second["run_no"] in logs2 and first["run_no"] not in logs2
+    assert "采集到 3 条点评" in logs1
+
+    # 筛选：按状态、平台、关键字（任务名 / 运行编号）
+    assert _data(client.get("/api/runs", params={"status": "failed", "task_id": task_id}))["total"] == 0
+    assert _data(client.get("/api/runs", params={"channel": "ctrip", "task_id": task_id}))["total"] == 2
+    assert _data(client.get("/api/runs", params={"keyword": first["run_no"]}))["total"] == 1
+    assert client.get("/api/runs/R-not-exist").status_code == 404
+
+
+def test_09c_stale_running_runs_are_marked_interrupted(client):
+    """服务重启时，本机还挂着「运行中」的运行记录记成「中断」；触发方式按启动前的任务状态判断。"""
+    from app.api.deps import get_state
+    from app.repositories.run_repo import RunRepository
+    from app.scheduler.scheduler import TaskScheduler
+
+    state = get_state()
+    repo = RunRepository(state.db)
+    run_no = client.portal.call(lambda: repo.begin(
+        {"task_id": "T-ghost", "task_name": "幽灵任务", "channels": ["douyin"]},
+        trigger_type="schedule", node_id="node-x"))
+    assert client.portal.call(lambda: repo.mark_interrupted("node-other")) == 0   # 别的机器的不动
+    assert client.portal.call(lambda: repo.mark_interrupted("node-x")) == 1
+    run = client.portal.call(lambda: repo.get(run_no))
+    assert run["run_status"] == "interrupted" and run["end_time"] and run["error_message"]
+
+    trig = TaskScheduler._trigger_of
+    assert trig({"status": "waiting"}, False) == "resume"
+    assert trig({"status": "pending", "schedule_type": "once"}, False) == "once"
+    assert trig({"status": "completed", "schedule_type": "cron"}, False) == "schedule"
+    assert trig({"status": "queued"}, True) == "dispatch"
+
 def test_10_data_center_overview(client):
     overview = _data(client.get("/api/data/overview"))
     xihu = next(row for row in overview if row["scenic_id"] == "SC001")

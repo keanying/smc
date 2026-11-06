@@ -12,6 +12,10 @@
       <h2 class="page-title">{{ task?.task_name || '任务详情' }}</h2>
       <div>
         <el-button @click="$router.push('/tasks')">返回列表</el-button>
+        <!-- 这个任务的每一次执行：点进去看某一次的详情和完整日志 -->
+        <el-button
+          @click="$router.push({ path: '/runs', query: { task_id: taskId, task_name: task?.task_name || '' } })"
+        >运行记录</el-button>
         <el-button :icon="Edit" @click="editVisible = true">编辑</el-button>
         <el-button
           v-if="task && task.status !== 'running'" type="primary"

@@ -56,6 +56,8 @@ class Cluster:
         self._loop_task: Optional[asyncio.Task] = None
         self._digest: Optional[Dict[str, str]] = None
         self._notes: Dict[str, Tuple[str, float]] = {}
+        #: 派发时记下的触发原因（运行记录用）：主机派给自己时，本机认领后取走。派给别的机器的那台拿不到
+        self._trigger_hints: Dict[str, str] = {}
         self._tick_lock = asyncio.Lock()
         #: 集群内部令牌（机器之间互相调用时带上），start() 时从库里取
         self.secret = ""
@@ -262,12 +264,24 @@ class Cluster:
         node, reason = plan(task, await self.worker_slots(), pool)
         if node is None:
             raise RuntimeError(f"现在没法执行：{reason}")
-        return node if await self._send(task, node, pool) else None
+        return node if await self._send(task, node, pool, trigger="manual") else None
 
-    async def _send(self, task: Dict[str, Any], node: NodeSlot, pool: AccountPool) -> bool:
+    def pop_trigger(self, task_id: str) -> str:
+        """本机认领派过来的任务时取走触发原因；没有（派发方是别的机器）返回空串。"""
+        return self._trigger_hints.pop(task_id, "")
+
+    async def _send(self, task: Dict[str, Any], node: NodeSlot, pool: AccountPool,
+                    trigger: str = "") -> bool:
         task_id = task["task_id"]
+        # 派发前的状态还在 task 里：这时候判断触发方式（认领后状态就变成 queued 了）
+        from ..repositories.run_repo import trigger_of_task
+        hint = trigger or trigger_of_task(task)
         if not await self.tasks.claim_for_node(task_id, node.node_id):
             return False
+        if node.node_id == self.me.node_id:
+            if len(self._trigger_hints) > 1000:          # 认领不走（被取消了）的不会被取，别无限涨
+                self._trigger_hints.clear()
+            self._trigger_hints[task_id] = hint
         node.load += 1
         self._notes.pop(task_id, None)
         message = f"派给机器：{node.node_name}（{node.node_id}）"

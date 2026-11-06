@@ -24,6 +24,13 @@ from .api import (
     metrics as metrics_api,
     qunar as qunar_api, scenic,
     settings as settings_api, tasks, ws,
+
+    accounts, archive as archive_api, auth as auth_api, cluster as cluster_api, data,
+    edition as edition_api, box_api, boxes as boxes_api,
+    labeling as labeling_api, live, media, users as users_api,
+    metrics as metrics_api,
+    qunar as qunar_api, scenic,
+    settings as settings_api, tasks, ws, runs as runs_api,
 )
 from .api.common import fail
 from .api.deps import AppState, set_state
@@ -146,6 +153,9 @@ async def lifespan(app: FastAPI):
         task_repo=task_repo, scenic_repo=scenic_repo, data_repo=collect_repo,
         proxy_manager=proxy_manager, browser_manager=browser_manager,
     )
+    # 运行记录：每执行一次一条（表 src_opr_crawl_task_run_di，页面「任务管理 → 运行记录」）
+    from .repositories.run_repo import RunRepository
+    runner.runs = RunRepository(db)
     # AI 过滤（任务上开了才用）：景区盒子转给主判，主 / 总部版本机用标注的模型配置
     if box_sync is not None:
         from .box.client import RemoteRelevanceJudge
@@ -319,7 +329,7 @@ def create_app() -> FastAPI:
         accounts.router, settings_api.router, ws.router,
         live.router, live.ws_router, labeling_api.router, qunar_api.router, metrics_api.router,
         archive_api.router, cluster_api.router, auth_api.router, users_api.router,
-        metrics_api.ws_router, edition_api.router, box_api.router, boxes_api.router,
+        metrics_api.ws_router, edition_api.router, box_api.router, boxes_api.router, runs_api.router,
     ):
         app.include_router(router)
     # 集群：账号 / 任务不在本机时，把请求转给它所在的机器（cluster/forward.py）

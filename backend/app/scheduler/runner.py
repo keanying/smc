@@ -295,6 +295,8 @@ class TaskRunner:
         #: AI 过滤（任务上开了才用，见 core/ai_relevance.py）。main.py 按版本装：
         #: 主 / 总部版本机问模型，景区盒子转给主判
         self.relevance = None
+        #: 运行记录（repositories/run_repo.py）。main.py 里装上；测试里不装就不记
+        self.runs = None
         # 单账号配额与冷却。建一次，全 runner 共用——会话时长记在它身上，
         # 每次新建就等于每条任务都从 0 开始计时，单次时长上限形同虚设。
         from ..core.account_quota import AccountQuota
@@ -360,9 +362,13 @@ class TaskRunner:
         cancel_event = cancel_event or asyncio.Event()
         stats = {"new_works": 0, "updated_works": 0, "new_comments": 0, "updated_comments": 0}
         started = time.time()
+        started_at = datetime.now()
+        # 这次运行的结局，finally 里写进运行记录（默认失败：走到没被接住的分支也有个说法）
+        outcome: Dict[str, str] = {"status": TaskStatus.FAILED.value, "error": ""}
 
+        run_no = await self._run_begin(task)
         await self.tasks.mark_running(task_id)
-        log.info(f"任务开始：{task['task_name']}")
+        log.info(f"任务开始：{task['task_name']}" + (f"（运行编号 {run_no}）" if run_no else ""))
 
         try:
             scenic_id = task.get("scenic_id") or ""
@@ -373,6 +379,8 @@ class TaskRunner:
                     raise ValueError(f"任务绑定的景区不存在：{scenic_id}")
                 scenic_name = scenic["scenic_name"]
                 log.info(f"景区：{scenic_name}（{scenic_id}）")
+                if run_no:
+                    await self._run_call(self.runs.set_scenic_name, run_no, scenic_name)
 
             channels: List[str] = task.get("channels") or []
             if not channels:
@@ -438,6 +446,7 @@ class TaskRunner:
                 f"评论 新增 {stats['new_comments']} / 更新 {stats['updated_comments']}"
             )
             await self.tasks.mark_finished(task_id, TaskStatus.COMPLETED.value, stats=stats)
+            outcome["status"] = TaskStatus.COMPLETED.value
 
         except AccountsCoolingDown as exc:
             # 不是失败也不是跳过：排队，到点调度器自己会捞起来接着跑（重启也不丢）
@@ -447,8 +456,11 @@ class TaskRunner:
                 task_id, exc.resume_at,
                 f"排队等账号：{exc.reason}，{exc.resume_at:%m-%d %H:%M} 后自动执行",
                 stats=stats)
+            outcome.update(status=TaskStatus.WAITING.value,
+                           error=f"排队等账号：{exc.reason}，{exc.resume_at:%m-%d %H:%M} 后自动执行")
         except TaskCancelled as exc:
             log.warn(f"任务已取消：{exc}")
+            outcome.update(status=TaskStatus.CANCELED.value, error=str(exc))
             await self.tasks.mark_finished(
                 task_id, TaskStatus.CANCELED.value, error=str(exc), stats=stats
             )
@@ -460,6 +472,7 @@ class TaskRunner:
             # 任务在库里**永远停在"运行中"**。用户看到的就是
             # "日志里已经释放浏览器了，任务状态还挂着"。
             log.warn("任务被强制取消（多半是看门狗超时后强杀），标记为已取消")
+            outcome.update(status=TaskStatus.CANCELED.value, error="超时被强制取消")
             try:
                 await self.tasks.mark_finished(
                     task_id, TaskStatus.CANCELED.value,
@@ -470,14 +483,39 @@ class TaskRunner:
             raise      # 取消必须继续往上抛，否则 asyncio 认为它被吞了
         except Exception as exc:  # noqa: BLE001
             log.error(f"任务失败：{exc}")
+            outcome.update(status=TaskStatus.FAILED.value, error=str(exc))
             logger.exception("任务 %s 执行异常", task_id)
             await self.tasks.mark_finished(
                 task_id, TaskStatus.FAILED.value, error=str(exc), stats=stats
             )
         finally:
             await log.flush()
+            # 日志写完再收尾运行记录：结束时记下的最大日志 id 才包含这次的最后几行
+            if run_no:
+                await self._run_call(self.runs.finish, run_no, task_id, status=outcome["status"],
+                                     started=started_at, stats=stats, error=outcome["error"])
 
         return stats
+
+    # ---------------- 运行记录 ----------------
+    async def _run_begin(self, task: Dict[str, Any]) -> str:
+        """开一条运行记录，返回运行编号；没装运行记录 / 写库失败返回空串（任务照跑）。"""
+        if getattr(self, "runs", None) is None:
+            return ""
+        import socket
+        try:
+            return await self.runs.begin(
+                task, trigger_type=str(task.get("_trigger") or "schedule"),
+                node_id=str(task.get("_node_id") or socket.gethostname()))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("写运行记录失败（不影响任务本身）：%s", exc)
+            return ""
+
+    async def _run_call(self, fn, *args, **kwargs) -> None:
+        try:
+            await fn(*args, **kwargs)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("更新运行记录失败（不影响任务本身）：%s", exc)
 
     # ---------------- 单平台 ----------------
     async def _content_filter_for(self, channel: str, scenic_id: str,
