@@ -87,9 +87,7 @@
 
         <div v-for="channel in selectedChannels" :key="channel" class="channel-block">
           <div class="channel-title">
-            <el-tag size="small" :color="CHANNEL_COLORS[channel]" style="color: #fff; border: none">
-              {{ channelLabel(channel) }}
-            </el-tag>
+            <ChannelTag :channel="channel" />
             <InfoTip :content="POI_CHANNELS.includes(channel) ? '只有目标点评一层' : '作品 + 作品下的评论两层'" />
           </div>
 
@@ -218,11 +216,11 @@
 </template>
 
 <script setup lang="ts">
+import ChannelTag from './ChannelTag.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { taskApi, type ChannelFilterOptions } from '../api'
 import {
-  BROWSER_ENGINE_CHANNELS, CHANNEL_COLORS, COLLECT_ENGINES, POI_CHANNELS,
-  channelLabel, normalizeEngine,
+  BROWSER_ENGINE_CHANNELS, COLLECT_ENGINES, POI_CHANNELS, channelLabel, normalizeEngine,
 } from '../constants'
 import FilterFields from './FilterFields.vue'
 import aiIcon from '../assets/icons/ai.png'

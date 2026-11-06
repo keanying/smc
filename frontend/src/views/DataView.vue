@@ -126,9 +126,7 @@
 
       <article v-for="row in works" :key="`${row.channel}-${row.work_id}-${row.scenic_id}`" class="work-card">
         <div class="work-side">
-          <el-tag size="small" :color="CHANNEL_COLORS[row.channel]" class="channel-tag">
-            {{ channelLabel(row.channel) }}
-          </el-tag>
+          <ChannelTag :channel="row.channel" />
           <span class="muted work-scenic">{{ row.scenic_name }}</span>
         </div>
 
@@ -219,6 +217,7 @@
 </template>
 
 <script setup lang="ts">
+import ChannelTag from '../components/ChannelTag.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowDown, ArrowUp, Search } from '@element-plus/icons-vue'

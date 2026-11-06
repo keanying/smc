@@ -111,7 +111,6 @@
                     </li>
                   </ul>
                   <div v-else class="tip-sub">现在没有任务在跑</div>
-                  <div v-if="isAdmin" class="tip-foot">点击去「系统设置 → 调度与浏览器」调整上限</div>
                 </template>
                 <component :is="isAdmin ? 'router-link' : 'span'" :to="RUNTIME_SETTINGS"
                            class="meta-item" :class="{ 'meta-link': isAdmin }">
@@ -139,14 +138,16 @@
                   <div v-if="health.browser_capacity.waiting" class="tip-warn">
                     {{ health.browser_capacity.waiting }} 个在排队等名额
                   </div>
-                  <div class="tip-line">
+                  <dl class="tip-kv">
                     <template v-if="health.browser_capacity.memory_available_gb != null">
-                      内存可用 {{ health.browser_capacity.memory_available_gb }}/{{ health.browser_capacity.memory_total_gb }} GB，
+                      <dt>可用内存</dt>
+                      <dd>{{ health.browser_capacity.memory_available_gb }} / {{ health.browser_capacity.memory_total_gb }} GB</dd>
                     </template>
-                    低于 {{ health.browser_capacity.min_free_gb }} GB 暂停开新浏览器
-                  </div>
-                  <div class="tip-line">一个浏览器约 {{ health.browser_capacity.footprint_gb }} GB、10 个进程</div>
-                  <div v-if="isAdmin" class="tip-foot">点击去「系统设置 → 调度与浏览器」调整上限</div>
+                    <dt>暂停阈值</dt>
+                    <dd>低于 {{ health.browser_capacity.min_free_gb }} GB 不开新浏览器</dd>
+                    <dt>单个浏览器</dt>
+                    <dd>约 {{ health.browser_capacity.footprint_gb }} GB · 10 个进程</dd>
+                  </dl>
                 </template>
                 <component :is="isAdmin ? 'router-link' : 'span'" :to="RUNTIME_SETTINGS"
                            class="meta-item" :class="{ 'is-warn': browserBusy, 'meta-link': isAdmin }">
@@ -551,7 +552,13 @@ onUnmounted(() => window.clearInterval(timer))
 :global(.meta-tip .tip-sub) { opacity: 0.72; font-weight: normal; }
 :global(.meta-tip .tip-warn) { color: #fbbf24; margin: 2px 0; }
 :global(.meta-tip .tip-line) { opacity: 0.85; }
-:global(.meta-tip .tip-foot) { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.18); opacity: 0.85; }
+/* 内存这几项：左边项名、右边数值，两列对齐；和上面的占用列表用一道细线隔开 */
+:global(.meta-tip .tip-kv) {
+  display: grid; grid-template-columns: auto 1fr; column-gap: 12px; row-gap: 2px;
+  margin: 8px 0 0; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.18);
+}
+:global(.meta-tip .tip-kv dt) { opacity: 0.65; }
+:global(.meta-tip .tip-kv dd) { margin: 0; }
 
 /* 侧边栏收起：只留图标，文字靠悬停提示 */
 .aside-menu { transition: width 0.2s ease; }

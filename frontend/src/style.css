@@ -334,6 +334,8 @@ body {
 }
 
 /* ---------------- 平台徽标 ---------------- */
+/* 多个 ChannelTag 挨着排（任务列表的平台列）：横向留一点间距，换行时上下也有间距 */
+.ch-gap { margin: 2px 4px 2px 0; }
 .channel-badge {
   display: inline-flex;
   align-items: center;

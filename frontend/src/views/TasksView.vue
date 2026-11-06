@@ -56,12 +56,7 @@
       </el-table-column>
       <el-table-column label="平台" min-width="110">
         <template #default="{ row }">
-          <el-tag
-            v-for="c in row.channels" :key="c" size="small"
-            :color="CHANNEL_COLORS[c]" style="color: #fff; border: none; margin-right: 4px"
-          >
-            {{ channelLabel(c) }}
-          </el-tag>
+          <ChannelTag v-for="c in row.channels" :key="c" :channel="c" class="ch-gap" />
         </template>
       </el-table-column>
       <el-table-column label="调度" width="150">
@@ -188,6 +183,7 @@
 </template>
 
 <script setup lang="ts">
+import ChannelTag from '../components/ChannelTag.vue'
 import { isCluster, loadCluster, nodeLabel, workerNodes } from '../composables/cluster'
 import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -199,7 +195,7 @@ import aiIcon from '../assets/icons/ai.png'
 import aiIconDark from '../assets/icons/ai-dark.png'
 import TaskEditDialog from '../components/TaskEditDialog.vue'
 import {
-  CHANNEL_COLORS, SCHEDULE_LABELS, TASK_STATUS_LABELS, TASK_STATUS_TYPES,
+  SCHEDULE_LABELS, TASK_STATUS_LABELS, TASK_STATUS_TYPES,
   channelLabel, formatTime,
 } from '../constants'
 

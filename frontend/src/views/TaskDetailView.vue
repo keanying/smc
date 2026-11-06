@@ -76,10 +76,7 @@
             </el-descriptions-item>
             <el-descriptions-item label="目标">{{ task?.scenic_id || '-' }}</el-descriptions-item>
             <el-descriptions-item label="平台">
-              <el-tag
-                v-for="c in task?.channels || []" :key="c" size="small"
-                :color="CHANNEL_COLORS[c]" style="color: #fff; border: none; margin-right: 4px"
-              >{{ channelLabel(c) }}</el-tag>
+              <ChannelTag v-for="c in task?.channels || []" :key="c" :channel="c" class="ch-gap" />
             </el-descriptions-item>
             <el-descriptions-item label="采集方式">{{ task?.collect_type }}</el-descriptions-item>
             <el-descriptions-item label="调度">
@@ -196,6 +193,7 @@
 </template>
 
 <script setup lang="ts">
+import ChannelTag from '../components/ChannelTag.vue'
 import { isCluster, loadCluster, nodeLabel } from '../composables/cluster'
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -208,8 +206,7 @@ import LiveScreen from '../components/LiveScreen.vue'
 import TaskEditDialog from '../components/TaskEditDialog.vue'
 import { TaskLogSocket } from '../api/ws'
 import {
-  CHANNEL_COLORS, COLLECT_ENGINES, SCHEDULE_LABELS, TASK_STATUS_LABELS, TASK_STATUS_TYPES,
-  channelLabel, formatTime, normalizeEngine,
+  COLLECT_ENGINES, SCHEDULE_LABELS, TASK_STATUS_LABELS, TASK_STATUS_TYPES, channelLabel, formatTime, normalizeEngine,
 } from '../constants'
 
 function engineLabel(value: unknown): string {

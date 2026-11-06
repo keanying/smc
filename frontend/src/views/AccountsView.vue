@@ -61,11 +61,9 @@
     </div>
 
     <el-table stripe :data="accounts" v-loading="loading" class="data-table" max-height="calc(var(--vh100) - 330px)">
-      <el-table-column label="平台" width="96">
+      <el-table-column label="平台" width="112">
         <template #default="{ row }">
-          <span class="channel-badge" :style="{ background: CHANNEL_COLORS[row.channel] }">
-            {{ channelLabel(row.channel) }}
-          </span>
+          <ChannelTag :channel="row.channel" block />
         </template>
       </el-table-column>
       <el-table-column prop="account_name" label="账号标识" min-width="200">
@@ -269,9 +267,7 @@
           class="probe-all-row" :class="r.ok ? 'is-ok' : 'is-bad'"
         >
           <div class="probe-all-head">
-            <span class="channel-badge" :style="{ background: CHANNEL_COLORS[r.channel] }">
-              {{ r.channel_label }}
-            </span>
+            <ChannelTag :channel="r.channel" block />
             <el-tag :type="r.ok ? 'success' : 'danger'" size="small" disable-transitions>
               {{ r.ok ? `通过 · ${r.found} 条` : '未通过' }}
             </el-tag>
@@ -324,11 +320,9 @@
         />
       </div>
       <el-table :data="quotaRows" size="small" class="quota-table">
-        <el-table-column label="平台" width="96">
+        <el-table-column label="平台" width="112">
           <template #default="{ row }">
-            <span class="channel-badge" :style="{ background: CHANNEL_COLORS[row.channel] }">
-              {{ channelLabel(row.channel) }}
-            </span>
+            <ChannelTag :channel="row.channel" block />
           </template>
         </el-table-column>
         <el-table-column label="每天最多采（条）">
@@ -394,6 +388,7 @@
 </template>
 
 <script setup lang="ts">
+import ChannelTag from '../components/ChannelTag.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -403,8 +398,7 @@ import {
   type AccountGroup, type ChannelOption, type ProbeReport,
 } from '../api'
 import {
-  ACCOUNT_STATUS_LABELS, ACCOUNT_STATUS_TYPES, CHANNEL_COLORS,
-  channelLabel, formatTime,
+  ACCOUNT_STATUS_LABELS, ACCOUNT_STATUS_TYPES, formatTime,
 } from '../constants'
 import {
   defaultAccountNode, isCluster, loadCluster, nodeLabel, nodeOf, workerNodes,

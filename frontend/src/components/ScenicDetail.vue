@@ -244,11 +244,9 @@
       </div>
 
       <el-table :data="targets" size="small" border>
-        <el-table-column label="平台" width="100">
+        <el-table-column label="平台" width="112">
           <template #default="{ row }">
-            <el-tag size="small" :color="CHANNEL_COLORS[row.channel]" style="color: #fff; border: none">
-              {{ channelLabel(row.channel) }}
-            </el-tag>
+            <ChannelTag :channel="row.channel" block />
           </template>
         </el-table-column>
         <el-table-column label="类型" width="90">
@@ -304,11 +302,9 @@
       </div>
 
       <el-table v-if="archives.length" :data="archives" size="small" border>
-        <el-table-column label="平台" width="90">
+        <el-table-column label="平台" width="112">
           <template #default="{ row }">
-            <el-tag size="small" :color="CHANNEL_COLORS[row.channel]" style="color: #fff; border: none">
-              {{ channelLabel(row.channel) }}
-            </el-tag>
+            <ChannelTag :channel="row.channel" block />
           </template>
         </el-table-column>
         <el-table-column prop="poi_name" label="平台上的名称" min-width="160" />
@@ -346,13 +342,13 @@
 </template>
 
 <script setup lang="ts">
+import ChannelTag from './ChannelTag.vue'
 import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   archiveApi, scenicApi, type ArchiveItem, type ChannelOption,
   type FilterWord, type Keyword, type MarkWordsJob, type Target,
 } from '../api'
-import { CHANNEL_COLORS, channelLabel } from '../constants'
 
 const props = defineProps<{ scenicId: string; channels: ChannelOption[] }>()
 
