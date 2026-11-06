@@ -31,7 +31,7 @@
       <template v-if="!sync?.master_configured">
         <h3>先把这台盒子连到主</h3>
         <p>
-          目标由主统一分配，采到的数据也直接报给主存储和标注。请主的管理员在「盒子管理」里登记这台盒子，
+          目标由主统一分配，采到的数据也直接报给主存储和标注。请主的管理员在「系统设置 → 盒子管理」里登记这台盒子，
           把给的 <b>master_url</b> 和 <b>box_token</b> 写进盒子的 config/config.yaml（edition 段），重启盒子。
         </p>
       </template>
@@ -42,7 +42,7 @@
       </template>
       <template v-else>
         <h3>主还没给这台盒子分目标</h3>
-        <p>请主的管理员在「盒子管理」里给这台盒子勾选目标，盒子一分钟内自动同步过来。</p>
+        <p>请主的管理员在「系统设置 → 盒子管理」里给这台盒子勾选目标，盒子一分钟内自动同步过来。</p>
         <el-button v-if="isAdmin" type="primary" round :icon="Refresh" :loading="syncing" @click="syncNow">立即同步</el-button>
       </template>
     </div>

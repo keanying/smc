@@ -7,7 +7,7 @@
 -->
 
 <template>
-  <div class="archive-page">
+  <div class="archive-page" :class="{ 'is-embedded': embedded }">
     <div class="page-header">
       <h2 class="page-title">
         档案
@@ -320,6 +320,8 @@
 </template>
 
 <script setup lang="ts">
+/** embedded：放在系统设置的页签里时为 true，标题缩小成页签内的小标题 */
+defineProps<{ embedded?: boolean }>()
 /**
  * 景区档案。
  *
@@ -665,6 +667,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 </script>
 
 <style scoped>
+.is-embedded .page-header .page-title { font-size: 15px; }
 .archive-page { display: flex; flex-direction: column; gap: 12px; }
 .archive-page .page-header { margin-bottom: 0; }
 .stat-row { display: flex; gap: 10px; }

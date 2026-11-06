@@ -37,9 +37,6 @@
         <el-menu-item index="/scenics">
           <el-icon><LocationFilled /></el-icon><template #title>目标管理</template>
         </el-menu-item>
-        <el-menu-item index="/archive">
-          <el-icon><Collection /></el-icon><template #title>档案</template>
-        </el-menu-item>
         <el-menu-item index="/tasks">
           <el-icon><List /></el-icon><template #title>任务管理</template>
         </el-menu-item>
@@ -59,12 +56,8 @@
         <el-menu-item index="/cluster">
           <el-icon><Connection /></el-icon><template #title>集群</template>
         </el-menu-item>
-        <!-- 景区盒子：登记、分景区、发令牌（只有管理员） -->
-        <el-menu-item v-if="isAdmin" index="/boxes">
-          <el-icon><Box /></el-icon><template #title>盒子管理</template>
-        </el-menu-item>
-        <!-- 系统设置（含用户管理）只有管理员能用 -->
-        <el-menu-item v-if="isAdmin" index="/settings">
+        <!-- 系统设置：档案、盒子管理也在里面。非管理员进来只看得到「档案」 -->
+        <el-menu-item index="/settings">
           <el-icon><Setting /></el-icon><template #title>系统设置</template>
         </el-menu-item>
       </el-menu>
@@ -179,11 +172,11 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import {
-  ArrowDown, Box, Collection, Connection, Expand, Fold, Monitor, Setting, SwitchButton, TrendCharts,
+  ArrowDown, Connection, Expand, Fold, Monitor, Setting, SwitchButton, TrendCharts,
 } from '@element-plus/icons-vue'
 import { authApi, settingsApi } from '../api'
 import { loadFeatures, metricsEnabled } from '../composables/features'
-import { currentUser, isAdmin, loadAuth } from '../composables/auth'
+import { currentUser, loadAuth } from '../composables/auth'
 import ChangePasswordDialog from '../components/ChangePasswordDialog.vue'
 import { layoutWidth, setZoomMode, zoom, zoomMode, ZOOM_OPTIONS } from '../composables/zoom'
 

@@ -22,7 +22,7 @@
 
     <el-tabs v-model="tab">
       <!-- 代理 -->
-      <el-tab-pane label="代理设置" name="proxy">
+      <el-tab-pane v-if="isAdmin" label="代理设置" name="proxy">
         <el-row :gutter="16">
           <el-col :xs="24" :lg="14" class="col">
             <el-card shadow="never" header="快代理私密代理">
@@ -138,7 +138,7 @@
       </el-tab-pane>
 
       <!-- 采集参数 -->
-      <el-tab-pane label="采集参数" name="crawl">
+      <el-tab-pane v-if="isAdmin" label="采集参数" name="crawl">
         <el-card shadow="never" class="narrow-card">
           <el-form :model="crawl" label-width="150px" class="settings-form">
             <div class="section-title form-section">任务默认值</div>
@@ -307,7 +307,7 @@
       </el-tab-pane>
 
       <!-- 调度与浏览器 -->
-      <el-tab-pane label="调度与浏览器" name="runtime">
+      <el-tab-pane v-if="isAdmin" label="调度与浏览器" name="runtime">
         <el-row :gutter="16">
           <el-col :xs="24" :lg="10" class="col">
             <el-card shadow="never" header="调度器">
@@ -392,7 +392,7 @@
       </el-tab-pane>
 
       <!-- ==================== AI 标注 ==================== -->
-      <el-tab-pane label="AI 标注" name="labeling">
+      <el-tab-pane v-if="isAdmin" label="AI 标注" name="labeling">
         <el-row :gutter="16">
           <el-col :xs="24" :lg="14" class="col">
             <el-card shadow="never">
@@ -496,7 +496,7 @@
       </el-tab-pane>
 
       <!-- ==================== 通知 ==================== -->
-      <el-tab-pane label="通知" name="notify">
+      <el-tab-pane v-if="isAdmin" label="通知" name="notify">
         <el-row :gutter="16">
           <el-col :xs="24" :lg="14" class="col">
             <el-card shadow="never">
@@ -574,7 +574,7 @@
       </el-tab-pane>
 
       <!-- ==================== 指标计算 ==================== -->
-      <el-tab-pane label="指标计算" name="metrics">
+      <el-tab-pane v-if="isAdmin" label="指标计算" name="metrics">
         <el-row :gutter="16">
           <el-col :xs="24" :lg="14" class="col">
             <el-card shadow="never">
@@ -602,8 +602,15 @@
       </el-tab-pane>
 
       <!-- 用户：登录本系统的人。登录关掉（auth.enabled=false）时没有这个分页 -->
-      <el-tab-pane v-if="authEnabled" label="用户管理" name="users" lazy>
+      <el-tab-pane v-if="isAdmin && authEnabled" label="用户管理" name="users" lazy>
         <UserManagement />
+      </el-tab-pane>
+      <!-- 档案、盒子管理原来是左侧菜单里的独立页面，挪进来了（旧地址 /archive、/boxes 会跳到这里） -->
+      <el-tab-pane label="档案" name="archive" lazy>
+        <ArchiveView embedded />
+      </el-tab-pane>
+      <el-tab-pane v-if="isAdmin" label="盒子管理" name="boxes" lazy>
+        <BoxesView embedded />
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -612,17 +619,36 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import { metricsEnabled } from '../composables/features'
-import { authEnabled } from '../composables/auth'
+import { authEnabled, isAdmin } from '../composables/auth'
 import UserManagement from '../components/UserManagement.vue'
-import { onMounted, reactive, ref } from 'vue'
+import ArchiveView from './ArchiveView.vue'
+import BoxesView from './BoxesView.vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { labelingApi, settingsApi } from '../api'
 import { channelLabel } from '../constants'
 
-// ?tab=users 这样带进来时直接打开那一页（旧的 /users 地址会跳到这里）
+// ?tab=users 这样带进来时直接打开那一页（旧的 /users、/archive、/boxes 地址会跳到这里）
+// 非管理员只有「档案」这一页，带别的页签进来也落到档案
 const route = useRoute()
-const tab = ref(String(route.query.tab || 'proxy'))
+const ADMIN_ONLY_TABS = ['proxy', 'crawl', 'runtime', 'labeling', 'notify', 'metrics', 'users', 'boxes']
+function pickTab(wanted: unknown): string {
+  const t = String(wanted || (isAdmin.value ? 'proxy' : 'archive'))
+  return !isAdmin.value && ADMIN_ONLY_TABS.includes(t) ? 'archive' : t
+}
+const tab = ref(pickTab(route.query.tab))
+// 切页签时记进地址栏，刷新、分享链接都还停在这一页
+watch(tab, (t) => {
+  if (route.query.tab !== t) router.replace({ query: { ...route.query, tab: t } })
+})
+watch(() => route.query.tab, (t) => {
+  if (!t) return
+  const picked = pickTab(t)
+  if (picked !== tab.value) tab.value = picked
+  // 同一页里改地址到看不了的页签：地址栏改回实际显示的那一页
+  if (picked !== t) router.replace({ query: { ...route.query, tab: picked } })
+})
 const loading = ref(false)
 const saving = ref(false)
 const testing = ref(false)
@@ -801,7 +827,12 @@ async function testProxy() {
   }
 }
 
-onMounted(load)
+// 非管理员只看档案：不去拉系统配置（接口也只给管理员改）
+onMounted(() => {
+  if (isAdmin.value) load()
+  // 带进来的页签这个角色看不了（落到了档案）：地址栏也跟着改过来
+  if (route.query.tab && route.query.tab !== tab.value) router.replace({ query: { ...route.query, tab: tab.value } })
+})
 </script>
 
 <style scoped>
