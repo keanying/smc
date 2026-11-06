@@ -40,8 +40,14 @@ TAXONOMY_PATH = ENGINE_ROOT / "config" / "taxonomy.yaml"
 
 
 def engine_importable() -> bool:
-    """引擎在不在。不在就整个功能优雅降级，而不是让服务起不来。"""
-    return (ENGINE_ROOT / "opinion_labeling_engine" / "__init__.py").exists()
+    """引擎在不在。不在就整个功能优雅降级，而不是让服务起不来。
+
+    认 __init__.py 也认 __init__.*.so：Cython 编译交付时 .py 会被换成 .so，
+    只查 .py 会误判成"引擎不见了"。
+    """
+    pkg = ENGINE_ROOT / "opinion_labeling_engine"
+    return pkg.is_dir() and (
+        (pkg / "__init__.py").exists() or bool(next(pkg.glob("__init__*.so"), None)))
 
 
 def ensure_on_path() -> None:
