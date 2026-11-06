@@ -181,7 +181,14 @@ class ClusterForwarder:
             return await JSONResponse(
                 status_code=503, content={"code": 503, "data": None, "message": reason},
             )(scope, receive, send)
-        return await _forward_http(cluster, scope, await read_body(), send, base, target)
+        body = await read_body()
+        fallback = None
+        if scope.get("method") == "DELETE" and _ACCOUNT.match(scope["path"]):
+            # 删账号：那台机器登记着在线、实际连不上（地址不通、刚关机还没超时）时，
+            # 别让这个号删不掉——本机把库里的记录删了（那台机器硬盘上的 profile 只能以后手动清）
+            async def fallback():
+                return await self.app(scope, _replay(body, receive), send)
+        return await _forward_http(cluster, scope, body, send, base, target, on_unreachable=fallback)
 
 
 def _replay(body: bytes, receive):
@@ -213,7 +220,8 @@ def _forward_headers(scope, cluster: Cluster):
     return headers
 
 
-async def _forward_http(cluster: Cluster, scope, body: bytes, send, base: str, target: str):
+async def _forward_http(cluster: Cluster, scope, body: bytes, send, base: str, target: str,
+                        on_unreachable: Optional[Callable[[], Awaitable[None]]] = None):
     import httpx
 
     url = _target_url(scope, base)
@@ -223,6 +231,9 @@ async def _forward_http(cluster: Cluster, scope, body: bytes, send, base: str, t
                                         headers=_forward_headers(scope, cluster))
     except httpx.HTTPError as exc:
         logger.warning("集群转发 %s %s 到 %s 失败：%s", scope["method"], scope["path"], target, exc)
+        if on_unreachable is not None:
+            logger.warning("连不上机器 %s，改由本机处理 %s %s", target, scope["method"], scope["path"])
+            return await on_unreachable()
         payload = {"code": 502, "data": None,
                    "message": f"转到机器 {target}（{base}）失败：{exc}。检查那台机器是否开着、"
                               f"cluster.advertise_url 从这台机器能不能访问到"}

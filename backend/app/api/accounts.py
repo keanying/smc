@@ -14,9 +14,12 @@ from ..browser.cookie_import import CookieParseError
 from ..collectors.diagnostics import probe_all_channels, probe_keyword
 from ..browser.specs import get_spec, needs_login
 from ..core.constants import ALL_CHANNELS, CHANNEL_LABELS, CHANNELS_NEED_LOGIN
+from ..core.logging import get_logger
 from .common import bad_request, not_found, ok
 from .deps import AppState, get_state
 from .schemas import AccountIn, CookieImportIn
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/accounts", tags=["账号"])
 
@@ -170,8 +173,21 @@ async def delete_account(
     # 它注册得早，路径形状又一样。以前关窗口其实走到了这里，会话根本没关。
     if channel == "login-session":
         return await close_login_session(account_name)
-    await state.browser_manager.clear_profile(channel, account_name)
+    # ⚠️ 删库里的记录**不能**依赖删浏览器 profile 成功：以前先删 profile、出错就整个失败——
+    # profile 目录被手动删掉以后，删账号反而先把目录建回来，建不回来（没写权限 / 路径不在了）
+    # 就报错，这个账号就再也删不掉了。现在：先关掉它开着的浏览器，profile 能删就删，
+    # 删不掉只提示，账号照删。
+    manager = state.browser_manager
+    leftover = ""
+    try:
+        await manager.close_account_browsers(channel, account_name)
+        leftover = manager.remove_profile_files(channel, account_name)
+    except Exception as exc:  # noqa: BLE001
+        leftover = f"浏览器 profile 没删掉：{exc}"
     await state.accounts.delete(channel, account_name)
+    if leftover:
+        logger.warning("删除账号 %s/%s：%s", channel, account_name, leftover)
+        return ok({"profile_left": leftover}, f"账号已删除；{leftover}")
     return ok(message="账号及其浏览器 profile 已删除")
 
 
@@ -403,7 +419,9 @@ async def probe_all(
 
 @router.post("/{channel}/{account_name}/logout")
 async def logout(channel: str, account_name: str, state: AppState = Depends(get_state)):
-    await state.browser_manager.clear_profile(channel, account_name)
+    leftover = await state.browser_manager.clear_profile(channel, account_name)
+    if leftover:
+        return ok({"profile_left": leftover}, f"已退出登录（登录态已清空，下次需要重新扫码）；{leftover}")
     return ok(message="已退出登录并清空 profile，下次需要重新扫码")
 
 

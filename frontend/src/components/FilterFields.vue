@@ -7,7 +7,7 @@
 -->
 
 <template>
-  <div>
+  <div class="filter-fields">
     <!-- 排序：只在接口支持的平台上显示 -->
     <el-form-item v-if="sortOptions.length">
       <template #label>

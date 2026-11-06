@@ -36,11 +36,25 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column prop="scenic_id" label="目标ID" width="170" />
-      <el-table-column prop="scenic_name" label="目标名称" min-width="180" />
-      <el-table-column label="地区" width="140">
+      <!-- 名称为主、ID 在下面一行；名称 / 地区 / 备注三列都能伸缩，宽屏时空间平均分，不再全挤给名称 -->
+      <el-table-column label="目标" min-width="220">
         <template #default="{ row }">
-          <span class="muted">{{ [row.province, row.city].filter(Boolean).join(' / ') || '-' }}</span>
+          <div class="scenic-name">{{ row.scenic_name }}</div>
+          <div class="scenic-id">{{ row.scenic_id }}</div>
+        </template>
+      </el-table-column>
+      <el-table-column label="地区" min-width="170">
+        <template #default="{ row }">
+          <span v-if="regionText(row)" class="region" :title="regionText(row)">
+            <el-icon class="region-icon"><component :is="NAV_ICONS.target" /></el-icon><span class="region-text">{{ regionText(row) }}</span>
+          </span>
+          <span v-else class="muted">—</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="备注" min-width="200">
+        <template #default="{ row }">
+          <span v-if="row.remark" class="remark" :title="row.remark">{{ row.remark }}</span>
+          <span v-else class="muted">—</span>
         </template>
       </el-table-column>
       <el-table-column label="关键字" width="90" align="center">
@@ -146,6 +160,7 @@ import { useRouter } from 'vue-router'
 import { Plus, Search, Upload, UploadFilled } from '@element-plus/icons-vue'
 import { scenicApi, type ChannelOption, type Scenic } from '../api'
 import ScenicDetail from '../components/ScenicDetail.vue'
+import { NAV_ICONS } from '../layout/navIcons'
 import { toast } from '../composables/toast'
 
 const router = useRouter()
@@ -177,6 +192,12 @@ async function loadScenics() {
   } finally {
     loading.value = false
   }
+}
+
+/** 地区一行显示：省 · 市；两个一样（直辖市、或者都填了目标名）只显示一次 */
+function regionText(row: Scenic): string {
+  const parts = [row.province, row.city].map((v) => (v || '').trim()).filter(Boolean)
+  return [...new Set(parts)].join(' · ')
 }
 
 function openScenicDialog(row?: Scenic) {
@@ -259,6 +280,13 @@ onMounted(async () => {
 
 <style scoped>
 .expand-wrap { padding: 8px 24px 16px; }
+.scenic-name { font-weight: 500; color: var(--smc-text); line-height: 1.5; }
+.scenic-id { font-size: 12px; color: var(--smc-text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+/* 地区、备注都只占一行，放不下省略，悬停看全文 */
+.region { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; color: var(--smc-text); }
+.region-icon { flex: none; font-size: 14px; color: var(--smc-text-secondary); }
+.region-text, .remark { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remark { display: block; color: var(--smc-text-secondary); }
 .row-actions { display: inline-flex; align-items: center; gap: 2px; }
 .row-actions > span { display: inline-flex; }
 .csv-head { display: flex; align-items: center; margin-bottom: 12px; font-size: 13px; }

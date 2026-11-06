@@ -110,7 +110,7 @@
           </el-tooltip>
         </template>
       </el-table-column>
-      <el-table-column label="今日用量" width="160">
+      <el-table-column label="今日用量" width="190">
         <template #header>
           <span class="th-with-action">
             今日用量
@@ -120,31 +120,39 @@
           </span>
         </template>
         <template #default="{ row }">
-          <div v-if="cooling(row)" class="usage-line">
-            <el-tooltip :content="row.cooldown_reason || '配额用满，正在冷却'">
-              <el-tag size="small" type="warning" disable-transitions>
-                <span class="tag-inner"><AppIcon name="lock" :size="12" />冷却至 {{ shortTime(row.cooldown_until) }}</span>
-              </el-tag>
-            </el-tooltip>
-            <IconAction icon="unlock" tip="解除冷却" @click="releaseCooldown(row)" />
-          </div>
-          <template v-else>
-            <span v-if="quotaOf(row)" class="usage-num" :class="{ 'is-warn': nearLimit(row) }">
-              {{ usedOf(row) }}<span class="usage-cap">/{{ quotaOf(row) }}</span>
-            </span>
+          <!-- 一格三层：用量数字 + 细进度条；下面一枚状态小签（冷却 / 轮换锁），解锁按钮就在签里，不再散着放 -->
+          <div class="usage-cell">
+            <template v-if="quotaOf(row)">
+              <div class="usage-top" :class="{ 'is-warn': nearLimit(row) }">
+                <span class="usage-num">{{ usedOf(row) }}<span class="usage-cap"> / {{ quotaOf(row) }}</span></span>
+                <span class="usage-pct">{{ usagePct(row) }}%</span>
+              </div>
+              <div class="usage-bar" :class="{ 'is-warn': nearLimit(row), 'is-full': cooling(row) }">
+                <i :style="{ width: `${usagePct(row)}%` }" />
+              </div>
+            </template>
             <span v-else class="muted">—</span>
+            <el-tooltip v-if="cooling(row)" :content="row.cooldown_reason || '配额用满，正在冷却'">
+              <span class="usage-chip is-warning">
+                <el-icon><LockClosedOutline /></el-icon>冷却至 {{ shortTime(row.cooldown_until) }}
+                <button type="button" class="chip-action" aria-label="解除冷却" title="解除冷却" @click="releaseCooldown(row)">
+                  <el-icon><LockOpenOutline /></el-icon>
+                </button>
+              </span>
+            </el-tooltip>
             <!-- 轮换锁跟冷却不一样：号没毛病，只是刚干过活，有别人就让别人上 -->
-            <div v-if="lockedFor(row)" class="usage-line" style="margin-top: 4px">
-              <el-tooltip
-                :content="`采过了，${lockedFor(row)}内先用同组的其他号；只有这一个号时照用不误`"
-              >
-                <el-tag size="small" type="info" disable-transitions>
-                  <span class="tag-inner"><AppIcon name="pending" :size="12" />轮换 {{ lockedFor(row) }}</span>
-                </el-tag>
-              </el-tooltip>
-              <IconAction icon="unlock" tip="解除轮换锁" @click="unlockRotation(row)" />
-            </div>
-          </template>
+            <el-tooltip
+              v-else-if="lockedFor(row)"
+              :content="`采过了，${lockedFor(row)}内先用同组的其他号；只有这一个号时照用不误`"
+            >
+              <span class="usage-chip">
+                <el-icon><TimeOutline /></el-icon>轮换 {{ lockedFor(row) }}
+                <button type="button" class="chip-action" aria-label="解除轮换锁" title="解除轮换锁" @click="unlockRotation(row)">
+                  <el-icon><LockOpenOutline /></el-icon>
+                </button>
+              </span>
+            </el-tooltip>
+          </div>
         </template>
       </el-table-column>
       <el-table-column label="启用" width="72" align="center">
@@ -406,6 +414,7 @@ import {
 import LoginBrowser from '../components/LoginBrowser.vue'
 import CookieDialog from '../components/CookieDialog.vue'
 import ProbeDialog from '../components/ProbeDialog.vue'
+import { LockClosedOutline, LockOpenOutline, TimeOutline } from '@vicons/ionicons5'
 import { toast } from '../composables/toast'
 
 const accounts = ref<Account[]>([])
@@ -534,6 +543,12 @@ function usedOf(row: Account): number {
   const hit = quotaInfo.value?.usage?.find(
     (u) => u.channel === row.channel && u.account_name === row.account_name)
   return hit?.works || 0
+}
+
+/** 今日用量占配额的百分比（进度条用），超了也只画满 */
+function usagePct(row: Account): number {
+  const cap = quotaOf(row)
+  return cap > 0 ? Math.min(100, Math.round((usedOf(row) / cap) * 100)) : 0
 }
 
 function nearLimit(row: Account): boolean {
@@ -763,8 +778,9 @@ async function checkAll() {
 async function logout(row: Account) {
   try {
     await ElMessageBox.confirm(`确定退出 ${row.account_name} 的登录吗？`, '提示', { type: 'warning' })
-    await accountApi.logout(row.channel, row.account_name)
-    toast.success('已退出登录')
+    const result = await accountApi.logout(row.channel, row.account_name)
+    if (result?.profile_left) toast.warning('已退出登录', { description: result.profile_left, timeout: 8000 })
+    else toast.success('已退出登录')
     await Promise.all([load(), loadGroups()])
   } catch {
     // 用户取消
@@ -792,8 +808,10 @@ async function toggle(row: Account, enabled: boolean) {
 async function remove(row: Account) {
   try {
     await ElMessageBox.confirm(`确定删除账号 ${row.account_name} 吗？`, '警告', { type: 'error' })
-    await accountApi.remove(row.channel, row.account_name)
-    toast.success('删除成功')
+    const result = await accountApi.remove(row.channel, row.account_name)
+    // 浏览器 profile 删不干净也照样删账号，只是提醒一下哪里还留着文件
+    if (result?.profile_left) toast.warning('账号已删除', { description: result.profile_left, timeout: 8000 })
+    else toast.success('删除成功')
     await Promise.all([load(), loadGroups()])
   } catch {
     // 用户取消
@@ -962,16 +980,31 @@ onMounted(() => {
   height: auto;
 }
 .th-setting:hover { color: var(--smc-primary); }
-.usage-line {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.usage-num { font-variant-numeric: tabular-nums; }
-.usage-cap { color: var(--smc-text-secondary); }
+.usage-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-width: 0; }
+.usage-top { display: flex; align-items: baseline; justify-content: space-between; width: 100%; }
+.usage-num { font-variant-numeric: tabular-nums; font-weight: 500; color: var(--smc-text); }
+.usage-cap { color: var(--smc-text-secondary); font-weight: normal; }
+.usage-pct { font-size: 12px; color: var(--smc-text-tertiary); font-variant-numeric: tabular-nums; }
+.usage-bar { width: 100%; height: 4px; border-radius: 2px; background: var(--el-fill-color); overflow: hidden; }
+.usage-bar > i { display: block; height: 100%; border-radius: 2px; background: var(--smc-primary); transition: width 0.3s ease; }
 /* 今日用量接近上限时标黄：再采下去就要进冷却了 */
-.is-warn,
-.is-warn .usage-cap { color: #d97706; font-weight: 600; }
+.usage-top.is-warn .usage-num, .usage-top.is-warn .usage-cap, .usage-top.is-warn .usage-pct { color: #d97706; }
+.usage-bar.is-warn > i { background: #f59e0b; }
+.usage-bar.is-full > i { background: var(--el-color-danger); }
+/* 状态小签：图标 + 文字 + 签尾的解锁小按钮，一体 */
+.usage-chip {
+  display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 3px 0 8px;
+  border-radius: 11px; background: var(--el-fill-color-light); color: var(--smc-text-secondary);
+  font-size: 12px; white-space: nowrap; cursor: default;
+}
+.usage-chip .el-icon { font-size: 13px; }
+.usage-chip.is-warning { background: #fff7e6; color: #b45309; }
+.chip-action {
+  display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
+  margin-left: 2px; padding: 0; border: none; border-radius: 50%; background: #fff; color: inherit;
+  cursor: pointer; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.04); transition: color 0.15s, background-color 0.15s;
+}
+.chip-action:hover { color: var(--el-color-primary); background: var(--smc-primary-light); }
 .tag-inner {
   display: inline-flex;
   align-items: center;

@@ -30,6 +30,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import json
 import time
 from datetime import datetime, timedelta
@@ -95,18 +96,86 @@ class BrowserSessionManager:
         self._obscura_processes: Dict[str, asyncio.subprocess.Process] = {}
 
     # ---------------- 路径与启动参数 ----------------
-    def profile_dir(self, channel: str, account_name: str) -> Path:
-        """返回账号的浏览器 profile 目录，不存在则自动重建。
-
-        用户可能手动删除 data/browser_profiles/ 下的目录来"重置"账号，
-        这里每次调用都确保目录存在，避免后续 launch_persistent_context 报错。
-        """
+    def profile_path(self, channel: str, account_name: str) -> Path:
+        """账号的浏览器 profile 目录在哪——只算路径，不建目录（删的时候用）。"""
         root = Path(self.config.get("browser.profiles_dir"))
         # 账号名可能含特殊字符，做一层安全化
         safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in account_name)
-        path = root / channel / (safe or "default")
+        return root / channel / (safe or "default")
+
+    def profile_dir(self, channel: str, account_name: str) -> Path:
+        """返回账号的浏览器 profile 目录，不存在则自动重建（要开浏览器时用）。
+
+        用户可能手动删除 data/browser_profiles/ 下的目录来"重置"账号，
+        这里每次调用都确保目录存在，避免后续 launch_persistent_context 报错。
+
+        ⚠️ 删除 / 退出登录不能走这里：目录被删掉之后，删账号反而先去把它建回来，
+        建不回来（服务用户对那个位置没有写权限、路径已经不存在）就抛错——
+        以前账号因此删不掉。删的时候用 profile_path()。
+        """
+        path = self.profile_path(channel, account_name)
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    async def close_account_browsers(self, channel: str, account_name: str) -> int:
+        """关掉这个账号正开着的浏览器：登录 / 查看窗口、Obscura 进程。
+
+        删账号、退出登录前先关：Chromium 开着的时候删它的 profile，它会接着往里写，
+        目录删完又冒出来；关窗时还会把 Cookie 写回一个已经删掉的账号。
+        """
+        from .live_session import LIVE_SESSIONS   # 避免循环导入
+        closed = 0
+        for session in list(LIVE_SESSIONS.values()):
+            if session.channel == channel and session.account_name == account_name:
+                try:
+                    await session.stop()
+                    closed += 1
+                except Exception as exc:  # noqa: BLE001 —— 关不掉也不能挡住删除
+                    logger.warning("[%s/%s] 关闭浏览器窗口失败：%s", channel, account_name, exc)
+        try:
+            await self._stop_obscura(channel, account_name)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[%s/%s] 停止 Obscura 失败：%s", channel, account_name, exc)
+        return closed
+
+    def remove_profile_files(self, channel: str, account_name: str) -> str:
+        """删掉账号的 profile 目录。删干净（或本来就没有）返回 ''，否则返回原因。
+
+        - 目录已经被手动删了：直接算成功，不会去重建
+        - 只读文件（Windows 上 Chromium 留下的常见）：去掉只读再删
+        - 还是删不掉（被别的进程占着、没权限）：返回原因，由调用方告诉用户，**不抛错**
+        """
+        import os
+        import shutil
+        import stat
+
+        try:
+            directory = self.profile_path(channel, account_name)
+            if not directory.exists():
+                return ""
+        except OSError as exc:
+            return f"profile 目录访问不了：{exc}"
+
+        errors: list = []
+
+        def retry_writable(func, path, _exc):
+            try:
+                os.chmod(path, stat.S_IWRITE)
+                func(path)
+            except OSError as exc:
+                errors.append(f"{path}：{exc.strerror or exc}")
+
+        try:
+            if sys.version_info >= (3, 12):
+                shutil.rmtree(directory, onexc=retry_writable)
+            else:
+                shutil.rmtree(directory, onerror=retry_writable)
+        except OSError as exc:
+            errors.append(str(exc))
+        if directory.exists():
+            detail = errors[0] if errors else "目录还在"
+            return f"profile 目录 {directory} 没删干净（{detail}），可以手动删掉"
+        return ""
 
     def _use_obscura(self) -> bool:
         """是否使用 Obscura 浏览器引擎。"""
@@ -917,13 +986,18 @@ class BrowserSessionManager:
             })
         return results
 
-    async def clear_profile(self, channel: str, account_name: str) -> None:
-        """退出登录：删掉 profile 目录和 DB 里的 Cookie。"""
-        import shutil
-        directory = self.profile_dir(channel, account_name)
-        if directory.exists():
-            shutil.rmtree(directory, ignore_errors=True)
+    async def clear_profile(self, channel: str, account_name: str) -> str:
+        """退出登录：关掉这个号开着的浏览器，删掉 profile 目录和 DB 里的 Cookie。
+
+        目录删不干净不算失败（返回原因，''=删干净了）：库里的登录态照样清掉，
+        下次采集就不会再用这个号的旧 Cookie。
+        """
+        await self.close_account_browsers(channel, account_name)
+        leftover = self.remove_profile_files(channel, account_name)
+        if leftover:
+            logger.warning("[%s/%s] %s", channel, account_name, leftover)
         await self.accounts.update(channel, account_name, {
             "cookies": None, "cookie_updated_at": None,
             "status": "never_login", "last_error": None,
         })
+        return leftover

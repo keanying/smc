@@ -8,7 +8,7 @@
 
 <template>
   <div class="collect-params">
-    <el-form :model="model" label-width="132px" label-position="left" size="default">
+    <el-form :model="model" :label-width="labelWidth || '132px'" label-position="left" size="default">
       <el-form-item>
         <template #label>
           设置方式<InfoTip>
@@ -17,7 +17,7 @@
             数量填 0 表示不限制；评论量大时建议先设个上限试跑一轮。
           </InfoTip>
         </template>
-        <el-radio-group v-model="perChannel" size="small">
+        <el-radio-group v-model="perChannel">
           <el-radio-button :value="false">所有平台统一</el-radio-button>
           <el-radio-button :value="true">按平台分别设置</el-radio-button>
         </el-radio-group>
@@ -27,6 +27,7 @@
       <template v-if="!perChannel">
         <div class="form-section">采集数量</div>
 
+        <div class="param-grid">
         <el-form-item v-if="workChannels.length">
           <template #label>
             每关键字作品数<InfoTip content="抖音 / 快手 / 小红书 / 微博" />
@@ -48,10 +49,12 @@
           </template>
           <el-input-number v-model="model.max_pages" :min="0" :max="5000" style="width: 130px" />
         </el-form-item>
+        </div>
 
         <template v-if="engineChannels.length || workChannels.length">
           <div class="form-section">采集模式与筛选</div>
 
+          <div class="param-grid">
           <el-form-item v-if="engineChannels.length">
             <template #label>
               采集模式<InfoTip :width="360">
@@ -61,7 +64,7 @@
                 </div>
               </InfoTip>
             </template>
-            <el-radio-group v-model="model.collect_engine" size="small">
+            <el-radio-group v-model="model.collect_engine">
               <el-radio-button v-for="item in COLLECT_ENGINES" :key="item.value" :value="item.value">
                 {{ item.label }}
               </el-radio-button>
@@ -78,6 +81,7 @@
             :model-value="model" :channels="workChannels" :options-map="optionsMap"
             @update:model-value="(v: Params) => Object.assign(model, v)"
           />
+          </div>
         </template>
       </template>
 
@@ -91,7 +95,7 @@
             <InfoTip :content="POI_CHANNELS.includes(channel) ? '只有目标点评一层' : '作品 + 作品下的评论两层'" />
           </div>
 
-          <template v-if="!POI_CHANNELS.includes(channel)">
+          <div v-if="!POI_CHANNELS.includes(channel)" class="param-grid">
             <el-form-item label="每关键字作品数">
               <el-input-number
                 :model-value="valueOf(channel, 'max_works')" :min="0" :max="10000"
@@ -119,7 +123,7 @@
                 </InfoTip>
               </template>
               <el-radio-group
-                :model-value="valueOf(channel, 'collect_engine')" size="small"
+                :model-value="valueOf(channel, 'collect_engine')"
                 @update:model-value="(v: any) => setValue(channel, 'collect_engine', v)"
               >
                 <el-radio-button v-for="item in COLLECT_ENGINES" :key="item.value" :value="item.value">
@@ -132,9 +136,9 @@
               :model-value="overrideProxy(channel)" :channels="[channel]" :options-map="optionsMap"
               @update:model-value="(v: Params) => applyOverride(channel, v)"
             />
-          </template>
+          </div>
 
-          <template v-else>
+          <div v-else class="param-grid">
             <el-form-item label="采集点评数">
               <el-input-number
                 :model-value="valueOf(channel, 'max_comments')" :min="0" :max="100000"
@@ -150,12 +154,13 @@
                 style="width: 130px" @update:model-value="(v: number) => setValue(channel, 'max_pages', v)"
               />
             </el-form-item>
-          </template>
+          </div>
         </div>
       </template>
 
       <div class="form-section">通用</div>
 
+      <div class="param-grid">
       <!-- 内容过滤是任务级的（不分平台），所以放在两种设置方式之外。
            词表（附关键字/过滤关键字）配在目标上而不是任务上：以前每建一个任务都要重填一遍，
            同一个目标跑十个任务就填十遍，改一次要改十处，漏改一处两个任务采出来的东西就不一样了。 -->
@@ -209,8 +214,9 @@
         />
       </el-form-item>
       <el-form-item label="指定账号" class="last-item">
-        <el-input v-model="model.account_name" placeholder="留空自动轮换" style="width: 220px" />
+        <el-input v-model="model.account_name" placeholder="留空自动轮换" style="width: 200px" />
       </el-form-item>
+      </div>
     </el-form>
   </div>
 </template>
@@ -233,6 +239,8 @@ const props = defineProps<{
   channels: string[]
   /** 编辑已有任务时的初始值。挂载时自动回填，不用外部再算时机调 load() */
   initial?: Params | null
+  /** 标签宽度：放进别的表单（编辑任务弹窗）时和外面那一段对齐 */
+  labelWidth?: string
 }>()
 const emit = defineEmits<{ 'update:modelValue': [Params] }>()
 
@@ -391,14 +399,37 @@ defineExpose({ load, build })
   margin-left: 8px;
 }
 
+/* 分组标题：左边一道主题色短竖条，右边一根细线拉到头 */
 .form-section {
-  margin: 4px 0 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--smc-border);
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 22px 0 14px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--smc-text);
 }
+.form-section::before {
+  content: '';
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--smc-primary);
+}
+.form-section::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--smc-border);
+}
+/* 短字段（数字、开关、下拉）一行两个；放不下自动变一列 */
+.param-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+  column-gap: 28px;
+}
+.param-grid > .full { grid-column: 1 / -1; }
+.param-grid :deep(.filter-fields) { display: contents; }
 
 .channel-block {
   border: 1px solid var(--smc-border);
