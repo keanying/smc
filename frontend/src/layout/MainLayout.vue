@@ -10,12 +10,13 @@
   <!-- 铺满窗口；左边是紫色渐变的圆角侧栏 -->
   <div class="app-frame">
   <el-container class="app-shell">
-    <el-aside width="188px" class="aside-menu">
+    <!-- 窄屏自动收成只显示图标（也可以点顶栏左边的按钮手动收起 / 展开） -->
+    <el-aside :width="collapsed ? '76px' : '188px'" class="aside-menu" :class="{ 'is-collapsed': collapsed }">
       <div class="aside-pill">
       <div class="logo">
         <!-- LOGO 原样使用（深色侧栏上垫一块白底，深蓝的「云听」才看得清），只按高度等比缩放 -->
         <span class="logo-tile"><img class="logo-img" src="/logo.png" alt="CloudSense 云听" /></span>
-        <div class="logo-text">
+        <div v-show="!collapsed" class="logo-text">
           <div class="logo-title">CloudSense</div>
           <div class="logo-sub">云听社媒舆情分析</div>
         </div>
@@ -23,60 +24,68 @@
       <el-menu
         router
         :default-active="route.path"
+        :collapse="collapsed"
+        :collapse-transition="false"
         class="side-menu"
         background-color="transparent"
         text-color="rgba(255,255,255,0.72)"
         active-text-color="#ffffff"
       >
         <el-menu-item index="/">
-          <el-icon><HomeFilled /></el-icon><span>概览</span>
+          <el-icon><HomeFilled /></el-icon><template #title>概览</template>
         </el-menu-item>
         <el-menu-item index="/scenics">
-          <el-icon><LocationFilled /></el-icon><span>景区管理</span>
+          <el-icon><LocationFilled /></el-icon><template #title>目标管理</template>
         </el-menu-item>
         <el-menu-item index="/archive">
-          <el-icon><Collection /></el-icon><span>景区档案</span>
+          <el-icon><Collection /></el-icon><template #title>档案</template>
         </el-menu-item>
         <el-menu-item index="/tasks">
-          <el-icon><List /></el-icon><span>任务管理</span>
+          <el-icon><List /></el-icon><template #title>任务管理</template>
         </el-menu-item>
         <el-menu-item index="/data">
-          <el-icon><DataAnalysis /></el-icon><span>数据中心</span>
+          <el-icon><DataAnalysis /></el-icon><template #title>数据中心</template>
         </el-menu-item>
         <el-menu-item index="/labeling">
-          <el-icon><MagicStick /></el-icon><span>标注审核</span>
+          <el-icon><MagicStick /></el-icon><template #title>标注审核</template>
         </el-menu-item>
         <!-- 指标计算是可选模块：系统设置里打开才出现 -->
         <el-menu-item v-if="metricsEnabled" index="/metrics">
-          <el-icon><TrendCharts /></el-icon><span>指标计算</span>
+          <el-icon><TrendCharts /></el-icon><template #title>指标计算</template>
         </el-menu-item>
         <el-menu-item index="/accounts">
-          <el-icon><User /></el-icon><span>账号管理</span>
+          <el-icon><User /></el-icon><template #title>账号管理</template>
         </el-menu-item>
         <el-menu-item index="/cluster">
-          <el-icon><Connection /></el-icon><span>集群</span>
+          <el-icon><Connection /></el-icon><template #title>集群</template>
         </el-menu-item>
         <!-- 景区盒子：登记、分景区、发令牌（只有管理员） -->
         <el-menu-item v-if="isAdmin" index="/boxes">
-          <el-icon><Box /></el-icon><span>盒子管理</span>
+          <el-icon><Box /></el-icon><template #title>盒子管理</template>
         </el-menu-item>
         <!-- 系统设置（含用户管理）只有管理员能用 -->
         <el-menu-item v-if="isAdmin" index="/settings">
-          <el-icon><Setting /></el-icon><span>系统设置</span>
+          <el-icon><Setting /></el-icon><template #title>系统设置</template>
         </el-menu-item>
       </el-menu>
       <!-- 侧栏底部：退出登录 -->
       <div v-if="currentUser" class="aside-foot">
         <button class="aside-exit" type="button" title="退出登录" @click="onUserCommand('logout')">
-          <el-icon><SwitchButton /></el-icon><span>退出登录</span>
+          <el-icon><SwitchButton /></el-icon><span v-show="!collapsed">退出登录</span>
         </button>
       </div>
       </div>
     </el-aside>
     <el-container>
       <el-header height="68px" class="app-header">
+        <el-tooltip :content="collapsed ? '展开菜单' : '收起菜单'" placement="bottom">
+          <button class="header-btn" type="button" @click="toggleCollapse">
+            <el-icon><component :is="collapsed ? Expand : Fold" /></el-icon>
+          </button>
+        </el-tooltip>
         <div class="header-right">
-          <span v-if="health" class="header-meta">
+          <!-- 窗口窄的时候状态胶囊放不下，先藏起来（齿轮还在，健康状态照样看得到） -->
+          <span v-if="health && !narrow" class="header-meta">
             <span class="meta-item">
               <span class="health-dot sm" :class="redisOk ? 'ok' : 'bad'" />
               {{ redisText }}
@@ -124,6 +133,20 @@
               <Setting />
             </el-icon>
           </el-tooltip>
+          <!-- 显示比例：默认按屏幕宽度自动缩放（composables/zoom.ts） -->
+          <el-dropdown trigger="click" @command="setZoomMode">
+            <span class="zoom-chip" title="显示比例">
+              <el-icon><Monitor /></el-icon>{{ Math.round(zoom * 100) }}%
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="o in ZOOM_OPTIONS" :key="o.value" :command="o.value"
+                                  :class="{ 'is-current': o.value === zoomMode }">
+                  {{ o.label }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <!-- 当前登录的人：改密码、退出 -->
           <el-dropdown v-if="currentUser" trigger="click" @command="onUserCommand">
             <span class="user-chip">
@@ -152,21 +175,43 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import {
-  ArrowDown, Box, Collection, Connection, Setting, SwitchButton, TrendCharts,
+  ArrowDown, Box, Collection, Connection, Expand, Fold, Monitor, Setting, SwitchButton, TrendCharts,
 } from '@element-plus/icons-vue'
 import { authApi, settingsApi } from '../api'
 import { loadFeatures, metricsEnabled } from '../composables/features'
 import { currentUser, isAdmin, loadAuth } from '../composables/auth'
 import ChangePasswordDialog from '../components/ChangePasswordDialog.vue'
+import { layoutWidth, setZoomMode, zoom, zoomMode, ZOOM_OPTIONS } from '../composables/zoom'
 
 const route = useRoute()
 const router = useRouter()
 const health = ref<Record<string, any> | null>(null)
 const passwordVisible = ref(false)
+
+/**
+ * 侧边栏收起：内容区摆不开（缩放后的布局宽度不到 1200）时自动收成图标。
+ * 手动点过就按手动的来，记在本机；窗口宽窄跨过阈值时清掉手动状态，重新跟着屏幕走。
+ */
+const COLLAPSE_BELOW = 1200
+const COLLAPSE_KEY = 'smc.ui.asideCollapsed'
+const autoCollapsed = computed(() => layoutWidth.value < COLLAPSE_BELOW)
+const manualCollapsed = ref<boolean | null>(
+  localStorage.getItem(COLLAPSE_KEY) === null ? null : localStorage.getItem(COLLAPSE_KEY) === '1')
+const collapsed = computed(() => manualCollapsed.value ?? autoCollapsed.value)
+watch(autoCollapsed, () => {
+  manualCollapsed.value = null
+  localStorage.removeItem(COLLAPSE_KEY)
+})
+function toggleCollapse() {
+  manualCollapsed.value = !collapsed.value
+  localStorage.setItem(COLLAPSE_KEY, manualCollapsed.value ? '1' : '0')
+}
+/** 顶栏放不下状态胶囊的宽度 */
+const narrow = computed(() => layoutWidth.value < 1100)
 
 async function onUserCommand(command: string) {
   if (command === 'password') {
@@ -262,7 +307,7 @@ onUnmounted(() => window.clearInterval(timer))
 <style scoped>
 /* 铺满整个浏览器窗口，四周不留边 */
 .app-frame {
-  height: 100vh;
+  height: var(--vh100);
   background: var(--smc-bg);
 }
 .app-shell {
@@ -436,8 +481,27 @@ onUnmounted(() => window.clearInterval(timer))
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 0 28px;
 }
+.header-btn, .zoom-chip {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  height: 32px; border: none; border-radius: 16px; background: #fff; box-shadow: var(--smc-shadow);
+  color: var(--smc-text-secondary); cursor: pointer; transition: box-shadow 0.15s, color 0.15s;
+}
+.header-btn { width: 32px; font-size: 16px; }
+.zoom-chip { padding: 0 12px; font-size: 12px; }
+.header-btn:hover, .zoom-chip:hover { box-shadow: var(--smc-shadow-hover); color: var(--el-color-primary); }
+:global(.el-dropdown-menu__item.is-current) { color: var(--el-color-primary); font-weight: 600; }
+
+/* 侧边栏收起：只留图标，文字靠悬停提示 */
+.aside-menu { transition: width 0.2s ease; }
+.aside-menu.is-collapsed .logo { justify-content: center; padding: 0; }
+.aside-menu.is-collapsed .side-menu { width: auto; }
+.aside-menu.is-collapsed .side-menu :deep(.el-menu-item),
+.aside-menu.is-collapsed .side-menu :deep(.el-menu-tooltip__trigger) { justify-content: center; padding: 0 !important; }
+.aside-menu.is-collapsed .side-menu :deep(.el-menu-item .el-icon) { margin-right: 0; }
+.aside-menu.is-collapsed .aside-exit { justify-content: center; }
 /* 顶栏只放右边的状态和当前用户（页面标题各页自己有，不再重复显示面包屑） */
 .header-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 /* 右上角的状态做成一条白色胶囊 */

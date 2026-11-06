@@ -172,7 +172,7 @@ async def test_all_pages_render_without_errors(server, page_factory):
     """逐个打开主要页面，确认标题渲染出来且控制台没有报错。"""
     pages = [
         ("/#/", "概览"),
-        ("/#/scenics", "景区管理"),
+        ("/#/scenics", "目标管理"),
         ("/#/tasks", "任务管理"),
         ("/#/tasks/new", "新建采集任务"),
         ("/#/data", "数据中心"),
@@ -351,7 +351,7 @@ async def test_task_can_be_edited_without_recreating(server, page_factory):
         # 按 label 定位，不要用 .last —— 弹窗里最后一个数字输入框是「最深评论层级」
         number_input = (
             dialog.locator(".el-form-item")
-            .filter(has_text="景区点评数")
+            .filter(has_text="目标点评数")
             .locator("input")
             .first
         )

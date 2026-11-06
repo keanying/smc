@@ -25,7 +25,7 @@
         <el-option v-for="(label, value) in TASK_STATUS_LABELS" :key="value" :label="label" :value="value" />
       </el-select>
       <el-select
-        v-model="query.scenic_id" placeholder="景区" clearable filterable
+        v-model="query.scenic_id" placeholder="目标" clearable filterable
         style="width: 200px" @change="load"
       >
         <el-option
@@ -41,7 +41,7 @@
       <el-switch v-model="autoRefresh" active-text="自动刷新" style="margin-left: auto" />
     </div>
 
-    <el-table :data="tasks" v-loading="loading" class="data-table" max-height="calc(100vh - 290px)">
+    <el-table :data="tasks" v-loading="loading" class="data-table" max-height="calc(var(--vh100) - 290px)">
       <el-table-column prop="task_name" label="任务名称" min-width="180">
         <template #default="{ row }">
           <el-link type="primary" @click="$router.push(`/tasks/${row.task_id}`)">
@@ -49,7 +49,7 @@
           </el-link>
         </template>
       </el-table-column>
-      <el-table-column label="景区" width="140">
+      <el-table-column label="目标" width="140">
         <template #default="{ row }">
           <span>{{ scenicName(row.scenic_id) }}</span>
         </template>

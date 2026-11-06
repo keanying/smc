@@ -10,17 +10,17 @@
   <div class="archive-page">
     <div class="page-header">
       <h2 class="page-title">
-        景区档案
+        档案
         <InfoTip :width="340">
-          三个平台的景区资料库：<b>采一次落库</b>，之后建景区、加采集目标都在库里挑，不用每次请求平台。<br />
-          存的是平台的景区资料（名称 / 等级 / 地址 / 开放时间…），<b>不是点评</b>，不参与标注。
+          三个平台的目标资料库：<b>采一次落库</b>，之后建目标、加采集目标都在库里挑，不用每次请求平台。<br />
+          存的是平台的目标资料（名称 / 等级 / 地址 / 开放时间…），<b>不是点评</b>，不参与标注。
         </InfoTip>
       </h2>
       <div class="stat-row">
         <div v-for="s in stats" :key="s.channel" class="stat-card">
           <div class="stat-name">{{ channelLabel(s.channel) }}</div>
           <div class="stat-num">{{ s.total }}</div>
-          <div class="muted">已建景区 {{ s.linked }}</div>
+          <div class="muted">已建目标 {{ s.linked }}</div>
         </div>
       </div>
     </div>
@@ -114,11 +114,11 @@
         </el-checkbox>
         <InfoTip :width="340">
           <template v-if="currentChannel && !currentChannel.supports_detail">
-            <b>{{ currentChannel.label }}没有景区详情页</b>，列表页只给名称、等级、地址、省市；
+            <b>{{ currentChannel.label }}没有目标详情页</b>，列表页只给名称、等级、地址、省市；
             开放时间 / 电话 / 优待政策 / 服务设施 / 介绍对它永远为空，不是采集失败，重采也不会有。
           </template>
           <template v-else>
-            逐个进景区详情页取开放时间 / 电话 / 优待政策 / 服务设施 / 介绍。
+            逐个进目标详情页取开放时间 / 电话 / 优待政策 / 服务设施 / 介绍。
             每条一次请求，一个省几百上千条会慢很多；不勾也能先采名录，详情之后随时补。
           </template>
         </InfoTip>
@@ -164,8 +164,8 @@
           <el-option v-for="p in provinces" :key="p.province" :label="`${p.province}（${p.total}）`" :value="p.province" />
         </el-select>
         <el-input v-model="query.city" placeholder="城市" clearable style="width: 120px" @keyup.enter="load(1)" />
-        <el-select v-model="query.linked" clearable placeholder="建过景区吗" style="width: 140px" @change="load(1)">
-          <el-option label="已建景区" value="yes" />
+        <el-select v-model="query.linked" clearable placeholder="建过目标吗" style="width: 140px" @change="load(1)">
+          <el-option label="已建目标" value="yes" />
           <el-option label="还没建" value="no" />
         </el-select>
         <el-button :icon="Search" @click="load(1)">查询</el-button>
@@ -173,13 +173,13 @@
         <el-button
           type="primary" :disabled="!selected.length" :loading="importing" @click="doImport"
         >
-          建为景区{{ selected.length ? `（${selected.length}）` : '' }}
+          建为目标{{ selected.length ? `（${selected.length}）` : '' }}
         </el-button>
       </div>
 
-      <el-table :data="items" v-loading="loading" size="small" class="data-table" max-height="calc(100vh - 420px)" @selection-change="onSelect">
+      <el-table :data="items" v-loading="loading" size="small" class="data-table" max-height="calc(var(--vh100) - 420px)" @selection-change="onSelect">
         <el-table-column type="selection" width="44" />
-        <el-table-column prop="poi_name" label="景区名称" min-width="180">
+        <el-table-column prop="poi_name" label="目标名称" min-width="180">
           <template #default="{ row }">
             {{ row.poi_name }}
             <el-tag v-if="row.scenic_id" size="small" type="success">{{ row.scenic_id }}</el-tag>
@@ -200,7 +200,7 @@
           <template #header>
             详情<InfoTip
               v-if="currentChannel && !currentChannel.supports_detail"
-              :content="`${currentChannel.label}没有景区详情页，开放时间 / 电话 / 优待政策 / 服务设施 / 介绍永远为空，不是采集失败。`"
+              :content="`${currentChannel.label}没有目标详情页，开放时间 / 电话 / 优待政策 / 服务设施 / 介绍永远为空，不是采集失败。`"
             />
           </template>
           <template #default="{ row }">
@@ -216,7 +216,7 @@
           <template #default="{ row }">
             <div class="row-actions">
               <IconAction icon="view" tip="详情" @click="openDetail(row)" />
-              <IconAction icon="transfer" tip="挂到景区" @click="openAttach(row)" />
+              <IconAction icon="transfer" tip="挂到目标" @click="openAttach(row)" />
               <IconAction
                 icon="query" tip="重新采集" :disabled="row.detail_status === 'unsupported'"
                 @click="refreshOne(row)"
@@ -237,7 +237,7 @@
     </el-card>
 
     <!-- 详情抽屉 -->
-    <el-drawer v-model="detailVisible" :title="detailRow?.poi_name || '景区档案'" size="620px">
+    <el-drawer v-model="detailVisible" :title="detailRow?.poi_name || '档案'" size="620px">
       <el-descriptions v-if="detailRow" :column="1" border size="small">
         <el-descriptions-item label="渠道">{{ channelLabel(detailRow.channel) }}</el-descriptions-item>
         <el-descriptions-item label="POI ID">
@@ -258,7 +258,7 @@
         <el-descriptions-item label="服务设施">
           <span class="pre">{{ detailRow.amenity || '—' }}</span>
         </el-descriptions-item>
-        <el-descriptions-item label="景区介绍">
+        <el-descriptions-item label="目标介绍">
           <span class="pre">{{ detailRow.scenic_intro || '—' }}</span>
         </el-descriptions-item>
         <el-descriptions-item label="来源">
@@ -271,17 +271,17 @@
     </el-drawer>
 
     <!-- 挂到已有景区 -->
-    <el-dialog v-model="attachVisible" title="挂到已有景区" width="480px">
+    <el-dialog v-model="attachVisible" title="挂到已有目标" width="480px">
       <div class="field-label">
-        目标景区
+        目标
         <InfoTip>
-          同一个景区在三个平台上各有一个 POI，挂到<b>同一个景区</b>下数据才归在一起；
-          走「建为景区」会各建一个，数据被劈成三份。
+          同一个目标在三个平台上各有一个 POI，挂到<b>同一个目标</b>下数据才归在一起；
+          走「建为目标」会各建一个，数据被劈成三份。
         </InfoTip>
       </div>
       <el-select
         v-model="attachScenic" filterable remote :remote-method="searchScenics"
-        :loading="searchingScenic" placeholder="输入景区名称搜索" style="width: 100%"
+        :loading="searchingScenic" placeholder="输入目标名称搜索" style="width: 100%"
       >
         <el-option
           v-for="s in scenicOptions" :key="s.scenic_id"
@@ -583,7 +583,7 @@ async function doImport() {
     const r = await archiveApi.importPois(
       channel.value, selected.value.map((x) => x.poi_id))
     ElMessage.success(
-      `新建景区 ${r.created} 个，更新 ${r.updated} 个`
+      `新建目标 ${r.created} 个，更新 ${r.updated} 个`
       + (r.failed?.length ? `，失败 ${r.failed.length} 个` : ''))
     await Promise.all([load(query.page), loadStats()])
   } finally {

@@ -55,8 +55,8 @@
             </el-button>
           </div>
           <div class="muted hint">
-            目标日期之外还会重跑前 {{ cfg.params.rerun_days }} 天；不选景区 =
-            {{ cfg.scenics.length ? `配置里的 ${cfg.scenics.length} 个景区` : '取数区间里有评论的全部景区' }}。
+            目标日期之外还会重跑前 {{ cfg.params.rerun_days }} 天；不选目标 =
+            {{ cfg.scenics.length ? `配置里的 ${cfg.scenics.length} 个目标` : '取数区间里有评论的全部目标' }}。
             {{ cfg.push.enabled ? (cfg.push.dry_run ? '推送是「只组报文不发送」模式。' : '算完推送到 ' + cfg.push.url) : '推送未开启。' }}
           </div>
         </el-card>
@@ -68,7 +68,7 @@
               <el-button link type="primary" @click="loadRuns">刷新</el-button>
             </div>
           </template>
-          <el-table :data="runs" size="small" class="data-table" max-height="calc(100vh - 430px)">
+          <el-table :data="runs" size="small" class="data-table" max-height="calc(var(--vh100) - 430px)">
             <el-table-column label="开始时间" width="160" prop="started_at" />
             <el-table-column label="触发" width="70">
               <template #default="{ row }">
@@ -81,7 +81,7 @@
                 {{ fmtDate(row.start_date) }}<template v-if="row.end_date !== row.start_date"> ~ {{ fmtDate(row.end_date) }}</template>
               </template>
             </el-table-column>
-            <el-table-column label="景区" width="90">
+            <el-table-column label="目标" width="90">
               <template #default="{ row }">{{ row.trigger_type === 'mock' ? 1 : (row.scenics.length || '全部') }}</template>
             </el-table-column>
             <el-table-column label="状态" width="100">
@@ -98,7 +98,7 @@
             <el-table-column label="操作" width="96" fixed="right">
               <template #default="{ row }">
                 <IconAction icon="view" tip="详情与日志" @click="openRun(row)" />
-                <el-popconfirm v-if="row.status === 'running'" title="停止这次计算？已写完的景区不会回滚。"
+                <el-popconfirm v-if="row.status === 'running'" title="停止这次计算？已写完的目标不会回滚。"
                                width="240" @confirm="cancelRun(row)">
                   <template #reference><span><IconAction icon="pause" tip="停止" /></span></template>
                 </el-popconfirm>
@@ -115,7 +115,7 @@
       </el-tab-pane>
 
       <!-- ==================== 景区与参数 ==================== -->
-      <el-tab-pane label="景区与参数" name="params">
+      <el-tab-pane label="目标与参数" name="params">
         <el-row :gutter="16">
           <el-col :xs="24" :lg="15">
             <!-- 景区和参数是同一次计算的设置：放进一张卡片，从上往下就是「算谁 → 怎么取数 → 什么口径 → 出哪些表 → 存哪」 -->
@@ -128,13 +128,13 @@
               </template>
               <el-form label-width="110px" class="param-form">
                 <div class="form-group-title">范围</div>
-                <el-form-item label="景区" class="param-item" @mouseenter="hl = ALL_TABLES" @mouseleave="hl = []">
+                <el-form-item label="目标" class="param-item" @mouseenter="hl = ALL_TABLES" @mouseleave="hl = []">
                   <el-select v-model="cfg.scenics" multiple filterable clearable class="w-full"
-                             placeholder="全部有评论的景区">
+                             placeholder="全部有评论的目标">
                     <el-option v-for="s in scenicOptions" :key="s.scenic_id"
                                :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id" />
                   </el-select>
-                  <ParamNote text="不选 = 每次计算取数区间里有评论的全部景区" tables="all" />
+                  <ParamNote text="不选 = 每次计算取数区间里有评论的全部目标" tables="all" />
                 </el-form-item>
 
                 <div class="form-group-title">取数</div>
@@ -197,7 +197,7 @@
                   </template>
                   <ParamNote text="词 → 评论 → 作品的下钻明细" :tables="['drill']" :tips="[
                     '只收评论内容含关键字的：只看评论自己的内容，不看帖子 / 笔记 / 作品的标题',
-                    '关键字 = 本景区启用的主关键字 + 附关键字；过滤关键字、停用的关键字不算',
+                    '关键字 = 本目标启用的主关键字 + 附关键字；过滤关键字、停用的关键字不算',
                     '大盘 KPI 词云（wordcloud_map）里的词也会写进下钻表，看板上点词云能下钻到评论',
                     '评论摘要只露关键词：命中的关键词保留，其余内容换成 **',
                   ]" />
@@ -350,15 +350,15 @@
         <el-card shadow="never" class="block">
           <template #header>
             <div class="card-head">
-              <span class="lbl">按景区推送<InfoTip :width="320">
+              <span class="lbl">按目标推送<InfoTip :width="320">
                 <ul class="tip-list">
-                  <li>没有单独添加的景区，按「默认」这一行推送（和下面每张表的「推送」开关是同一个设置）</li>
-                  <li>添加过的景区，只推它这一行勾选的表；一个都不勾 = 这个景区不推送</li>
+                  <li>没有单独添加的目标，按「默认」这一行推送（和下面每张表的「推送」开关是同一个设置）</li>
+                  <li>添加过的目标，只推它这一行勾选的表；一个都不勾 = 这个目标不推送</li>
                   <li>只管推不推，表名、主键、字段仍按下面每张表的设置</li>
                 </ul>
               </InfoTip></span>
               <div class="add-scenic">
-                <el-select v-model="addScenicId" filterable placeholder="选景区单独配置" size="small" class="add-scenic-select">
+                <el-select v-model="addScenicId" filterable placeholder="选目标单独配置" size="small" class="add-scenic-select">
                   <el-option v-for="s in addableScenics" :key="s.scenic_id"
                              :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id" />
                 </el-select>
@@ -367,10 +367,10 @@
             </div>
           </template>
           <el-table :data="scenicPushRows" size="small" class="data-table push-matrix">
-            <el-table-column label="景区" min-width="200">
+            <el-table-column label="目标" min-width="200">
               <template #default="{ row }">
                 <template v-if="row.isDefault">
-                  <b>默认</b><span class="muted matrix-sub">未单独配置的景区</span>
+                  <b>默认</b><span class="muted matrix-sub">未单独配置的目标</span>
                 </template>
                 <template v-else>
                   {{ scenicName(row.scenic) }}<span class="muted mono matrix-sub">{{ row.scenic }}</span>
@@ -408,7 +408,7 @@
             </template>
             <el-form label-width="110px" class="tbl-form">
               <el-form-item>
-                <template #label><span class="lbl">默认推送<InfoTip content="没有在「按景区推送」里单独添加的景区，按这个开关" /></span></template>
+                <template #label><span class="lbl">默认推送<InfoTip content="没有在「按目标推送」里单独添加的目标，按这个开关" /></span></template>
                 <el-switch v-model="cfg.tables[t.key].push" />
               </el-form-item>
               <el-form-item>
@@ -466,34 +466,34 @@
             <div class="card-head">
               <span class="lbl">随计算自动推送<InfoTip :width="360">
                 <ul class="tip-list">
-                  <li>每次计算（定时或手动）里，源景区算完、并且它自己推送成功后，把它这次的结果换成目标景区的编号和名称，再推一遍</li>
-                  <li>日期和主景区这次推的一样（含往前重跑的那几天）；只推送，不写本地库</li>
-                  <li>主景区推送失败、或这次选了「本次不推送」，演示数据也不推，运行日志里写明原因</li>
-                  <li>源景区要在这次计算的范围里：「计算的景区」不为空时，源景区要在里面</li>
+                  <li>每次计算（定时或手动）里，源目标算完、并且它自己推送成功后，把它这次的结果换成替换目标的编号和名称，再推一遍</li>
+                  <li>日期和主目标这次推的一样（含往前重跑的那几天）；只推送，不写本地库</li>
+                  <li>主目标推送失败、或这次选了「本次不推送」，演示数据也不推，运行日志里写明原因</li>
+                  <li>源目标要在这次计算的范围里：「计算的目标」不为空时，源目标要在里面</li>
                 </ul>
               </InfoTip></span>
               <el-button size="small" @click="addMockTarget">添加</el-button>
             </div>
           </template>
           <el-table :data="cfg.mock_targets" size="small" class="data-table">
-            <el-table-column label="源景区" min-width="190">
+            <el-table-column label="源目标" min-width="190">
               <template #default="{ row }">
                 <!-- 提醒放在控件右边的小图标里（悬停看说明），不另起一行，免得把这一行撑高、和别的列错位 -->
                 <div class="cell-line">
-                  <el-select v-model="row.from_scenic" filterable size="small" placeholder="选景区" class="cell-grow">
+                  <el-select v-model="row.from_scenic" filterable size="small" placeholder="选目标" class="cell-grow">
                     <el-option v-for="s in scenicOptions" :key="s.scenic_id"
                                :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id" />
                   </el-select>
                   <span class="cell-warn-slot">
                     <el-tooltip v-if="row.from_scenic && cfg.scenics.length && !cfg.scenics.includes(row.from_scenic)"
-                                content="不在「景区与参数 → 计算的景区」里，计算时不会算它，这一行不会触发" placement="top">
+                                content="不在「目标与参数 → 计算的目标」里，计算时不会算它，这一行不会触发" placement="top">
                       <el-icon class="cell-warn"><WarningFilled /></el-icon>
                     </el-tooltip>
                   </span>
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="目标景区编号" min-width="160">
+            <el-table-column label="替换目标编号" min-width="160">
               <template #default="{ row }">
                 <div class="cell-line">
                   <el-input v-model="row.to_scenic" size="small" placeholder="如 PFTSCA01018088"
@@ -506,7 +506,7 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="目标景区名称" min-width="150">
+            <el-table-column label="替换目标名称" min-width="150">
               <template #default="{ row }">
                 <el-input v-model="row.to_name" size="small" placeholder="如 泰宁九龙潭生态旅游区" />
               </template>
@@ -526,7 +526,7 @@
                 <IconAction icon="delete" tip="删除" @click="cfg.mock_targets.splice($index, 1)" />
               </template>
             </el-table-column>
-            <template #empty><el-empty description="还没有演示景区，点右上角「添加」" :image-size="64" /></template>
+            <template #empty><el-empty description="还没有演示目标，点右上角「添加」" :image-size="64" /></template>
           </el-table>
           <div class="muted hint">改完记得点右上角「保存配置」。</div>
         </el-card>
@@ -536,27 +536,27 @@
           <template #header>
             <span class="lbl">手动推一次<InfoTip :width="340">
               <ul class="tip-list">
-                <li>把一个景区<b>已经算好</b>的指标结果，换成另一个景区的编号和名称，推给下游；不写本地库</li>
-                <li>用于下游要看一个还没开始采集的景区的效果</li>
-                <li>下钻明细的 detail_uk 按新景区重算，不会和原景区的数据撞</li>
+                <li>把一个目标<b>已经算好</b>的指标结果，换成另一个目标的编号和名称，推给下游；不写本地库</li>
+                <li>用于下游要看一个还没开始采集的目标的效果</li>
+                <li>下钻明细的 detail_uk 按新目标重算，不会和原目标的数据撞</li>
                 <li>推送按「推送」「推送表」里的地址、表名、主键、字段；推哪几张表以这里勾的为准</li>
               </ul>
             </InfoTip></span>
           </template>
           <div class="mock-grid">
             <div class="mock-field">
-              <span class="cell-label">从哪个景区复制</span>
-              <el-select v-model="mock.from_scenic" filterable placeholder="选景区（要已经算过）">
+              <span class="cell-label">从哪个目标复制</span>
+              <el-select v-model="mock.from_scenic" filterable placeholder="选目标（要已经算过）">
                 <el-option v-for="s in scenicOptions" :key="s.scenic_id"
                            :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id" />
               </el-select>
             </div>
             <div class="mock-field">
-              <span class="cell-label">复制给（景区编号）</span>
+              <span class="cell-label">复制给（目标编号）</span>
               <el-input v-model="mock.to_scenic" placeholder="如 PFTSCA01018088" @blur="fillMockName" />
             </div>
             <div class="mock-field">
-              <span class="cell-label">景区名称</span>
+              <span class="cell-label">目标名称</span>
               <el-input v-model="mock.to_name" placeholder="如 泰宁九龙潭生态旅游区" />
             </div>
             <div class="mock-field">
@@ -613,7 +613,7 @@
         </div>
         <el-alert v-if="detail.error" type="error" :closable="false" :title="detail.error" class="block" />
         <el-table :data="detail.summary" size="small" class="data-table block" max-height="300">
-          <el-table-column label="景区" prop="scenic" width="170" />
+          <el-table-column label="目标" prop="scenic" width="170" />
           <el-table-column label="结果" width="70">
             <template #default="{ row }">
               <el-tag size="small" :type="row.ok ? 'success' : 'danger'">{{ row.ok ? '成功' : '失败' }}</el-tag>
@@ -711,7 +711,7 @@ const detail = ref<MetricRun | null>(null)
 let timer: number | undefined
 
 const scenicPlaceholder = computed(() =>
-  cfg.value?.scenics.length ? `按配置的 ${cfg.value.scenics.length} 个景区` : '全部有评论的景区')
+  cfg.value?.scenics.length ? `按配置的 ${cfg.value.scenics.length} 个目标` : '全部有评论的目标')
 
 function fmtDate(v: string): string {
   return v && v.length === 8 ? `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6)}` : v
@@ -748,7 +748,7 @@ function resultText(row: MetricRun): string {
   const mockText = mocks.length
     ? `；演示数据 ${mocks.filter((m: any) => m.ok && !m.skipped).length}/${mocks.length} 个已推`
     : ''
-  return `${ok}/${s.length} 个景区成功，产出 ${rows} 行`
+  return `${ok}/${s.length} 个目标成功，产出 ${rows} 行`
     + (row.push ? (pushBad ? `，${pushBad} 个推送失败` : '，已推送') : '') + mockText
 }
 
@@ -984,11 +984,11 @@ function fillMockName() {
 async function startMock() {
   const to = mock.to_scenic.trim()
   if (!mock.from_scenic || !to || !mock.to_name.trim()) {
-    ElMessage.warning('源景区、目标景区编号和名称都要填')
+    ElMessage.warning('源目标、替换目标编号和名称都要填')
     return
   }
   if (mock.from_scenic === to) {
-    ElMessage.error('目标编号和源景区一样：这样会用演示数据覆盖真实景区')
+    ElMessage.error('目标编号和源目标一样：这样会用演示数据覆盖真实目标')
     return
   }
   if (!mock.tables.length) {
@@ -1008,7 +1008,7 @@ async function startMock() {
     mock.dry_run ? '本次只组报文、不发送。' : '',
   ].filter(Boolean)
   try {
-    await ElMessageBox.confirm(lines.join('\n'), risk ? '目标景区已有真实数据' : '确认推送演示数据', {
+    await ElMessageBox.confirm(lines.join('\n'), risk ? '替换目标已有真实数据' : '确认推送演示数据', {
       type: risk ? 'error' : 'warning',
       confirmButtonText: risk ? '仍然覆盖' : (mock.dry_run ? '组报文' : '推送'),
       customStyle: { whiteSpace: 'pre-line', maxWidth: '520px' },

@@ -13,8 +13,8 @@
       <h2 class="page-title">
         盒子管理
         <InfoTip :width="360">
-          景区盒子在景区现场采集，采到的数据直接报给这里存储和标注；盒子上的数据中心、标注审核也是查这里，只看得到分给它的景区。<br>
-          在这里登记盒子、勾选景区，把令牌配到盒子的 config.yaml 里，盒子每分钟来同步一次。
+          景区盒子在景区现场采集，采到的数据直接报给这里存储和标注；盒子上的数据中心、标注审核也是查这里，只看得到分给它的目标。<br>
+          在这里登记盒子、勾选目标，把令牌配到盒子的 config.yaml 里，盒子每分钟来同步一次。
         </InfoTip>
       </h2>
       <div>
@@ -35,7 +35,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="分到的景区" min-width="240">
+      <el-table-column label="分到的目标" min-width="240">
         <template #default="{ row }">
           <span v-if="!row.scenics.length" class="muted">还没分</span>
           <el-tag v-for="s in row.scenics" :key="s.scenic_id" size="small" class="scenic-tag">
@@ -74,15 +74,15 @@
         <el-form-item label="名字">
           <el-input v-model="form.box_name" placeholder="如：A景区 1号盒子" maxlength="100" />
         </el-form-item>
-        <el-form-item label="景区">
+        <el-form-item label="目标">
           <el-select v-model="form.scenic_ids" multiple filterable collapse-tags collapse-tags-tooltip
-                     :max-collapse-tags="4" placeholder="这台盒子负责采哪些景区" style="width: 100%">
+                     :max-collapse-tags="4" placeholder="这台盒子负责采哪些目标" style="width: 100%">
             <el-option v-for="s in scenicOptions" :key="s.scenic_id"
                        :label="`${s.scenic_name}（${s.scenic_id}）`" :value="s.scenic_id" />
           </el-select>
         </el-form-item>
       </el-form>
-      <p class="muted small">盒子每分钟同步一次：景区连同关键字、附加 / 过滤词、采集目标都跟着这里走；去掉的景区在盒子上停用。</p>
+      <p class="muted small">盒子每分钟同步一次：目标连同关键字、附加 / 过滤词、采集目标都跟着这里走；去掉的目标在盒子上停用。</p>
       <template #footer>
         <el-button @click="editVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="save">{{ editing ? '保存' : '登记并生成令牌' }}</el-button>

@@ -14,7 +14,7 @@
         <h1 class="head-title">概览</h1>
         <p class="head-sub">
           <span class="sync-dot" :class="syncClass" />{{ syncText }}
-          <template v-if="assigned.length"> · 分到 {{ assigned.length }} 个景区</template>
+          <template v-if="assigned.length"> · 分到 {{ assigned.length }} 个目标</template>
         </p>
       </div>
       <div class="head-actions">
@@ -31,7 +31,7 @@
       <template v-if="!sync?.master_configured">
         <h3>先把这台盒子连到主</h3>
         <p>
-          景区由主统一分配，采到的数据也直接报给主存储和标注。请主的管理员在「盒子管理」里登记这台盒子，
+          目标由主统一分配，采到的数据也直接报给主存储和标注。请主的管理员在「盒子管理」里登记这台盒子，
           把给的 <b>master_url</b> 和 <b>box_token</b> 写进盒子的 config/config.yaml（edition 段），重启盒子。
         </p>
       </template>
@@ -41,8 +41,8 @@
         <el-button v-if="isAdmin" type="primary" round :icon="Refresh" :loading="syncing" @click="syncNow">再试一次</el-button>
       </template>
       <template v-else>
-        <h3>主还没给这台盒子分景区</h3>
-        <p>请主的管理员在「盒子管理」里给这台盒子勾选景区，盒子一分钟内自动同步过来。</p>
+        <h3>主还没给这台盒子分目标</h3>
+        <p>请主的管理员在「盒子管理」里给这台盒子勾选目标，盒子一分钟内自动同步过来。</p>
         <el-button v-if="isAdmin" type="primary" round :icon="Refresh" :loading="syncing" @click="syncNow">立即同步</el-button>
       </template>
     </div>
@@ -99,7 +99,7 @@
 
         <!-- 分到的景区：马卡龙色卡片 -->
         <div class="section-head">
-          <h3>我的景区</h3>
+          <h3>我的目标</h3>
           <span class="link" role="button" tabindex="0" @click="go('/data')" @keyup.enter="go('/data')">
             数据中心 <el-icon><ArrowRight /></el-icon>
           </span>
@@ -128,7 +128,7 @@
         </div>
         <div class="task-table">
           <div class="tr th">
-            <span>任务</span><span>景区</span><span>平台</span><span>状态</span><span class="num">新增评论</span>
+            <span>任务</span><span>目标</span><span>平台</span><span>状态</span><span class="num">新增评论</span>
           </div>
           <div v-for="t in recentTasks" :key="t.task_id" class="tr" role="button" tabindex="0"
                @click="go(`/tasks/${t.task_id}`)" @keyup.enter="go(`/tasks/${t.task_id}`)">
@@ -191,8 +191,8 @@
           <div class="card-label">数据存在主上</div>
           <div class="assign-row"><span>和主同步</span><b>{{ sync?.ok === false ? '连不上' : sync?.ok ? '正常' : '等待中' }}</b></div>
           <div v-if="sync?.last_ok_at" class="assign-row"><span>上次同步</span><b>{{ sync.last_ok_at.slice(5, 16) }}</b></div>
-          <div class="assign-row"><span>分到的景区</span><b>{{ assigned.length }} 个</b></div>
-          <p class="muted side-empty">采到的数据直接报给主，标注由主来做；这里看到和改的都是主上的数据。景区、关键字、采集目标由主维护。</p>
+          <div class="assign-row"><span>分到的目标</span><b>{{ assigned.length }} 个</b></div>
+          <p class="muted side-empty">采到的数据直接报给主，标注由主来做；这里看到和改的都是主上的数据。目标、关键字、采集目标由主维护。</p>
         </div>
       </div>
     </div>

@@ -11,7 +11,7 @@
     <div class="page-header">
       <h2 class="page-title">
         新建采集任务
-        <InfoTip content="选景区 → 选平台 → 带入关键字或 POI → 设定执行方式" />
+        <InfoTip content="选目标 → 选平台 → 带入关键字或 POI → 设定执行方式" />
       </h2>
       <el-button @click="$router.back()">返回</el-button>
     </div>
@@ -26,10 +26,10 @@
 
             <el-form-item required>
               <template #label>
-                所属景区<InfoTip content="采到的每条数据都会带上该景区的 ID 和名称" />
+                所属目标<InfoTip content="采到的每条数据都会带上该目标的 ID 和名称" />
               </template>
               <el-select
-                v-model="form.scenic_id" filterable placeholder="选择景区"
+                v-model="form.scenic_id" filterable placeholder="选择目标"
                 style="width: 100%" @change="onScenicChange"
               >
                 <el-option
@@ -55,7 +55,7 @@
 
             <el-form-item>
               <template #label>
-                采集方式<InfoTip v-if="hasPoiChannel" content="携程/同程固定走景区 POI 点评采集，不受此项影响" />
+                采集方式<InfoTip v-if="hasPoiChannel" content="携程/同程固定走目标 POI 点评采集，不受此项影响" />
               </template>
               <el-radio-group v-model="form.collect_type">
                 <el-radio-button value="keyword">关键字搜索</el-radio-button>
@@ -66,7 +66,7 @@
             <!-- 关键字 -->
             <el-form-item v-if="form.collect_type === 'keyword'">
               <template #label>
-                搜索关键字<InfoTip content="留空则执行时自动带入该景区所有启用的关键字" />
+                搜索关键字<InfoTip content="留空则执行时自动带入该目标所有启用的关键字" />
               </template>
               <div style="width: 100%">
                 <div class="toolbar" style="margin-bottom: 8px">
@@ -75,7 +75,7 @@
                     :disabled="!form.scenic_id" :loading="loadingKeywords"
                     @click="pullKeywords"
                   >
-                    从景区带入（最多 {{ keywordLimit }} 个）
+                    从目标带入（最多 {{ keywordLimit }} 个）
                   </el-button>
                   <span class="muted" style="font-size: 12px">
                     已选 {{ form.keywords.length }} 个
@@ -86,7 +86,7 @@
                 </div>
                 <el-select
                   v-model="form.keywords" multiple filterable allow-create
-                  default-first-option placeholder="从景区带入，或直接输入后回车新增"
+                  default-first-option placeholder="从目标带入，或直接输入后回车新增"
                   style="width: 100%" :max-collapse-tags="12" collapse-tags collapse-tags-tooltip
                 >
                   <el-option v-for="k in scenicKeywords" :key="k" :label="k" :value="k" />
@@ -97,11 +97,11 @@
             <!-- 主页目标 -->
             <el-form-item v-if="form.collect_type === 'creator'">
               <template #label>
-                主页目标<InfoTip content="执行时自动使用该景区配置的主页目标，无需在此选择" />
+                主页目标<InfoTip content="执行时自动使用该目标配置的主页目标，无需在此选择" />
               </template>
               <div style="width: 100%">
                 <div v-if="!creatorTargets.length" class="form-warn">
-                  该景区还没配置主页目标，{{ scenicFixHint }}
+                  该目标还没配置主页目标，{{ scenicFixHint }}
                 </div>
                 <el-table v-else :data="creatorTargets" size="small" border>
                   <el-table-column label="平台" width="90">
@@ -124,7 +124,7 @@
                   <el-table-column prop="target_name" label="备注" width="140" />
                 </el-table>
                 <div v-else class="form-error">
-                  该景区没配 POI_ID / sid，任务会被拒绝创建。{{ scenicFixHint }}
+                  该目标没配 POI_ID / sid，任务会被拒绝创建。{{ scenicFixHint }}
                 </div>
               </div>
             </el-form-item>
@@ -264,8 +264,8 @@ const router = useRouter()
 const scenics = ref<ScenicOption[]>([])
 /** 景区缺配置时怎么补：总部版自己去景区管理；景区版的景区跟着总部的分配包走 */
 const scenicFixHint = computed(() => (isScenicEdition.value
-  ? '景区由总部维护，请联系总部在「景区管理 → 采集目标」补上后重新下发分配包'
-  : '请先到「景区管理 → 采集目标」添加'))
+  ? '目标由总部维护，请联系总部在「目标管理 → 采集目标」补上后重新下发分配包'
+  : '请先到「目标管理 → 采集目标」添加'))
 const channels = ref<ChannelOption[]>([])
 const scenicKeywords = ref<string[]>([])
 const allTargets = ref<Target[]>([])
@@ -351,8 +351,8 @@ async function pullKeywords() {
     })
     if (!rows.length) {
       ElMessage.warning(isScenicEdition.value
-        ? '该景区还没有启用的关键字，请联系总部补上后重新下发分配包'
-        : '该景区还没有启用的关键字，先去景区管理里添加')
+        ? '该目标还没有启用的关键字，请联系总部补上后重新下发分配包'
+        : '该目标还没有启用的关键字，先去目标管理里添加')
       return
     }
     form.keywords = rows.map((r) => r.keyword)
@@ -388,7 +388,7 @@ async function previewSchedule() {
 
 async function submit() {
   if (!form.task_name.trim()) return ElMessage.warning('填一下任务名称')
-  if (!form.scenic_id) return ElMessage.warning('选一个景区')
+  if (!form.scenic_id) return ElMessage.warning('选一个目标')
   if (!form.channels.length) return ElMessage.warning('请选择采集平台')
 
   creating.value = true

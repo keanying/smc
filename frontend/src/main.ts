@@ -16,6 +16,7 @@ import InfoTip from './components/InfoTip.vue'
 import AppIcon from './components/AppIcon.vue'
 import IconAction from './components/IconAction.vue'
 import router from './router'
+import { initZoom } from './composables/zoom'
 import './style.css'
 
 const app = createApp(App)
@@ -33,4 +34,6 @@ app.component('InfoTip', InfoTip)
 app.component('AppIcon', AppIcon)
 app.component('IconAction', IconAction)
 
+// 显示比例先算好再挂载，第一帧就是对的大小，不会闪一下
+initZoom()
 app.mount('#app')

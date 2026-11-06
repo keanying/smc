@@ -8,7 +8,7 @@
 
 <template>
   <el-dialog
-    :model-value="modelValue" title="从去哪儿导入景区" width="880px" top="6vh"
+    :model-value="modelValue" title="从去哪儿导入目标" width="880px" top="6vh"
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
   >
     <!-- 景区 ID 和采集目标都从去哪儿页面上抓，不用手工填 POI ID：手填最常见的两个问题
@@ -43,10 +43,10 @@
       <el-button :disabled="!city" :loading="loadingPois" @click="loadPois(1)">
         查询
       </el-button>
-      <InfoTip content="选城市 → 勾景区 → 导入。景区 ID 和采集目标直接从去哪儿页面抓取，不用手填 POI ID。" />
+      <InfoTip content="选城市 → 勾目标 → 导入。目标 ID 和采集目标直接从去哪儿页面抓取，不用手填 POI ID。" />
       <div class="spacer" />
       <el-checkbox v-model="withDetail">同时抓详细档案</el-checkbox>
-      <InfoTip content="逐个进景区详情页取开放时间 / 电话 / 介绍 / 优待政策 / 服务设施，每个景区多一次请求，慢但档案全。不勾也能建景区和跑采集，档案之后随时可刷。" />
+      <InfoTip content="逐个进目标详情页取开放时间 / 电话 / 介绍 / 优待政策 / 服务设施，每个目标多一次请求，慢但档案全。不勾也能建目标和跑采集，档案之后随时可刷。" />
     </div>
 
     <el-table
@@ -54,7 +54,7 @@
       size="small" @selection-change="onSelect"
     >
       <el-table-column type="selection" width="44" />
-      <el-table-column prop="poi_name" label="景区名称" min-width="190">
+      <el-table-column prop="poi_name" label="目标名称" min-width="190">
         <template #default="{ row }">
           {{ row.poi_name }}
           <el-tag v-if="imported.has(row.poi_id)" size="small" type="info">已导入</el-tag>
@@ -71,7 +71,7 @@
       <el-table-column prop="address" label="地址" min-width="220" show-overflow-tooltip />
       <el-table-column prop="poi_id" label="去哪儿 POI" width="130" />
       <template #empty>
-        <el-empty :description="city ? '这一页没有景区' : '先选一个城市'" :image-size="60" />
+        <el-empty :description="city ? '这一页没有目标' : '先选一个城市'" :image-size="60" />
       </template>
     </el-table>
 
@@ -93,7 +93,7 @@
         type="primary" :disabled="!selected.length" :loading="importing"
         @click="doImport"
       >
-        导入 {{ selected.length ? `${selected.length} 个景区` : '' }}
+        导入 {{ selected.length ? `${selected.length} 个目标` : '' }}
       </el-button>
     </template>
   </el-dialog>
