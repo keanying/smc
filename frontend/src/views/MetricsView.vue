@@ -68,7 +68,7 @@
               <el-button link type="primary" @click="loadRuns">刷新</el-button>
             </div>
           </template>
-          <el-table :data="runs" size="small" class="data-table" max-height="calc(var(--vh100) - 430px)">
+          <el-table stripe :data="runs" size="small" class="data-table" max-height="calc(var(--vh100) - 430px)">
             <el-table-column label="开始时间" width="160" prop="started_at" />
             <el-table-column label="触发" width="70">
               <template #default="{ row }">
@@ -366,7 +366,7 @@
               </div>
             </div>
           </template>
-          <el-table :data="scenicPushRows" size="small" class="data-table push-matrix">
+          <el-table stripe :data="scenicPushRows" size="small" class="data-table push-matrix">
             <el-table-column label="目标" min-width="200">
               <template #default="{ row }">
                 <template v-if="row.isDefault">
@@ -429,7 +429,7 @@
                 </el-radio-group>
               </el-form-item>
             </el-form>
-            <el-table v-if="custom[t.key]" :data="fieldRows[t.key]" size="small" class="data-table field-table"
+            <el-table stripe v-if="custom[t.key]" :data="fieldRows[t.key]" size="small" class="data-table field-table"
                       max-height="420">
               <el-table-column width="56">
                 <template #header>
@@ -475,7 +475,7 @@
               <el-button size="small" @click="addMockTarget">添加</el-button>
             </div>
           </template>
-          <el-table :data="cfg.mock_targets" size="small" class="data-table">
+          <el-table stripe :data="cfg.mock_targets" size="small" class="data-table">
             <el-table-column label="源目标" min-width="190">
               <template #default="{ row }">
                 <!-- 提醒放在控件右边的小图标里（悬停看说明），不另起一行，免得把这一行撑高、和别的列错位 -->
@@ -612,7 +612,7 @@
           <span class="muted">{{ detail.started_at }} 开始 · {{ duration(detail) }}</span>
         </div>
         <el-alert v-if="detail.error" type="error" :closable="false" :title="detail.error" class="block" />
-        <el-table :data="detail.summary" size="small" class="data-table block" max-height="300">
+        <el-table stripe :data="detail.summary" size="small" class="data-table block" max-height="300">
           <el-table-column label="目标" prop="scenic" width="170" />
           <el-table-column label="结果" width="70">
             <template #default="{ row }">

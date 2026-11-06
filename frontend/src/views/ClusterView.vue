@@ -62,7 +62,7 @@
         </template>
       </el-alert>
 
-      <el-table :data="info.nodes" class="data-table" row-key="node_id">
+      <el-table stripe :data="info.nodes" class="data-table" row-key="node_id">
         <el-table-column label="机器" min-width="170">
           <template #default="{ row }">
             <div class="node-name">

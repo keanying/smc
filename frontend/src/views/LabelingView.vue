@@ -186,7 +186,7 @@
 
     <!-- 列表 -->
     <el-card shadow="never">
-      <el-table :data="rows" v-loading="loading" row-key="id" size="small" class="data-table" max-height="calc(var(--vh100) - 400px)">
+      <el-table stripe :data="rows" v-loading="loading" row-key="id" size="small" class="data-table" max-height="calc(var(--vh100) - 400px)">
         <el-table-column type="expand">
           <template #default="{ row }">
             <div class="expand">

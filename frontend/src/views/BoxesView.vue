@@ -23,7 +23,7 @@
       </div>
     </div>
 
-    <el-table v-loading="loading" :data="boxes" class="data-table">
+    <el-table stripe v-loading="loading" :data="boxes" class="data-table">
       <el-table-column label="盒子" min-width="200">
         <template #default="{ row }">
           <div class="box-cell">

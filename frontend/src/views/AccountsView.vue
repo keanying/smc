@@ -60,7 +60,7 @@
       <span class="filter-count muted">共 {{ accounts.length }} 个账号</span>
     </div>
 
-    <el-table :data="accounts" v-loading="loading" class="data-table" max-height="calc(var(--vh100) - 330px)">
+    <el-table stripe :data="accounts" v-loading="loading" class="data-table" max-height="calc(var(--vh100) - 330px)">
       <el-table-column label="平台" width="96">
         <template #default="{ row }">
           <span class="channel-badge" :style="{ background: CHANNEL_COLORS[row.channel] }">

@@ -28,7 +28,7 @@
       <el-checkbox v-model="query.enabled_only" @change="loadScenics">只看启用</el-checkbox>
     </div>
 
-    <el-table :data="scenics" v-loading="loading" class="data-table" max-height="calc(var(--vh100) - 290px)">
+    <el-table stripe :data="scenics" v-loading="loading" class="data-table" max-height="calc(var(--vh100) - 290px)">
       <el-table-column type="expand">
         <template #default="{ row }">
           <div class="expand-wrap">

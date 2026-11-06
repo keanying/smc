@@ -25,7 +25,7 @@
       </div>
     </div>
 
-    <el-table :data="users" v-loading="loading" class="data-table">
+    <el-table stripe :data="users" v-loading="loading" class="data-table">
       <el-table-column label="用户" min-width="200">
         <template #default="{ row }">
           <div class="user-cell">

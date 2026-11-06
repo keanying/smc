@@ -177,7 +177,7 @@
         </el-button>
       </div>
 
-      <el-table :data="items" v-loading="loading" size="small" class="data-table" max-height="calc(var(--vh100) - 420px)" @selection-change="onSelect">
+      <el-table stripe :data="items" v-loading="loading" size="small" class="data-table" max-height="calc(var(--vh100) - 420px)" @selection-change="onSelect">
         <el-table-column type="selection" width="44" />
         <el-table-column prop="poi_name" label="目标名称" min-width="180">
           <template #default="{ row }">

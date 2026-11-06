@@ -916,24 +916,59 @@ onMounted(() => {
 /* 字段名 + ⓘ：包一层 span，避免 label 的 flex 布局把图标顶到上沿 */
 .lbl { display: inline-block; white-space: nowrap; }
 
-/* 每个参数一行：左边参数名（左对齐，好扫），右边控件，说明在控件下面；行与行之间一条细线 */
+/* ---------------- 参数表格（iView Table 的样子） ----------------
+   每组参数是一张表：分组标题是表头，每个参数一行——左列参数名（浅灰底），右列直接放控件改值；
+   行间细线、悬停浅紫。和全站表格（style.css 的 .el-table）同一套颜色。 */
+.settings-form {
+  --param-border: #e9e8f2;
+  --param-head-bg: #f7f7fb;
+  --param-label-bg: #fafafd;
+}
 .settings-form :deep(.el-form-item) {
   margin: 0;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--smc-border);
+  border: 1px solid var(--param-border);
+  border-top: none;
+  background: #fff;
+  transition: background-color 0.15s;
 }
-.settings-form :deep(.el-form-item:has(+ .form-section)),
-.settings-form :deep(.el-form-item:last-child),
-.settings-form :deep(.el-form-item.form-actions) { border-bottom: none; }
+/* 表的第一行要有上边框：紧跟分组标题的、或者卡片里没有分组标题直接开始的 */
+.settings-form > :deep(.el-form-item:first-child) { border-top: 1px solid var(--param-border); border-radius: 10px 10px 0 0; }
+.settings-form :deep(.el-form-item:hover:not(.form-actions)) { background: #f0effb; }
+.settings-form :deep(.el-form-item:hover:not(.form-actions) .el-form-item__label) { background: #ebe9f8; }
 .settings-form :deep(.el-form-item__label) {
+  align-self: stretch;
+  height: auto;
+  display: flex;
+  align-items: center;
   justify-content: flex-start;
   text-align: left;
+  padding: 10px 14px;
+  line-height: 1.4;
   font-size: 13px;
   font-weight: 500;
-  color: var(--el-text-color-primary);
-  padding-right: 16px;
+  color: #515a6e;
+  background: var(--param-label-bg);
+  border-right: 1px solid var(--param-border);
+  transition: background-color 0.15s;
 }
-.settings-form :deep(.el-form-item__content) { column-gap: 8px; row-gap: 2px; }
+.settings-form :deep(.el-form-item__content) {
+  padding: 8px 14px;
+  min-height: 48px;
+  column-gap: 8px;
+  row-gap: 2px;
+}
+/* 一组的最后一行收圆角（下一个是分组标题 / 保存按钮 / 已经是最后） */
+.settings-form :deep(.el-form-item:has(+ .form-section)),
+.settings-form :deep(.el-form-item:has(+ .form-group)),
+.settings-form :deep(.el-form-item:has(+ .form-actions)),
+.settings-form .form-group > :deep(.el-form-item:last-child) { border-radius: 0 0 10px 10px; }
+/* 保存按钮那一行不是表格的一部分 */
+.settings-form :deep(.el-form-item.form-actions) {
+  border: none;
+  background: transparent;
+}
+.settings-form :deep(.el-form-item.form-actions .el-form-item__label) { background: transparent; border: none; }
+.settings-form :deep(.el-form-item.form-actions .el-form-item__content) { padding: 16px 0 0; min-height: 0; }
 .settings-form .num { width: 160px; }
 /* 文本框 / 下拉框别跟着卡片无限拉宽：420 够填 Key、地址这类最长的值 */
 .settings-form :deep(.el-input:not(.el-input-number .el-input)),
@@ -941,20 +976,27 @@ onMounted(() => {
 .settings-form :deep(.el-textarea) { max-width: 420px; }
 .field-note { width: 100%; margin-top: 2px; line-height: 1.5; color: var(--smc-text-secondary); }
 
-/* 卡片内分段标题：小号、主题色，段与段之间留白（每行自己有分隔线，标题上不再画线） */
+/* 分组标题 = 这张参数表的表头（浅灰底、加粗、上圆角），和下面的参数行连成一张表 */
 .form-section {
-  margin: 22px 0 2px;
-  padding: 0 0 6px;
+  margin: 20px 0 0;
+  padding: 10px 14px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--el-color-primary);
-  border-bottom: 1px solid var(--smc-border-strong);
+  color: #515a6e;
+  background: var(--param-head-bg);
+  border: 1px solid var(--param-border);
+  border-radius: 10px 10px 0 0;
 }
-.settings-form > .form-section:first-child {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: none;
+.form-section::before {
+  content: '';
+  display: inline-block;
+  width: 3px; height: 12px;
+  margin-right: 8px;
+  vertical-align: -1px;
+  border-radius: 2px;
+  background: var(--el-color-primary);
 }
+.settings-form > .form-section:first-child { margin-top: 0; }
 
 .unit {
   margin-left: 8px;
@@ -963,11 +1005,7 @@ onMounted(() => {
 }
 .small { font-size: 12px; }
 
-.form-actions {
-  margin-top: 4px;
-  padding-top: 16px !important;
-  margin-bottom: 0 !important;
-}
+.form-actions { margin-bottom: 0 !important; }
 
 .check-detail {
   font-size: 13px;

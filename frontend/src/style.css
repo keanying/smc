@@ -189,49 +189,53 @@ body {
 .el-card__body { padding: 22px !important; }
 
 /* ---------------- 表格（Element Plus 覆写） ----------------
-   参照客户给的 hina-ui DataTable：圆角卡片 + 轻阴影、浅灰表头、
-   只有行间细线（没有竖线）、行高 44、表头吸顶。
+   全站统一成 iView Table 的样子（客户指定，https://v4.iviewui.com/components/table），颜色跟紫色主题：
+   1px 外框 + 圆角、浅灰表头（加粗）、行间细线、行高约 48、悬停浅紫；
+   带 stripe 的表显示斑马纹，带 border 的表显示竖线（和 iView 的 stripe / border 一致）。
    主列表在页面里加 `class="data-table"` 和 `max-height`，表头就固定在顶上，
    表体在框内滚动（Element Plus 的 max-height 本身就是吸顶表头）。 */
 .el-table {
-  --el-table-border-color: #f0eff7;
-  --el-table-border: 1px solid #f0eff7;
-  --el-table-header-bg-color: #f6f5fc;
-  --el-table-header-text-color: #6e6a92;
+  --el-table-border-color: #e9e8f2;
+  --el-table-border: 1px solid #e9e8f2;
+  --el-table-header-bg-color: #f7f7fb;
+  --el-table-header-text-color: #515a6e;
   --el-table-text-color: #22203a;
-  --el-table-row-hover-bg-color: #faf9fe;
+  --el-table-row-hover-bg-color: #f0effb;
   --el-table-bg-color: #ffffff;
   --el-table-tr-bg-color: #ffffff;
   font-size: 14px;
-  border-radius: var(--smc-radius);
+  border-radius: 10px;
   overflow: hidden;
-  border: none;
-  box-shadow: var(--smc-shadow);
+  border: 1px solid #e9e8f2;
+  box-shadow: none;
 }
-/* 外层已经有边框/阴影的容器里，表格不再叠一层阴影 */
+/* 外层已经有边框的容器里（卡片、对话框、嵌套表）不再叠一层外框 */
 .el-card .el-table, .el-dialog .el-table, .el-table .el-table, .el-collapse .el-table {
   box-shadow: none;
 }
 .el-table th.el-table__cell {
-  font-weight: 500;
-  font-size: 14px;
-  height: 46px;
-  background: #f6f5fc;
+  font-weight: 600;
+  font-size: 13px;
+  height: 42px;
+  background: #f7f7fb;
 }
-.el-table .el-table__cell { padding: 10px 0; }
-.el-table .cell { padding: 0 12px; line-height: 22px; }
-.el-table--small .el-table__cell { padding: 7px 0; }
-.el-table--small th.el-table__cell { height: 40px; }
+.el-table .el-table__cell { padding: 12px 0; }
+.el-table .cell { padding: 0 14px; line-height: 22px; }
+.el-table--small .el-table__cell { padding: 8px 0; }
+.el-table--small th.el-table__cell { height: 38px; }
 .el-table--small, .el-table--small .el-table__cell { font-size: 13px; }
-/* 只要行间线，不要竖线——带 border 属性的表也统一 */
-.el-table--border .el-table__cell { border-right: none !important; }
+/* Element Plus 自带的外框伪元素和我们的 1px 外框重了，去掉 */
 .el-table--border .el-table__inner-wrapper::after,
 .el-table--border::after, .el-table--border::before,
 .el-table__border-left-patch { display: none !important; }
+.el-table--border .el-table__cell:last-child { border-right: none; }
 .el-table__inner-wrapper::before { background-color: transparent; }
-.el-table .el-table__row--striped td.el-table__cell { background: #ffffff !important; }
+/* 斑马纹（stripe）：偶数行浅灰，悬停照样变浅紫 */
+.el-table .el-table__row--striped td.el-table__cell { background: #fafafd; }
+.el-table .el-table__body tr.el-table__row--striped:hover > td.el-table__cell,
+.el-table .el-table__body tr.hover-row > td.el-table__cell { background: #f0effb; }
 /* 滚出可视区时的边缘阴影：表体能左右滚时，固定列边上有一道柔和的分隔 */
-.el-table__fixed-right-patch { background: #f6f5fc; }
+.el-table__fixed-right-patch { background: #f7f7fb; }
 .el-table .el-table-fixed-column--right.is-first-column::before,
 .el-table .el-table-fixed-column--left.is-last-column::before {
   box-shadow: inset 10px 0 10px -10px rgba(0, 0, 0, 0.12);
