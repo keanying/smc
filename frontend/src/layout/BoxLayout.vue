@@ -24,12 +24,12 @@
       <div v-if="currentUser" class="rail-foot">
         <el-tooltip content="修改密码" placement="right" :show-after="200">
           <button type="button" class="rail-btn" aria-label="修改密码" @click="passwordVisible = true">
-            <el-icon><Key /></el-icon>
+            <el-icon><component :is="NAV_ICONS.password" /></el-icon>
           </button>
         </el-tooltip>
         <el-tooltip content="退出登录" placement="right" :show-after="200">
           <button type="button" class="rail-btn" aria-label="退出登录" @click="logout">
-            <el-icon><SwitchButton /></el-icon>
+            <el-icon><component :is="NAV_ICONS.logout" /></el-icon>
           </button>
         </el-tooltip>
       </div>
@@ -78,9 +78,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import {
-  DataAnalysis, HomeFilled, Key, List, MagicStick, SwitchButton, Tickets, User,
-} from '@element-plus/icons-vue'
+import { NAV_ICONS } from './navIcons'
 import { authApi, settingsApi } from '../api'
 import { currentUser, loadAuth } from '../composables/auth'
 import ChangePasswordDialog from '../components/ChangePasswordDialog.vue'
@@ -92,12 +90,12 @@ const health = ref<Record<string, any> | null>(null)
 
 /** 景区版只有这几项：景区管理 / 景区档案 / 指标计算 / 集群 / 系统设置都在总部 */
 const menu = [
-  { path: '/', label: '概览', icon: HomeFilled },
-  { path: '/tasks', label: '任务管理', icon: List },
-  { path: '/runs', label: '运行记录', icon: Tickets },
-  { path: '/data', label: '数据中心', icon: DataAnalysis },
-  { path: '/labeling', label: '标注审核', icon: MagicStick },
-  { path: '/accounts', label: '账号管理', icon: User },
+  { path: '/', label: '概览', icon: NAV_ICONS.home },
+  { path: '/tasks', label: '任务管理', icon: NAV_ICONS.task },
+  { path: '/runs', label: '运行记录', icon: NAV_ICONS.run },
+  { path: '/data', label: '数据中心', icon: NAV_ICONS.data },
+  { path: '/labeling', label: '标注审核', icon: NAV_ICONS.label },
+  { path: '/accounts', label: '账号管理', icon: NAV_ICONS.account },
 ]
 
 

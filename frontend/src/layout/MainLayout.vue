@@ -10,76 +10,29 @@
   <!-- 铺满窗口；左边是紫色渐变的圆角侧栏 -->
   <div class="app-frame">
   <el-container class="app-shell">
-    <!-- 窄屏自动收成只显示图标（也可以点顶栏左边的按钮手动收起 / 展开） -->
-    <el-aside :width="collapsed ? '76px' : '188px'" class="aside-menu" :class="{ 'is-collapsed': collapsed }">
+    <!-- 窄屏自动收成只显示图标（也可以点侧栏边上的小圆钮手动收起 / 展开）。
+         收起的宽度刚好让图标停在原来那一列：展开 / 收起时图标不跳 -->
+    <el-aside :width="collapsed ? '78px' : '200px'" class="aside-menu" :class="{ 'is-collapsed': collapsed }">
       <div class="aside-pill">
-      <div class="logo">
-        <!-- LOGO 原样使用（深色侧栏上垫一块白底，深蓝的「云听」才看得清），只按高度等比缩放 -->
-        <span class="logo-tile"><img class="logo-img" src="/logo.png" alt="CloudSense 云听" /></span>
-        <div v-show="!collapsed" class="logo-text">
-          <div class="logo-title">CloudSense</div>
-          <div class="logo-sub">云听社媒舆情分析</div>
+        <div class="logo">
+          <!-- LOGO 原样使用（深色侧栏上垫一块白底，深蓝的「云听」才看得清），只按高度等比缩放 -->
+          <span class="logo-tile"><img class="logo-img" src="/logo.png" alt="CloudSense 云听" /></span>
+          <div class="logo-text">
+            <div class="logo-title">CloudSense</div>
+            <div class="logo-sub">云听社媒舆情分析</div>
+          </div>
         </div>
+        <SideMenu :items="menuItems" :actions="menuActions" :active="activeMenu" :collapsed="collapsed" />
       </div>
-      <el-menu
-        router
-        :default-active="activeMenu"
-        :default-openeds="['task-group']"
-        :collapse="collapsed"
-        :collapse-transition="false"
-        class="side-menu"
-        background-color="transparent"
-        text-color="rgba(255,255,255,0.72)"
-        active-text-color="#ffffff"
-      >
-        <el-menu-item index="/">
-          <el-icon><HomeFilled /></el-icon><template #title>概览</template>
-        </el-menu-item>
-        <el-menu-item index="/scenics">
-          <el-icon><LocationFilled /></el-icon><template #title>目标管理</template>
-        </el-menu-item>
-        <!-- 任务管理：任务列表 + 运行记录（每执行一次一条） -->
-        <el-sub-menu index="task-group" popper-class="side-menu-popper">
-          <template #title><el-icon><List /></el-icon><span>任务管理</span></template>
-          <el-menu-item index="/tasks"><template #title>任务列表</template></el-menu-item>
-          <el-menu-item index="/runs"><template #title>运行记录</template></el-menu-item>
-        </el-sub-menu>
-        <el-menu-item index="/data">
-          <el-icon><DataAnalysis /></el-icon><template #title>数据中心</template>
-        </el-menu-item>
-        <el-menu-item index="/labeling">
-          <el-icon><MagicStick /></el-icon><template #title>标注审核</template>
-        </el-menu-item>
-        <!-- 指标计算是可选模块：系统设置里打开才出现 -->
-        <el-menu-item v-if="metricsEnabled" index="/metrics">
-          <el-icon><TrendCharts /></el-icon><template #title>指标计算</template>
-        </el-menu-item>
-        <el-menu-item index="/accounts">
-          <el-icon><User /></el-icon><template #title>账号管理</template>
-        </el-menu-item>
-        <el-menu-item index="/cluster">
-          <el-icon><Connection /></el-icon><template #title>集群</template>
-        </el-menu-item>
-        <!-- 系统设置：档案、盒子管理也在里面。非管理员进来只看得到「档案」 -->
-        <el-menu-item index="/settings">
-          <el-icon><Setting /></el-icon><template #title>系统设置</template>
-        </el-menu-item>
-      </el-menu>
-      <!-- 侧栏底部：退出登录 -->
-      <div v-if="currentUser" class="aside-foot">
-        <button class="aside-exit" type="button" title="退出登录" @click="onUserCommand('logout')">
-          <el-icon><SwitchButton /></el-icon><span v-show="!collapsed">退出登录</span>
+      <!-- 收起 / 展开：贴在侧栏右边缘的小圆钮 -->
+      <el-tooltip :content="collapsed ? '展开菜单' : '收起菜单'" placement="right" :show-after="200">
+        <button class="aside-toggle" type="button" :aria-label="collapsed ? '展开菜单' : '收起菜单'" @click="toggleCollapse">
+          <el-icon><component :is="collapsed ? ChevronForward : ChevronBack" /></el-icon>
         </button>
-      </div>
-      </div>
+      </el-tooltip>
     </el-aside>
     <el-container>
       <el-header height="68px" class="app-header">
-        <el-tooltip :content="collapsed ? '展开菜单' : '收起菜单'" placement="bottom">
-          <button class="header-btn" type="button" @click="toggleCollapse">
-            <el-icon><component :is="collapsed ? Expand : Fold" /></el-icon>
-          </button>
-        </el-tooltip>
         <div class="header-right">
           <!-- 窗口窄的时候状态胶囊放不下，先藏起来（齿轮还在，健康状态照样看得到） -->
           <span v-if="health && !narrow" class="header-meta">
@@ -220,15 +173,16 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import {
-  ArrowDown, Connection, Expand, Fold, Monitor, Setting, SwitchButton, TrendCharts,
-} from '@element-plus/icons-vue'
+import { ArrowDown, Monitor, Setting } from '@element-plus/icons-vue'
+import { ChevronBack, ChevronForward } from '@vicons/ionicons5'
 import { authApi, settingsApi } from '../api'
 import { loadFeatures, metricsEnabled } from '../composables/features'
 import { currentUser, isAdmin, loadAuth } from '../composables/auth'
 import ChangePasswordDialog from '../components/ChangePasswordDialog.vue'
 import { channelLabel } from '../constants'
 import { layoutWidth, setZoomMode, zoom, zoomMode, ZOOM_OPTIONS } from '../composables/zoom'
+import SideMenu, { type NavAction, type NavItem } from './SideMenu.vue'
+import { NAV_ICONS } from './navIcons'
 
 const route = useRoute()
 const router = useRouter()
@@ -241,6 +195,25 @@ const activeMenu = computed(() => {
   if (route.path.startsWith('/tasks')) return '/tasks'
   return route.path
 })
+/** 侧边栏菜单。指标计算是可选模块：系统设置里打开才出现；系统设置里也有档案、盒子管理（非管理员只看得到档案） */
+const menuItems = computed<NavItem[]>(() => [
+  { key: 'home', path: '/', label: '概览', icon: NAV_ICONS.home },
+  { key: 'scenics', path: '/scenics', label: '目标管理', icon: NAV_ICONS.target },
+  // 任务管理：任务列表 + 运行记录（每执行一次一条）
+  {
+    key: 'task-group', label: '任务管理', icon: NAV_ICONS.task,
+    children: [{ path: '/tasks', label: '任务列表' }, { path: '/runs', label: '运行记录' }],
+  },
+  { key: 'data', path: '/data', label: '数据中心', icon: NAV_ICONS.data },
+  { key: 'labeling', path: '/labeling', label: '标注审核', icon: NAV_ICONS.label },
+  ...(metricsEnabled.value ? [{ key: 'metrics', path: '/metrics', label: '指标计算', icon: NAV_ICONS.metrics }] : []),
+  { key: 'accounts', path: '/accounts', label: '账号管理', icon: NAV_ICONS.account },
+  { key: 'cluster', path: '/cluster', label: '集群', icon: NAV_ICONS.cluster },
+  { key: 'settings', path: '/settings', label: '系统设置', icon: NAV_ICONS.settings },
+])
+const menuActions = computed<NavAction[]>(() => (currentUser.value
+  ? [{ key: 'logout', label: '退出登录', icon: NAV_ICONS.logout, onClick: () => onUserCommand('logout') }]
+  : []))
 /** 顶栏「运行中任务」「浏览器」点过去改上限的地方 */
 const RUNTIME_SETTINGS = { path: '/settings', query: { tab: 'runtime' } }
 
@@ -378,9 +351,12 @@ onUnmounted(() => window.clearInterval(timer))
 }
 
 .aside-menu {
+  position: relative;
   padding: 12px 0 12px 12px;
   background: transparent;
+  overflow: visible;
   z-index: 10;
+  transition: width 0.2s ease;
 }
 /* 紫色渐变的圆角侧栏 */
 .aside-pill {
@@ -393,13 +369,17 @@ onUnmounted(() => window.clearInterval(timer))
   overflow: hidden;
 }
 
+/* LOGO 白块的中心和菜单图标同一列（收起时正好居中） */
 .logo {
+  flex: none;
   height: 60px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 12px;
+  padding: 0 0 0 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  white-space: nowrap;
+  overflow: hidden;
 }
 .logo-tile {
   display: inline-flex;
@@ -415,6 +395,7 @@ onUnmounted(() => window.clearInterval(timer))
   height: 24px;
   width: auto;
 }
+.logo-text { transition: opacity 0.15s ease; }
 .logo-title {
   color: #fff;
   font-weight: 700;
@@ -428,86 +409,30 @@ onUnmounted(() => window.clearInterval(timer))
   white-space: nowrap;
   letter-spacing: 0.3px;
 }
+.aside-menu.is-collapsed .logo-text { opacity: 0; }
 
-.side-menu {
-  border-right: none;
-  flex: 1;
-  padding: 10px 8px;
-  overflow-y: auto;
-}
-.side-menu :deep(.el-menu-item) {
-  height: 36px;
-  line-height: 36px;
-  margin: 2px 0;
-  padding: 0 8px !important;
-  border-radius: 11px;
-  font-size: 13px;
-  transition: background-color 0.15s ease, color 0.15s ease;
-}
-/* 图标放进一个小圆角方块里（参考图里选中项的样子） */
-.side-menu :deep(.el-menu-item .el-icon) {
-  font-size: 14px;
-  margin-right: 8px;
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-  transition: background-color 0.15s ease;
-}
-.side-menu :deep(.el-sub-menu__title) {
-  height: 36px;
-  line-height: 36px;
-  margin: 2px 0;
-  padding: 0 8px !important;
-  border-radius: 11px;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.72);
-}
-.side-menu :deep(.el-sub-menu__title .el-icon:not(.el-sub-menu__icon-arrow)) {
-  font-size: 14px; margin-right: 8px; width: 24px; height: 24px; border-radius: 8px;
-}
-.side-menu :deep(.el-sub-menu__title:hover) { background: rgba(255, 255, 255, 0.10); color: #fff; }
-.side-menu :deep(.el-sub-menu.is-active > .el-sub-menu__title) { color: #fff; font-weight: 600; }
-.side-menu :deep(.el-sub-menu .el-menu) { background: transparent; }
-/* 子项：和标题文字对齐（跳过图标那一格），不要图标块 */
-.side-menu :deep(.el-sub-menu .el-menu-item) { padding-left: 40px !important; height: 32px; line-height: 32px; }
-.side-menu :deep(.el-menu-item:hover) {
-  background: rgba(255, 255, 255, 0.10);
-  color: #fff;
-}
-.side-menu :deep(.el-menu-item.is-active) {
-  background: rgba(255, 255, 255, 0.18);
-  color: #fff;
-  font-weight: 600;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
-}
-.side-menu :deep(.el-menu-item.is-active .el-icon) {
+/* 收起 / 展开的小圆钮：骑在侧栏右边缘、LOGO 分隔线的位置 */
+.aside-toggle {
+  position: absolute;
+  top: 61px;
+  right: -11px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
   background: #fff;
   color: var(--smc-primary);
-  box-shadow: 0 4px 10px rgba(40, 30, 110, 0.25);
-}
-.aside-foot {
-  padding: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.14);
-}
-.aside-exit {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border: none;
-  border-radius: 11px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 13px;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(40, 30, 110, 0.28);
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
-.aside-exit .el-icon {
-  width: 24px; height: 24px; border-radius: 8px; font-size: 14px;
-  background: rgba(255, 255, 255, 0.14);
-}
-.aside-exit:hover { background: rgba(255, 255, 255, 0.10); color: #fff; }
+.aside-toggle:hover { transform: scale(1.12); box-shadow: 0 4px 12px rgba(40, 30, 110, 0.36); }
+.aside-toggle:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
 
 .health-dot {
   width: 6px;
@@ -562,22 +487,14 @@ onUnmounted(() => window.clearInterval(timer))
   gap: 12px;
   padding: 0 28px;
 }
-.header-btn, .zoom-chip {
+.zoom-chip {
   display: inline-flex; align-items: center; justify-content: center; gap: 4px;
   height: 32px; border: none; border-radius: 16px; background: #fff; box-shadow: var(--smc-shadow);
   color: var(--smc-text-secondary); cursor: pointer; transition: box-shadow 0.15s, color 0.15s;
 }
-.header-btn { width: 32px; font-size: 16px; }
 .zoom-chip { padding: 0 12px; font-size: 12px; }
-.header-btn:hover, .zoom-chip:hover { box-shadow: var(--smc-shadow-hover); color: var(--el-color-primary); }
+.zoom-chip:hover { box-shadow: var(--smc-shadow-hover); color: var(--el-color-primary); }
 :global(.el-dropdown-menu__item.is-current) { color: var(--el-color-primary); font-weight: 600; }
-
-/* 侧边栏收起时，「任务管理」的子菜单是悬浮弹出的（挂在 body 下）：给它紫色底，不然白字看不见 */
-:global(.side-menu-popper.el-popper) { border: none; border-radius: 12px; overflow: hidden; }
-:global(.side-menu-popper .el-menu) { background: var(--smc-gradient) !important; padding: 6px; border-radius: 12px; }
-:global(.side-menu-popper .el-menu-item) { height: 34px; line-height: 34px; border-radius: 8px; color: rgba(255, 255, 255, 0.85) !important; }
-:global(.side-menu-popper .el-menu-item:hover) { background: rgba(255, 255, 255, 0.12) !important; color: #fff !important; }
-:global(.side-menu-popper .el-menu-item.is-active) { background: rgba(255, 255, 255, 0.2) !important; color: #fff !important; font-weight: 600; }
 
 /* 顶栏悬停卡片：分行列出在跑的任务、浏览器被谁占着（弹层在 body 下，要用 :global） */
 :global(.meta-tip.el-popper) { max-width: 380px; line-height: 1.6; font-size: 12px; padding: 10px 12px; }
@@ -595,14 +512,6 @@ onUnmounted(() => window.clearInterval(timer))
 :global(.meta-tip .tip-kv dt) { opacity: 0.65; }
 :global(.meta-tip .tip-kv dd) { margin: 0; }
 
-/* 侧边栏收起：只留图标，文字靠悬停提示 */
-.aside-menu { transition: width 0.2s ease; }
-.aside-menu.is-collapsed .logo { justify-content: center; padding: 0; }
-.aside-menu.is-collapsed .side-menu { width: auto; }
-.aside-menu.is-collapsed .side-menu :deep(.el-menu-item),
-.aside-menu.is-collapsed .side-menu :deep(.el-menu-tooltip__trigger) { justify-content: center; padding: 0 !important; }
-.aside-menu.is-collapsed .side-menu :deep(.el-menu-item .el-icon) { margin-right: 0; }
-.aside-menu.is-collapsed .aside-exit { justify-content: center; }
 /* 顶栏只放右边的状态和当前用户（页面标题各页自己有，不再重复显示面包屑） */
 .header-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 /* 右上角的状态做成一条白色胶囊 */
