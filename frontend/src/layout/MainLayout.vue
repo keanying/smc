@@ -35,10 +35,10 @@
           <el-icon><HomeFilled /></el-icon><template #title>概览</template>
         </el-menu-item>
         <el-menu-item index="/scenics">
-          <el-icon><LocationFilled /></el-icon><template #title>景区管理</template>
+          <el-icon><LocationFilled /></el-icon><template #title>目标管理</template>
         </el-menu-item>
         <el-menu-item index="/archive">
-          <el-icon><Collection /></el-icon><template #title>景区档案</template>
+          <el-icon><Collection /></el-icon><template #title>档案</template>
         </el-menu-item>
         <el-menu-item index="/tasks">
           <el-icon><List /></el-icon><template #title>任务管理</template>

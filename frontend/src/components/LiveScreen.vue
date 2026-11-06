@@ -110,7 +110,7 @@
       <!-- 只读预览的说明收进了标题旁的 ⓘ：采集器正按自己的节奏走流程，插一脚会让它的下一步落空 -->
       <div v-if="info" class="muted live-foot">
         {{ channelLabel(info.channel) }} · 账号 {{ info.account_name }} ·
-        景区 {{ info.scenic_name }} · 已跑 {{ Math.round(info.running_seconds / 60) }} 分钟
+        目标 {{ info.scenic_name }} · 已跑 {{ Math.round(info.running_seconds / 60) }} 分钟
       </div>
     </template>
   </el-card>

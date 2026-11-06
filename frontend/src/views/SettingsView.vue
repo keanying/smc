@@ -144,7 +144,7 @@
             <div class="section-title form-section">任务默认值</div>
             <el-form-item>
               <template #label>
-                <span class="lbl">默认关键字上限<InfoTip content="新建任务「从景区带入」时一次最多带这么多关键字" /></span>
+                <span class="lbl">默认关键字上限<InfoTip content="新建任务「从目标带入」时一次最多带这么多关键字" /></span>
               </template>
               <el-input-number v-model="crawl.default_keyword_limit" :min="1" :max="1000" class="num" />
               <span class="unit">个</span>
@@ -289,7 +289,7 @@
               <template #label>
                 <span class="lbl">作品水印有效期<InfoTip>
                   作品 / 笔记 / 微博级别的记号，采过的直接跳过。<br>
-                  <b>不分景区</b>：同一条作品被两个景区的关键字搜到，也只采一次。
+                  <b>不分目标</b>：同一条作品被两个目标的关键字搜到，也只采一次。
                 </InfoTip></span>
               </template>
               <el-input-number v-model="crawl.dedup.work_ttl_seconds" :min="0" :step="86400"
@@ -585,7 +585,7 @@
                     <span class="lbl">开启指标计算<InfoTip :width="320">
                       用采集到的评论（含 AI 标注结果）算舆情指标：核心指标、平台分布、维度得分、
                       关键词云、下钻明细、大盘 KPI 六张表，可定时计算并推送给下游。<br>
-                      打开后左侧菜单出现「指标计算」，景区、参数、定时、推送都在那里维护。
+                      打开后左侧菜单出现「指标计算」，目标、参数、定时、推送都在那里维护。
                     </InfoTip></span>
                   </template>
                   <el-switch v-model="metrics.enabled" />

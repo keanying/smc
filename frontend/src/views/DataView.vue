@@ -11,7 +11,7 @@
     <div class="page-header">
       <h2 class="page-title">
         数据中心
-        <InfoTip content="按景区 + 平台查看作品与评论。导出沿用当前的景区、平台和发布时间筛选（不含关键字）。" />
+        <InfoTip content="按目标 + 平台查看作品与评论。导出沿用当前的目标、平台和发布时间筛选（不含关键字）。" />
       </h2>
       <div class="header-actions">
         <!-- export 图标是黑色的，只能放浅色按钮上，所以两个导出都用默认按钮 -->
@@ -35,7 +35,7 @@
         <div class="stat-num">{{ formatCount(totals.comments) }}</div>
       </div>
       <div class="stat-box">
-        <div class="stat-cap">有数据的景区</div>
+        <div class="stat-cap">有数据的目标</div>
         <div class="stat-num">{{ overview.length }}</div>
       </div>
       <div class="stat-box stat-box-wide">
@@ -72,7 +72,7 @@
     <!-- ============ 筛选 ============ -->
     <el-card shadow="never" class="filter-card">
       <div class="filter-row">
-        <el-select v-model="query.scenic_id" placeholder="全部景区" clearable filterable
+        <el-select v-model="query.scenic_id" placeholder="全部目标" clearable filterable
                    style="width: 180px" @change="loadWorks(true)">
           <el-option v-for="s in scenics" :key="s.scenic_id" :label="s.scenic_name" :value="s.scenic_id" />
         </el-select>
@@ -93,7 +93,7 @@
         <el-checkbox v-model="query.include_synthetic" @change="loadWorks(true)">
           含携程/同程点评集合
         </el-checkbox>
-        <InfoTip content="携程/同程没有作品概念，评论挂在按景区生成的「点评集合」上。" />
+        <InfoTip content="携程/同程没有作品概念，评论挂在按目标生成的「点评集合」上。" />
         <div class="filter-spacer" />
         <el-button v-if="hasFilter" link @click="resetFilters">清空条件</el-button>
         <el-button type="primary" :icon="Search" @click="loadWorks(true)">查询</el-button>
@@ -166,7 +166,7 @@
           </div>
 
           <div v-if="isSynthetic(row)" class="muted work-note">
-            景区点评集合
+            目标点评集合
             <InfoTip content="携程/同程没有作品概念，这是评论的挂载点。" />
           </div>
           <div v-else-if="row.description && row.description !== row.title" class="work-desc">

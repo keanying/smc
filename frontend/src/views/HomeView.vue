@@ -64,7 +64,7 @@
 
             <div class="hero-stats">
               <div class="hero-stat">
-                <div class="hs-label">景区</div>
+                <div class="hs-label">目标</div>
                 <div class="hs-value">{{ stats.scenics }}</div>
                 <div class="hs-sub">在采集</div>
               </div>
@@ -113,8 +113,8 @@
 
         <!-- 采集量前三的景区 -->
         <div class="section-head">
-          <span>采集量靠前的景区</span>
-          <button type="button" class="more" @click="go('/scenics')">全部景区</button>
+          <span>采集量靠前的目标</span>
+          <button type="button" class="more" @click="go('/scenics')">全部目标</button>
         </div>
         <div v-if="topScenics.length" class="scenic-row">
           <div role="link" tabindex="0" v-for="(s, i) in topScenics" :key="s.scenic_id" class="scenic-card" @click="go({ path: '/data', query: { scenic_id: s.scenic_id } })" @keydown.enter="go({ path: '/data', query: { scenic_id: s.scenic_id } })">
@@ -133,7 +133,7 @@
           </div>
         </div>
         <el-empty v-else class="white-empty" description="还没有采集到数据" :image-size="72">
-          <el-button type="primary" @click="$router.push('/scenics')">添加景区</el-button>
+          <el-button type="primary" @click="$router.push('/scenics')">添加目标</el-button>
         </el-empty>
       </div>
 
@@ -231,9 +231,9 @@ const CHANNEL_NOTES: Record<string, string> = {
   kuaishou: '关键字 / 主页 / 两级评论',
   xiaohongshu: '关键字 / 主页 / 两级评论',
   weibo: '关键字 / 主页 / 两级评论',
-  ctrip: '按 POI_ID 采景区点评',
-  tongcheng: '按 sid 采景区点评',
-  qunar: '按景区采点评',
+  ctrip: '按 POI_ID 采目标点评',
+  tongcheng: '按 sid 采目标点评',
+  qunar: '按目标采点评',
 }
 
 // 卡片用点击跳转、不用 <a> 链接：<a> 鼠标一放上去浏览器左下角就冒出一串网址，很突兀

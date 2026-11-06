@@ -74,7 +74,7 @@
             <el-descriptions-item label="任务 ID">
               <span class="mono task-id">{{ taskId }}</span>
             </el-descriptions-item>
-            <el-descriptions-item label="景区">{{ task?.scenic_id || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="目标">{{ task?.scenic_id || '-' }}</el-descriptions-item>
             <el-descriptions-item label="平台">
               <el-tag
                 v-for="c in task?.channels || []" :key="c" size="small"
@@ -120,7 +120,7 @@
         <el-card shadow="never" style="margin-top: 16px">
           <template #header>
             <div style="display: flex; justify-content: space-between; align-items: center">
-              <span>采集上限<InfoTip content="携程/同程没有作品，只有景区点评，所以作品数为空" /></span>
+              <span>采集上限<InfoTip content="携程/同程没有作品，只有目标点评，所以作品数为空" /></span>
               <IconAction icon="edit" tip="修改" @click="editVisible = true" />
             </div>
           </template>
@@ -172,7 +172,7 @@
             <img :src="task?.params?.ai_filter ? aiIcon : aiIconDark" alt="" class="ai-icon" />AI 过滤
           </div>
           <div class="sub-text">
-            {{ task?.params?.ai_filter ? '已开启：过完关键字的作品再让 AI 判一次是否在讲本景区，不相关的丢弃' : '未开启' }}
+            {{ task?.params?.ai_filter ? '已开启：过完关键字的作品再让 AI 判一次是否在讲本目标，不相关的丢弃' : '未开启' }}
           </div>
         </el-card>
 
@@ -183,7 +183,7 @@
               style="margin: 0 6px 6px 0"
             >{{ k }}</el-tag>
           </div>
-          <span v-else class="muted" style="font-size: 13px">未指定，执行时从景区自动带入</span>
+          <span v-else class="muted" style="font-size: 13px">未指定，执行时从目标自动带入</span>
         </el-card>
       </el-col>
     </el-row>

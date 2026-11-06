@@ -38,7 +38,7 @@
         </el-form-item>
         <el-form-item v-if="poiChannels.length">
           <template #label>
-            景区点评数<InfoTip content="携程/同程没有作品，只有点评" />
+            目标点评数<InfoTip content="携程/同程没有作品，只有点评" />
           </template>
           <el-input-number v-model="model.max_comments" :min="0" :max="100000" style="width: 130px" />
         </el-form-item>
@@ -90,7 +90,7 @@
             <el-tag size="small" :color="CHANNEL_COLORS[channel]" style="color: #fff; border: none">
               {{ channelLabel(channel) }}
             </el-tag>
-            <InfoTip :content="POI_CHANNELS.includes(channel) ? '只有景区点评一层' : '作品 + 作品下的评论两层'" />
+            <InfoTip :content="POI_CHANNELS.includes(channel) ? '只有目标点评一层' : '作品 + 作品下的评论两层'" />
           </div>
 
           <template v-if="!POI_CHANNELS.includes(channel)">
@@ -159,14 +159,14 @@
       <div class="form-section">通用</div>
 
       <!-- 内容过滤是任务级的（不分平台），所以放在两种设置方式之外。
-           词表（附关键字/过滤关键字）配在景区上而不是任务上：以前每建一个任务都要重填一遍，
-           同一个景区跑十个任务就填十遍，改一次要改十处，漏改一处两个任务采出来的东西就不一样了。 -->
+           词表（附关键字/过滤关键字）配在目标上而不是任务上：以前每建一个任务都要重填一遍，
+           同一个目标跑十个任务就填十遍，改一次要改十处，漏改一处两个任务采出来的东西就不一样了。 -->
       <el-form-item v-if="workChannels.length">
         <template #label>
           内容过滤<InfoTip :width="380">
             平台搜索结果里夹着推荐和广告（搜「八大处」能搜出「点斑祛斑」）。关掉就全部存下来，评论也照采。<br>
             <b>附关键字</b>（命中就留存）和<b>过滤关键字</b>（命中就丢弃）在
-            <b>景区管理 → 选中景区</b> 里配，一个景区配一次、所有任务共用。<br>
+            <b>目标管理 → 选中目标</b> 里配，一个目标配一次、所有任务共用。<br>
             判定顺序：<b>主关键字</b>拿去搜 → <b>附关键字</b>决定留不留 → <b>过滤关键字</b>决定丢不丢。
           </InfoTip>
         </template>
@@ -183,9 +183,9 @@
             <img :src="model.ai_filter ? aiIcon : aiIconDark" alt="" class="ai-icon" />AI 过滤
           </span>
           <InfoTip :width="400">
-            关键字挡得住完全不沾边的，挡不住<b>字面命中、内容却不是本景区</b>的
+            关键字挡得住完全不沾边的，挡不住<b>字面命中、内容却不是本目标</b>的
             （别的省市的同名景点、诗词歌词里的地名、蹭话题标签的带货）。<br>
-            打开后，过完关键字的作品再让 AI 判一次是不是在讲本景区，不相关的丢弃、评论也不翻。<br>
+            打开后，过完关键字的作品再让 AI 判一次是不是在讲本目标，不相关的丢弃、评论也不翻。<br>
             用的是「系统设置 → 标注」里的模型；模型没配或判不了的<b>按相关留下</b>。每条作品多一次模型调用，会慢一点、花一点 Token。
           </InfoTip>
         </template>

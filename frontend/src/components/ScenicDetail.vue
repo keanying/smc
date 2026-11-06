@@ -118,7 +118,7 @@
         <span class="word-quota">{{ markWords.length }} / {{ MAX_MARK }}</span>
         <InfoTip :width="380">
           <b>评论原文里出现就提取</b>，作为 AI 标注关键词的补充（AI 的关键词照常提取，不受影响）。<br />
-          用来抓景区名、明星、剧名这类主体词——AI 的关键词只放「支撑情感判断的词」，这类词它不会提。<br />
+          用来抓目标名、明星、剧名这类主体词——AI 的关键词只放「支撑情感判断的词」，这类词它不会提。<br />
           新采的评论入库时自动识别；补充或修改了标注字后，点「重新识别历史评论」把已有的评论按新词表重算。
         </InfoTip>
         <el-button :loading="markRunning" style="margin-left: auto" @click="applyMark">
@@ -164,11 +164,11 @@
       <template #label>标注灌注<span v-if="labelRule.prompt.trim()" class="tab-count">已配</span></template>
 
       <div class="label-head">
-        <span class="muted label-desc">本景区的补充标注要求，标注时拼进 AI 提示词</span>
+        <span class="muted label-desc">本目标的补充标注要求，标注时拼进 AI 提示词</span>
         <InfoTip :width="400">
           和通用规则一起提取维度、实体、关键词；冲突时以这里为准，维度、实体仍只能从标签体系里选。<br />
-          写法：直接写给 AI 看的要求，如关键词定义、提取粒度、步骤，或本景区的特殊说法
-          （「梦梦是一只斑海豹」「提到《小城良方》算与本景区相关」）。<br />
+          写法：直接写给 AI 看的要求，如关键词定义、提取粒度、步骤，或本目标的特殊说法
+          （「梦梦是一只斑海豹」「提到《小城良方》算与本目标相关」）。<br />
           边采边标、一键补标、单条重标都会带上；<b>已经标过的评论不会自动重标</b>。
         </InfoTip>
       </div>
@@ -181,7 +181,7 @@
         <el-switch v-model="labelRule.broad_keywords" />
         <span class="label-switch-text">关键词放宽</span>
         <InfoTip :width="380">
-          打开后这个景区的关键词：<b>不要求和整体情感同向</b>（中性评论里的「好看但贵」也留）、
+          打开后这个目标的关键词：<b>不要求和整体情感同向</b>（中性评论里的「好看但贵」也留）、
           专有名称可以带书名号保留全称、每个最长 30 字、每条最多 20 个。仍然必须是原文里出现的，编造的照样丢。<br />
           不打开：关键词还按原来的规则（只留和整体情感同向的、最多 8 个、每个最长 12 字）。<br />
           像上面例子那样重新定义了关键词的，要打开。
@@ -210,7 +210,7 @@
           v-if="targetForm.target_type === 'poi' && ARCHIVE_CHANNELS.includes(targetForm.channel)"
           v-model="targetForm.target_id" filterable remote clearable
           :remote-method="searchArchive" :loading="searchingArchive"
-          placeholder="输入景区名搜档案，或直接填 POI ID"
+          placeholder="输入目标名搜档案，或直接填 POI ID"
           allow-create default-first-option style="width: 300px"
           @change="onArchivePick"
         >
@@ -221,7 +221,7 @@
           />
           <template #empty>
             <div class="archive-empty">
-              档案里没搜到：可直接填 POI ID，或先去「景区档案」采集
+              档案里没搜到：可直接填 POI ID，或先去「档案」采集
             </div>
           </template>
         </el-select>
@@ -232,13 +232,13 @@
         <el-input v-model="targetForm.target_name" placeholder="备注名（可选）" style="width: 160px" clearable />
         <el-input
           v-if="targetForm.target_type === 'poi' && ARCHIVE_CHANNELS.includes(targetForm.channel)"
-          v-model="targetForm.target_url" placeholder="景区主页链接（可选）"
+          v-model="targetForm.target_url" placeholder="目标主页链接（可选）"
           style="width: 300px" clearable
         />
         <el-button type="primary" :loading="savingTarget" @click="saveTarget">添加</el-button>
         <InfoTip :width="380">
-          <b>POI 点评</b>：携程填 POI_ID，同程填 sid，去哪儿填 POI ID；这三个平台只有景区点评，没有作品。
-          可另填景区主页链接，采集时写进作品链接（work_url），不填则按 POI ID 自动生成。<br />
+          <b>POI 点评</b>：携程填 POI_ID，同程填 sid，去哪儿填 POI ID；这三个平台只有目标点评，没有作品。
+          可另填目标主页链接，采集时写进作品链接（work_url），不填则按 POI ID 自动生成。<br />
           <b>用户主页</b>：抖音填 sec_user_id 或主页链接，快手 / 小红书填 user_id，微博填 uid。
         </InfoTip>
       </div>
@@ -258,9 +258,9 @@
         </el-table-column>
         <el-table-column prop="target_id" label="目标ID" min-width="200" class-name="mono" />
         <el-table-column prop="target_name" label="备注名" width="150" />
-        <el-table-column label="景区主页" min-width="220">
+        <el-table-column label="目标主页" min-width="220">
           <template #header>
-            景区主页<InfoTip content="仅携程 / 同程 / 去哪儿的 POI 目标。采集时写进作品链接（work_url），未指定则按 POI ID 自动生成。" />
+            目标主页<InfoTip content="仅携程 / 同程 / 去哪儿的 POI 目标。采集时写进作品链接（work_url），未指定则按 POI ID 自动生成。" />
           </template>
           <template #default="{ row }">
             <template v-if="isPoiHomepageTarget(row)">
@@ -293,13 +293,13 @@
 
     <!-- 景区档案：这个景区在同程/携程/去哪儿上各自的资料 -->
     <el-tab-pane v-if="hasPoiTarget" name="archive">
-      <template #label>景区档案<span class="tab-count">{{ archives.length }}</span></template>
+      <template #label>档案<span class="tab-count">{{ archives.length }}</span></template>
 
       <div class="section-title">
         已关联的平台档案
         <InfoTip>
-          档案是平台页面上的景区资料，不是采集到的点评，不参与标注。<br />
-          这里只显示已关联到本景区的档案；新增关联请到「景区档案」页搜到后「挂到景区」。
+          档案是平台页面上的目标资料，不是采集到的点评，不参与标注。<br />
+          这里只显示已关联到本目标的档案；新增关联请到「档案」页搜到后「挂到目标」。
         </InfoTip>
       </div>
 
@@ -325,7 +325,7 @@
               <el-tag size="small" type="danger">失败</el-tag>
             </el-tooltip>
             <el-tag v-else-if="row.detail_status === 'success'" size="small" type="success">已采</el-tag>
-            <el-tooltip v-else-if="row.detail_status === 'unsupported'" content="这个平台没有景区详情页，采不到更多字段">
+            <el-tooltip v-else-if="row.detail_status === 'unsupported'" content="这个平台没有目标详情页，采不到更多字段">
               <el-tag size="small" type="info">无</el-tag>
             </el-tooltip>
             <el-tag v-else size="small">待采</el-tag>
@@ -689,7 +689,7 @@ async function editTargetUrl(row: Target) {
   try {
     const result = await ElMessageBox.prompt(
       '留空 = 按 POI ID 自动生成。下次采集时写进作品链接（work_url）。',
-      `景区主页 · ${row.target_name || row.target_id}`,
+      `目标主页 · ${row.target_name || row.target_id}`,
       {
         inputValue: row.target_url || '',
         inputPlaceholder: 'https://…',

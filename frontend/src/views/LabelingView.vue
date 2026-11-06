@@ -59,7 +59,7 @@
       <div class="filters">
         <el-select
           v-model="query.scenic_id" filterable clearable
-          placeholder="全部景区" style="width: 220px"
+          placeholder="全部目标" style="width: 220px"
           @change="onScopeChange"
         >
           <el-option
@@ -245,7 +245,7 @@
             </el-tooltip>
             <!-- 标注字补充：AI 已经提到的不重复显示 -->
             <el-tag v-for="k in extraMarks(row)" :key="`m-${k}`" size="small" type="warning"
-                    class="tag" title="标注字（景区配置的词，原文里出现）">{{ k }}</el-tag>
+                    class="tag" title="标注字（目标配置的词，原文里出现）">{{ k }}</el-tag>
             <span v-if="!row.keyword_tags.length && !extraMarks(row).length" class="muted">—</span>
           </template>
         </el-table-column>
@@ -319,7 +319,7 @@
           </el-form-item>
           <el-form-item v-if="editing?.mark_word_tags?.length" label="标注字">
             <el-tag v-for="k in editing.mark_word_tags" :key="k" size="small" type="warning" class="tag">{{ k }}</el-tag>
-            <span class="muted mark-note">按景区的标注字从原文里自动提取，改词表后在景区管理里重新识别</span>
+            <span class="muted mark-note">按目标的标注字从原文里自动提取，改词表后在目标管理里重新识别</span>
           </el-form-item>
           <el-form-item label="维度标签">
             <el-input v-model="dimensionText" type="textarea" :rows="4"
@@ -463,7 +463,7 @@ const jobTagType = computed(() => ({
 function jobScope(j: BackfillJob): string {
   const s = j.scenic_id
     ? (scenics.value.find((x) => x.scenic_id === j.scenic_id)?.scenic_name || j.scenic_id)
-    : '全部景区'
+    : '全部目标'
   return j.channel ? `${s} / ${CHANNEL_LABELS[j.channel] || j.channel}` : s
 }
 
@@ -480,7 +480,7 @@ async function startBackfill() {
   // 补标要花钱（每条一次模型调用），先说清楚范围再让用户确认
   const scope = query.scenic_id
     ? (scenics.value.find((s) => s.scenic_id === query.scenic_id)?.scenic_name || query.scenic_id)
-    : '全部景区'
+    : '全部目标'
   const unlabeled = stats.value?.unlabeled || 0
   const failed = stats.value?.ai_failed || 0
   try {

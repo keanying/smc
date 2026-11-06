@@ -25,7 +25,7 @@
         <el-option v-for="(label, value) in TASK_STATUS_LABELS" :key="value" :label="label" :value="value" />
       </el-select>
       <el-select
-        v-model="query.scenic_id" placeholder="景区" clearable filterable
+        v-model="query.scenic_id" placeholder="目标" clearable filterable
         style="width: 200px" @change="load"
       >
         <el-option
@@ -49,7 +49,7 @@
           </el-link>
         </template>
       </el-table-column>
-      <el-table-column label="景区" width="140">
+      <el-table-column label="目标" width="140">
         <template #default="{ row }">
           <span>{{ scenicName(row.scenic_id) }}</span>
         </template>
