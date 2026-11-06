@@ -68,16 +68,16 @@
       <div
         ref="stageRef" class="live-stage" :class="{ 'is-takeover': takeover }"
         :tabindex="takeover ? 0 : -1"
-        @keydown="onKeyDown"
+        @keydown="input.onKeyDown" @paste="input.onPaste"
       >
         <img
           v-if="frameSrc" :src="frameSrc" class="live-screen"
           :class="{ 'is-live': takeover }"
-          alt="采集页面实时画面" @error="onFrameError"
-          @mousedown="onMouseDown" @mousemove="onMouseMove"
-          @mouseup="onMouseUp" @mouseleave="onMouseLeave"
-          @wheel.prevent="onWheel" @contextmenu.prevent
-          @dragstart.prevent
+          alt="采集页面实时画面" draggable="false" @error="onFrameError"
+          @pointerdown="input.onPointerDown" @pointermove="input.onPointerMove"
+          @pointerup="input.onPointerUp" @pointercancel="input.onPointerCancel"
+          @lostpointercapture="input.onPointerCancel"
+          @wheel="input.onWheel" @contextmenu.prevent @dragstart.prevent
         />
         <div v-else class="live-placeholder">
           <el-icon class="is-loading" :size="26"><Loading /></el-icon>
@@ -135,6 +135,7 @@ import { Loading, Monitor, Refresh, VideoCamera, Warning } from '@element-plus/i
 import { liveApi } from '../api'
 import { LiveViewSocket, type LiveViewInfo, type LiveViewMessage } from '../api/ws'
 import { channelLabel } from '../constants'
+import { useRemoteInput } from '../composables/remoteInput'
 
 const props = defineProps<{ taskId: string; running?: boolean }>()
 
@@ -154,22 +155,23 @@ const watching = ref(true)
  */
 const wantTakeover = ref(false)
 const takeover = computed(() => !!info.value?.takeover)
-/** 画面上按住鼠标没有？拖滑块时只有按住期间才需要连续发轨迹 */
-const dragging = ref(false)
-/** 上一次发 mousemove 的时间，用来限流 */
-let lastMoveAt = 0
 /** 帧的像素宽高，坐标换算要用（服务端再按真实视口换一次） */
 const frameSize = ref({ width: 1280, height: 800 })
+/**
+ * 鼠标 / 滚轮 / 键盘回放（composables/remoteInput.ts，和登录窗口共用）。
+ * 只在接管时回放；不发悬停移动——采集器还在这个页面上跑，按住拖动时才需要连续轨迹。
+ */
+const input = useRemoteInput({
+  send: (message) => socket?.send(message),
+  frameSize: () => frameSize.value,
+  enabled: () => takeover.value,
+  hover: false,
+})
 /** 舞台元素。接管时要给它焦点，否则 keydown 根本不会触发 */
 const stageRef = ref<HTMLElement | null>(null)
 /** 粘贴/中文输入框的内容 */
 const typeText = ref('')
 
-/** 这些键要整键发过去，不能当字符打 */
-const SPECIAL_KEYS = new Set([
-  'Enter', 'Backspace', 'Tab', 'Escape', 'Delete', 'Home', 'End',
-  'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-])
 const polling = ref(false)
 
 let socket: LiveViewSocket | null = null
@@ -280,9 +282,11 @@ function toggleWatch(): void {
 
 // ---------------- 人工接管 ----------------
 function setTakeover(on: boolean): void {
+  // 退出前先把按着的键松开：退出后服务端不再收事件，不松的话采集页面一直以为左键按着
+  if (!on) input.reset()
   wantTakeover.value = on
   socket?.send({ type: 'takeover', on })
-  if (!on) { dragging.value = false; return }
+  if (!on) return
   // 焦点必须给到舞台，否则点完「接管」直接敲键盘一点反应都没有，
   // 而用户完全看不出是"没聚焦"——只会觉得键盘功能坏了
   void nextTick(() => stageRef.value?.focus())
@@ -290,101 +294,6 @@ function setTakeover(on: boolean): void {
 
 function toggleTakeover(): void {
   setTakeover(!takeover.value)
-}
-
-/**
- * 画面按 CSS 尺寸缩放显示，回传的是**帧的像素坐标**。
- * 服务端还会再按真实视口换算一次（见 live_view._handle_input）——
- * 两段换算各管一段，前端不需要知道采集浏览器的视口有多大。
- */
-function toFrameCoords(event: MouseEvent) {
-  const rect = (event.target as HTMLImageElement).getBoundingClientRect()
-  if (!rect.width || !rect.height) return { x: 0, y: 0 }
-  return {
-    x: (event.clientX - rect.left) * (frameSize.value.width / rect.width),
-    y: (event.clientY - rect.top) * (frameSize.value.height / rect.height),
-  }
-}
-
-function onMouseDown(event: MouseEvent): void {
-  if (!takeover.value) return
-  event.preventDefault()
-  dragging.value = true
-  socket?.send({ type: 'mousedown', ...toFrameCoords(event) })
-}
-
-/**
- * ⚠️ 拖动验证成败就在这个函数上。
- *
- * 滑块类验证会看**轨迹**：只有起点和终点两个事件，等于瞬移，必然判定为机器。
- * 所以按住期间要连续发中间点。但也不能一个不漏地发——浏览器 mousemove
- * 一秒能有几百个，全塞进 WebSocket 会排队，轨迹反而变形。
- * 限到 ~60/s（16ms）：既保留了人手的抖动和加速度，又不至于堵住通道。
- */
-function onMouseMove(event: MouseEvent): void {
-  if (!takeover.value || !dragging.value) return
-  const now = Date.now()
-  if (now - lastMoveAt < 16) return
-  lastMoveAt = now
-  socket?.send({ type: 'mousemove', ...toFrameCoords(event) })
-}
-
-function onMouseUp(event: MouseEvent): void {
-  if (!takeover.value) return
-  event.preventDefault()
-  dragging.value = false
-  // 松手前把**最终位置**补一个 mousemove：上面的限流可能刚好把最后一个点吃掉，
-  // 那样滑块会停在差几像素的地方，判定不过而且看不出为什么
-  const at = toFrameCoords(event)
-  socket?.send({ type: 'mousemove', ...at })
-  socket?.send({ type: 'mouseup', ...at })
-}
-
-function onMouseLeave(event: MouseEvent): void {
-  // 拖着拖着滑出画面：必须补一个 mouseup，否则采集页面会一直以为按键还按着，
-  // 之后所有点击都变成拖拽
-  if (!takeover.value || !dragging.value) return
-  onMouseUp(event)
-}
-
-function onWheel(event: WheelEvent): void {
-  if (!takeover.value) return
-  socket?.send({ type: 'wheel', deltaX: event.deltaX, deltaY: event.deltaY })
-}
-
-/**
- * 键盘。接管期间敲的键直接打到采集页面上。
- *
- * ⚠️ 两个坑：
- * 1. **必须 preventDefault**。不拦的话退格会让浏览器后退、方向键和空格会滚动
- *    本地页面、Tab 会把焦点跳到别的按钮上——人在操作采集页面，本地页面却在动。
- * 2. **中文输入法打不出来**。IME 组字期间 keydown 的 key 是 'Process'，
- *    拿不到真正的字。所以下面还留了一个输入框走 type 事件——
- *    中文验证码、粘贴长串都得用它。这不是偷懒，是浏览器就取不到。
- */
-function onKeyDown(event: KeyboardEvent): void {
-  if (!takeover.value) return
-  const key = event.key
-  // IME 组字中：交给输入框那条路，这里什么都不做
-  if (event.isComposing || key === 'Process' || key === 'Unidentified') return
-
-  const combo: string[] = []
-  if (event.ctrlKey) combo.push('Control')
-  if (event.altKey) combo.push('Alt')
-  if (event.metaKey) combo.push('Meta')
-  // Shift 只在组合键里显式带上：单独按 Shift+a 时 event.key 已经是 'A' 了，
-  // 再拼一个 Shift+A 会变成两次大写处理
-  if (event.shiftKey && (combo.length || SPECIAL_KEYS.has(key))) combo.push('Shift')
-
-  if (SPECIAL_KEYS.has(key) || combo.length) {
-    event.preventDefault()
-    socket?.send({ type: 'key', key: [...combo, key].join('+') })
-    return
-  }
-  if (key.length === 1) {           // 普通可打印字符
-    event.preventDefault()
-    socket?.send({ type: 'type', text: key })
-  }
 }
 
 function sendText(): void {
@@ -418,6 +327,7 @@ discoverTimer = window.setInterval(() => {
 }, 8000)
 
 onBeforeUnmount(() => {
+  input.reset()
   window.clearInterval(discoverTimer)
   stopStream()
 })
@@ -438,7 +348,7 @@ onBeforeUnmount(() => {
   background: #14181f; border-radius: var(--smc-radius-sm); overflow: hidden;
   display: flex; align-items: center; justify-content: center; min-height: 240px;
 }
-.live-screen { width: 100%; display: block; }
+.live-screen { width: 100%; display: block; user-select: none; -webkit-user-drag: none; touch-action: none; }
 .live-placeholder { color: #8a93a3; text-align: center; padding: 40px 0; font-size: 13px; }
 .live-empty { text-align: center; padding: 32px 12px; color: var(--smc-text-secondary); }
 .live-empty-icon { color: var(--smc-text-tertiary); }

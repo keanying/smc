@@ -38,6 +38,7 @@ from ..core.logging import get_logger
 from ..core.subprocess_loop import SUBPROCESS_LOOP
 from .capacity import BROWSER_CAPACITY
 from . import cookie_import
+from .remote_input import click_count, mouse_button
 from .specs import (
     LoginSpec, cookie_names, get_spec, missing_login_cookies,
 )
@@ -61,6 +62,7 @@ SCREENCAST_OPTIONS = {
 }
 
 POLL_INTERVAL_SECONDS = 2
+
 
 
 class LiveBrowserSession:
@@ -361,11 +363,17 @@ class LiveBrowserSession:
             elif kind == "mousemove":
                 await page.mouse.move(float(event["x"]), float(event["y"]))
             elif kind == "mousedown":
+                # 前端只发按下 / 松开（不再另发 click，否则一次点击会变成两次）；
+                # clickCount=2 就是双击，Chromium 会照常产生 dblclick
                 await page.mouse.move(float(event["x"]), float(event["y"]))
-                await page.mouse.down(button=event.get("button", "left"))
+                await page.mouse.down(button=mouse_button(event), click_count=click_count(event))
             elif kind == "mouseup":
-                await page.mouse.up(button=event.get("button", "left"))
+                if "x" in event and "y" in event:      # 拖到哪松开就在哪松开
+                    await page.mouse.move(float(event["x"]), float(event["y"]))
+                await page.mouse.up(button=mouse_button(event), click_count=click_count(event))
             elif kind == "wheel":
+                if "x" in event and "y" in event:      # 滚鼠标下面那一块，不是页面中间
+                    await page.mouse.move(float(event["x"]), float(event["y"]))
                 await page.mouse.wheel(
                     float(event.get("deltaX", 0)), float(event.get("deltaY", 0))
                 )

@@ -53,6 +53,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from ..core.logging import get_logger
 from ..core.subprocess_loop import SUBPROCESS_LOOP
+from .remote_input import click_count, mouse_button
 
 logger = get_logger(__name__)
 
@@ -214,12 +215,15 @@ class LiveView:
             elif kind == "mousedown":
                 x, y = _xy()
                 await page.mouse.move(x, y)
-                await page.mouse.down(button=event.get("button", "left"))
+                await page.mouse.down(button=mouse_button(event), click_count=click_count(event))
             elif kind == "mouseup":
                 x, y = _xy()
                 await page.mouse.move(x, y)
-                await page.mouse.up(button=event.get("button", "left"))
+                await page.mouse.up(button=mouse_button(event), click_count=click_count(event))
             elif kind == "wheel":
+                if "x" in event and "y" in event:      # 滚鼠标下面那一块，不是页面中间
+                    x, y = _xy()
+                    await page.mouse.move(x, y)
                 await page.mouse.wheel(float(event.get("deltaX", 0)),
                                        float(event.get("deltaY", 0)))
             elif kind == "key":

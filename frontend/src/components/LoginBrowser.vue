@@ -15,7 +15,8 @@
     <template #header>
       <span class="el-dialog__title">{{ browsing ? '浏览器' : '登录' }} {{ channelLabel(channel) }}</span>
       <InfoTip :width="380">
-        画面是服务端浏览器的实时推流，鼠标点击和滚轮会同步回放到服务端；扫码登录直接用手机扫画面里的二维码即可。<br>
+        画面是服务端浏览器的实时推流，鼠标点击、拖动、滚轮会同步回放到服务端；扫码登录直接用手机扫画面里的二维码即可。<br>
+        点一下画面后可以直接打字（Ctrl+V 粘贴本机复制的文字）；中文用下面的输入框发送。<br>
         <b>登录成功后点「我已登录，保存」</b>——系统也会自动识别，但以你看到的画面为准；保存之后采集任务会静默复用，不再弹这个窗口。
         <template v-if="channel === 'weibo'">
           <br>微博 PC 端的登录是弹窗，弹窗打开后画面会自动切过去。
@@ -31,12 +32,20 @@
       </div>
     </el-alert>
 
-    <div class="browser-stage" :style="{ width: `${displayWidth}px` }">
+    <!-- tabindex：点一下画面拿到焦点，键盘直接打到服务端页面上 -->
+    <div
+      class="browser-stage" :style="{ width: `${displayWidth}px` }" tabindex="0"
+      @keydown="input.onKeyDown" @paste="input.onPaste"
+    >
+      <!-- 鼠标走 Pointer 事件（见 composables/remoteInput.ts）：不再额外发 click（会变成点两次），
+           禁掉原生「拖图片」（拖动时整页跟着走、下载插件弹窗都是它） -->
       <img
-        v-if="frame" ref="screen" :src="`data:image/jpeg;base64,${frame}`"
+        v-if="frame" :src="`data:image/jpeg;base64,${frame}`" draggable="false"
         class="browser-screen" :style="{ width: `${displayWidth}px` }"
-        @click="onClick" @mousedown="onMouseDown" @mouseup="onMouseUp"
-        @mousemove="onMouseMove" @wheel.prevent="onWheel" @contextmenu.prevent
+        @pointerdown="input.onPointerDown" @pointermove="input.onPointerMove"
+        @pointerup="input.onPointerUp" @pointercancel="input.onPointerCancel"
+        @lostpointercapture="input.onPointerCancel"
+        @wheel="input.onWheel" @contextmenu.prevent @dragstart.prevent
       />
       <div v-else class="browser-placeholder">
         <el-icon class="is-loading" :size="30"><Loading /></el-icon>
@@ -66,12 +75,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading, RefreshRight } from '@element-plus/icons-vue'
 import { accountApi } from '../api'
 import { LoginBrowserSocket, type BrowserMessage } from '../api/ws'
 import { channelLabel } from '../constants'
+import { useRemoteInput } from '../composables/remoteInput'
 
 const props = withDefaults(defineProps<{
   visible: boolean; channel: string; accountName: string
@@ -125,33 +135,12 @@ const statusType = computed(() => {
   return 'info'
 })
 
-/** 画面按 displayWidth 缩放显示，回传坐标要换算回真实像素 */
-function toPageCoords(event: MouseEvent) {
-  const target = event.target as HTMLImageElement
-  const rect = target.getBoundingClientRect()
-  const scale = frameWidth.value / rect.width
-  return {
-    x: (event.clientX - rect.left) * scale,
-    y: (event.clientY - rect.top) * scale,
-  }
-}
-
-function onClick(event: MouseEvent) {
-  socket?.send({ type: 'click', ...toPageCoords(event) })
-}
-function onMouseDown(event: MouseEvent) {
-  socket?.send({ type: 'mousedown', ...toPageCoords(event) })
-}
-function onMouseUp(event: MouseEvent) {
-  socket?.send({ type: 'mouseup', ...toPageCoords(event) })
-}
-/** 鼠标移动：拖拽滑块验证需要连续轨迹，不能只有按下/松开两个点 */
-function onMouseMove(event: MouseEvent) {
-  socket?.send({ type: 'mousemove', ...toPageCoords(event) })
-}
-function onWheel(event: WheelEvent) {
-  socket?.send({ type: 'wheel', deltaX: event.deltaX, deltaY: event.deltaY })
-}
+/** 画面按 displayWidth 缩放显示，鼠标 / 滚轮 / 键盘按帧的像素坐标回放到服务端 */
+const input = useRemoteInput({
+  send: (message) => socket?.send(message),
+  frameSize: () => ({ width: frameWidth.value, height: frameHeight.value }),
+})
+onBeforeUnmount(() => input.reset())
 function sendText() {
   if (!typeText.value) return
   socket?.send({ type: 'type', text: typeText.value })
@@ -193,6 +182,7 @@ async function start() {
 }
 
 async function close() {
+  input.reset()
   const loggedIn = !!status.value.logged_in || status.value.state === 'logged_in'
   socket?.close()
   socket = null
@@ -228,10 +218,13 @@ watch(() => props.visible, (value) => {
   align-items: center;
   justify-content: center;
 }
+.browser-stage:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
 .browser-screen {
   display: block;
-  cursor: crosshair;
+  cursor: default;
   user-select: none;
+  -webkit-user-drag: none;
+  touch-action: none;   /* 触屏 / 触控板上的拖动交给我们，不让浏览器拿去滚动页面 */
 }
 .browser-placeholder {
   text-align: center;
