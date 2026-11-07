@@ -367,7 +367,7 @@ class XhsBrowserCollector(BrowserCaptureCollector):
                 ctx.log(f"[小红书] 首页搜索框命中 {used}")
                 await self._run(box.click(timeout=5000))
                 await asyncio.sleep(random.uniform(0.3, 0.6))
-                await self._run(box.fill(""))
+                await self._run(box.fill("", timeout=5000))
                 for ch in keyword:
                     await self._run(box.type(ch, delay=random.uniform(60, 160)))
                 await asyncio.sleep(random.uniform(0.4, 0.9))

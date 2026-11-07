@@ -445,7 +445,7 @@ class DouyinBrowserCollector(BrowserCaptureCollector):
             await self._run(box.click(timeout=8000))
             await asyncio.sleep(random.uniform(0.2, 0.5))
             # 先清空：搜索框里可能残留上一个关键字
-            await self._run(box.fill(""))
+            await self._run(box.fill("", timeout=5000))
             # 逐字输入，字间隔随机——一次性 fill 出来的输入事件不像真人
             for ch in keyword:
                 await self._run(box.type(ch, delay=random.uniform(60, 180)))
@@ -1375,7 +1375,7 @@ class DouyinBrowserCollector(BrowserCaptureCollector):
         try:
             el = self._page.get_by_text("评论", exact=True).first
             if await self._wait_visible(el, timeout_s=2.0):
-                await self._run(el.click())
+                await self._run(el.click(timeout=5000))
                 if await self._wait_comment_list(6.0):
                     say("[抖音] 已通过「评论」文字打开评论区")
                     return True
@@ -1778,7 +1778,7 @@ class DouyinBrowserCollector(BrowserCaptureCollector):
         try:
             arrow = self._page.locator('[data-e2e="video-switch-next-arrow"]').first
             if await self._wait_visible(arrow, timeout_s=2.0):
-                await self._run(arrow.click())
+                await self._run(arrow.click(timeout=5000))
                 await asyncio.sleep(random.uniform(0.8, 1.5))
                 logger.info("[抖音] 点击下一条箭头切换作品")
                 return True

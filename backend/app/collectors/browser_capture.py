@@ -105,8 +105,43 @@ class BrowserCaptureCollector(BaseCollector):
 
         用法：把 `await self._page.X(...)` 写成 `await self._run(self._page.X(...))`。
         协程对象在创建时并不绑定循环，await 时才绑定，所以这样是安全的。
+
+        单步超过 SLOW_STEP_SECONDS 秒会在任务日志里喊一声（是哪个动作、等了多久）：
+        Playwright 不少调用默认要等 30 秒，以前卡住时日志里只是一段空白，
+        用户只能手动接管，事后也查不出卡在哪一步。
         """
-        return await SUBPROCESS_LOOP.run(coro)
+        started = time.monotonic()
+        try:
+            return await SUBPROCESS_LOOP.run(coro)
+        finally:
+            spent = time.monotonic() - started
+            if spent >= self.SLOW_STEP_SECONDS:
+                name = getattr(coro, "__qualname__", "") or type(coro).__name__
+                message = (f"[{self.channel}] 浏览器操作 {name} 用了 {spent:.0f} 秒"
+                           f"（超过 {self.SLOW_STEP_SECONDS:.0f} 秒），流程在这一步卡过")
+                if self._ctx is not None:
+                    try:
+                        self._ctx.log(message, "warn")
+                    except Exception:  # noqa: BLE001 —— 记日志失败不能影响采集
+                        logger.warning(message)
+                else:
+                    logger.warning(message)
+
+    #: 单个浏览器动作超过这么久就在任务日志里提示（见 _run）
+    SLOW_STEP_SECONDS = 15.0
+
+    async def _box(self, locator, timeout_ms: int = 1500):
+        """元素的位置和大小，**带短超时**；元素不在就返回 None。
+
+        ⚠️ `locator.bounding_box()` 不传 timeout 时要等满 **30 秒**才放弃。
+        「把鼠标挪到某块区域上」这种动作，区域不在页面上是常事（评论面板没打开、
+        hover 才出现的控件条已经收起）——以前每次都实打实地干等 30 秒，
+        一条作品连着几处就是一两分钟，看起来就是"搜完了不去点、停在那儿不动"。
+        """
+        try:
+            return await self._run(locator.bounding_box(timeout=timeout_ms))
+        except Exception:  # noqa: BLE001
+            return None
 
     async def _wait_visible(self, locator, timeout_s: float = 8.0) -> bool:
         """等某个元素**真的**可见，最多等 timeout_s 秒。
@@ -363,7 +398,7 @@ class BrowserCaptureCollector(BaseCollector):
             try:
                 element = await self._run(self._page.query_selector(selector))
                 if element:
-                    await self._run(element.click())
+                    await self._run(element.click(timeout=3000))
                     await asyncio.sleep(random.uniform(1, 2))
                     return True
             except Exception:
