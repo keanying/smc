@@ -179,6 +179,7 @@ class KuaishouBrowserCollector(BrowserCaptureCollector):
         #: 评论接口请求里的 photoId —— 页面上**实际**打开的那条作品。
         #: 用来核对"点开的是不是我以为的那条"，点错了才能发现。
         self._comment_photo_id = ""
+        self._comment_photo_ids: set = set()   # 打开当前作品以来评论接口出现过的 photoId
         #: 搜索接口最近一次是不是说"没有更多了"（pcursor == "no_more"）。
         #: 只拿它当**辅助**信号：滑了一次没出新卡片、而且接口也说到底了，
         #: 才立刻收工。单靠它不行——万一接口偶发给了个 no_more，
@@ -360,8 +361,7 @@ class KuaishouBrowserCollector(BrowserCaptureCollector):
             return
         for selector in (self.LIST_AREA_SELECTOR, self.CARD_COVER_SELECTOR):
             try:
-                box = await self._run(
-                    self._page.locator(selector).first.bounding_box())
+                box = await self._box(self._page.locator(selector).first)
                 if not box:
                     continue
                 await self._run(self._page.mouse.move(
@@ -488,6 +488,7 @@ class KuaishouBrowserCollector(BrowserCaptureCollector):
         self._order.clear()
         self._open_work_id = ""
         self._comment_photo_id = ""
+        self._comment_photo_ids: set = set()   # 打开当前作品以来评论接口出现过的 photoId
         self._search_no_more = False
         # ⚠️ 先把上一个关键字最后那条视频关掉再去搜。
         # 不关的话 player-pop-mask 会把顶栏整个盖住，
@@ -521,7 +522,7 @@ class KuaishouBrowserCollector(BrowserCaptureCollector):
         try:
             await self._click_through_mask(ctx, box, "搜索框")
             await asyncio.sleep(random.uniform(0.3, 0.8))
-            await self._run(box.fill(""))
+            await self._run(box.fill("", timeout=5000))
             await asyncio.sleep(random.uniform(0.2, 0.5))
             # 一个字一个字敲，带随机停顿——整串 fill 进去没有 keydown 序列
             await self._run(box.type(keyword, delay=random.uniform(90, 220)))
@@ -542,7 +543,7 @@ class KuaishouBrowserCollector(BrowserCaptureCollector):
         if not clicked:
             # 按钮点不着就敲回车——效果一样，也还是"输入后触发搜索"
             try:
-                await self._run(box.press("Enter"))
+                await self._run(box.press("Enter", timeout=5000))
                 ctx.log("[快手] 搜索按钮点不着，改用回车")
             except Exception as exc:  # noqa: BLE001
                 ctx.log(f"[快手] 回车也没成功：{exc}", "warn")
@@ -614,6 +615,7 @@ class KuaishouBrowserCollector(BrowserCaptureCollector):
             # 卡片上没有 id，点错了卡片只有这里能发现。
             if photo_id:
                 self._comment_photo_id = photo_id
+                self._comment_photo_ids.add(photo_id)
             comments = self._extract_comments_from_body(body)
             for comment in comments:
                 comment["_work_id"] = photo_id
@@ -807,6 +809,7 @@ class KuaishouBrowserCollector(BrowserCaptureCollector):
             return True
         self._idle_notified = False       # 换作品了，这句话可以再说一次
         self._comment_photo_id = ""       # 上一条的 photoId 不能拿来核对这一条
+        self._comment_photo_ids = set()
         await self._close_video()
 
         try:
@@ -1005,8 +1008,7 @@ class KuaishouBrowserCollector(BrowserCaptureCollector):
                          self.AUTOPLAY_SWITCH_SELECTOR,
                          self.PLAYER_AREA_SELECTOR):
             try:
-                target = self._page.locator(selector).first
-                box = await self._run(target.bounding_box())
+                box = await self._box(self._page.locator(selector).first)
                 if not box:
                     continue
                 await self._run(self._page.mouse.move(
@@ -1078,8 +1080,7 @@ class KuaishouBrowserCollector(BrowserCaptureCollector):
         if self._page is None:
             return
         try:
-            box = await self._run(
-                self._page.locator(self.COMMENT_PANEL_SELECTOR).first.bounding_box())
+            box = await self._box(self._page.locator(self.COMMENT_PANEL_SELECTOR).first)
             if box:
                 await self._run(self._page.mouse.move(
                     box["x"] + box["width"] / 2,
@@ -1267,11 +1268,17 @@ class KuaishouBrowserCollector(BrowserCaptureCollector):
         评论区明明写着「共 248 条评论」，日志却说胡同小天地的作品 0 条评论。
         这种时候**必须喊出来**，不能安静地记成"这条没有评论"。
         """
-        opened = self._comment_photo_id
-        if opened and opened != work.work_id:
-            ctx.log(f"[快手] ⚠️ 点开的不是这一条！日志记的是 {work.work_id}，"
-                    f"页面上实际打开的是 {opened}（评论接口请求里的 photoId）。"
-                    f"这一条的评论作废，顺序表和页面对不上了", "warn")
+        # ⚠️ 看的是「打开这条以来评论接口出现过哪些 photoId」，不是**最后一次**的那个。
+        # 只看最后一次会误报：播放器会顺手预取相邻视频的评论、用户手动接管时点了别的视频，
+        # 最后一个 photoId 就变成了别人——实跑里这条的评论其实已经正常采到并入库
+        # （同一屏日志里还有「评论总数 62（取自评论接口）」），却被说成「评论作废」。
+        seen = getattr(self, "_comment_photo_ids", set()) or (
+            {self._comment_photo_id} if self._comment_photo_id else set())
+        if seen and work.work_id not in seen:
+            others = "、".join(sorted(seen)[:3])
+            ctx.log(f"[快手] ⚠️ 点开的可能不是这一条：日志记的是 {work.work_id}，"
+                    f"评论接口里只出现过 {others}（页面自己发的请求）。"
+                    f"这一条没采到评论，顺序表和页面可能对不上了", "warn")
 
     def _apply_comment_count(self, ctx: CollectContext, work: WorkItem) -> None:
         total = self._comment_counts.get(work.work_id)

@@ -104,12 +104,15 @@ async def data_call(method: str, request: Request, payload: Dict[str, Any] = Bod
         result = await data.merge_work_hits(_items(box, payload, WorkItem))
     elif method == "save_comments":
         items = _items(box, payload, CommentItem)
-        new, updated = await data.save_comments(items, skip_existing=bool(payload.get("skip_existing", True)))
+        fresh: list = []
+        new, updated = await data.save_comments(
+            items, skip_existing=bool(payload.get("skip_existing", True)), new_items=fresh)
         await repo.count_upload(box["box_id"], comments=new)
-        # 边采边标：写库之后推给主的标注引擎。标注出错不影响上报
+        # 边采边标：写库之后推给主的标注引擎；只推这次新增的，库里已有的不再标注。
+        # 标注出错不影响上报
         try:
             from ..scheduler.runner import submit_for_labeling
-            await submit_for_labeling(items)
+            await submit_for_labeling(fresh)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[盒子 %s] 推送标注失败（数据已收下）：%s", box["box_id"], exc)
         result = [new, updated]
