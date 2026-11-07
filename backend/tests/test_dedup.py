@@ -41,9 +41,11 @@ class _StubRepo:
         self.saved_works.extend(items)
         return len(items), 0
 
-    async def save_comments(self, items, *, skip_existing=True):
+    async def save_comments(self, items, *, skip_existing=True, new_items=None):
         self.skip_existing_seen = skip_existing
         self.saved_comments.extend(items)
+        if new_items is not None:
+            new_items.extend(items)          # 桩子里一律当新增
         return len(items), 0
 
     async def save_authors(self, items):

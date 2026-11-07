@@ -40,8 +40,10 @@ class _Repo:
         self.works.extend(items)
         return len(items), 0
 
-    async def save_comments(self, items, *, skip_existing=True):
+    async def save_comments(self, items, *, skip_existing=True, new_items=None):
         self.comments.extend(items)
+        if new_items is not None:
+            new_items.extend(items)
         return len(items), 0
 
     async def save_authors(self, items):

@@ -114,7 +114,11 @@ class RemoteDataRepository:
     async def merge_work_hits(self, items) -> int:
         return int(await self._call("merge_work_hits", items=list(items))) if items else 0
 
-    async def save_comments(self, items, *, skip_existing: bool = True) -> Tuple[int, int]:
+    async def save_comments(self, items, *, skip_existing: bool = True,
+                            new_items=None) -> Tuple[int, int]:
+        """new_items 在盒子上用不到：盒子不做标注，数据报给主，由主只把新增的推去标注
+        （见 api/box_api.py）。参数留着是为了和 DataRepository 同一个签名——
+        runner 两边都这么调，少了它盒子上每次写评论都会 TypeError。"""
         if not items:
             return 0, 0
         new, updated = await self._call("save_comments", items=list(items), skip_existing=skip_existing)

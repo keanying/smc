@@ -255,7 +255,8 @@ class DataRepository:
         return {r["work_uk"] for r in rows}
 
     async def save_comments(
-        self, items: Sequence[CommentItem], *, skip_existing: bool = True
+        self, items: Sequence[CommentItem], *, skip_existing: bool = True,
+        new_items: Optional[List[CommentItem]] = None,
     ) -> Tuple[int, int]:
         """写评论。默认**跳过库里已有的**，只写新增。
 
@@ -266,6 +267,10 @@ class DataRepository:
 
         需要点赞数也跟着刷新时传 skip_existing=False
         （系统设置里的 `crawl.refresh_existing_comments`）。
+
+        new_items：传一个列表进来，**这次真正新增**（写之前库里没有）的评论会追加进去。
+        标注只推这些：库里已有的评论早就标过（或者在等「一键补标」），
+        再推一遍会重复花模型调用，还会把人工复核过的结果盖掉。
         """
         if not items:
             return 0, 0
@@ -289,6 +294,11 @@ class DataRepository:
             rows = [[getattr(item, column) for column in COMMENT_COLUMNS] for item in chunk]
             await self.db.execute_many(sql, rows)
             total_new += sum(1 for key in keys if key not in existing)
+            if new_items is not None:
+                new_items.extend(
+                    item for item in chunk
+                    if comment_uk(item.scenic_id, item.channel, item.work_id, item.comment_id)
+                    not in existing)
 
         return total_new, total_updated
 

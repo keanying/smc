@@ -413,6 +413,26 @@ def test_09e_rerun_zero_comment_count_keeps_stored_value(client):
     assert int(stored) == 310
 
 
+def test_09f_save_comments_reports_only_truly_new(client):
+    """save_comments(new_items=...)：只回报写之前库里没有的评论（标注只推这些）。"""
+    from app.api.deps import get_state
+    from app.collectors.base import CommentItem
+
+    data = get_state().data
+    call = client.portal.call
+
+    def c(cid):
+        return CommentItem(channel="douyin", comment_id=cid, work_id="w-new", scenic_id="SC-NEW",
+                           scenic_name="新评论测试", content=f"内容{cid}").finalize()
+
+    first: list = []
+    assert call(lambda: data.save_comments([c("n1"), c("n2")], new_items=first)) == (2, 0)
+    assert [i.comment_id for i in first] == ["n1", "n2"]
+    second: list = []
+    assert call(lambda: data.save_comments([c("n1"), c("n3")], new_items=second)) == (1, 1)
+    assert [i.comment_id for i in second] == ["n3"]
+
+
 def test_10_data_center_overview(client):
     overview = _data(client.get("/api/data/overview"))
     xihu = next(row for row in overview if row["scenic_id"] == "SC001")

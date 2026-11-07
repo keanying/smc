@@ -1618,8 +1618,10 @@ class _Buffer:
             for c in self.comments:
                 by_work[c.work_id] = by_work.get(c.work_id, 0) + 1
             total = len(self.comments)
+            fresh: List[CommentItem] = []
             new, updated = await self.data.save_comments(
-                self.comments, skip_existing=not self.refresh_existing_comments
+                self.comments, skip_existing=not self.refresh_existing_comments,
+                new_items=fresh,
             )
             detail = "、".join(f"{wid}×{n}" for wid, n in list(by_work.items())[:5])
             self.log.info(
@@ -1632,7 +1634,11 @@ class _Buffer:
             # ⚠️ 边采边标：**落库之后**才推给标注引擎。
             # 顺序反了就会出现"引擎按主键 UPDATE 时那一行还不存在"，
             # 表现是「影响 0 行」的一条 WARNING，数据静默丢标签。
-            await self._submit_for_labeling(self.comments)
+            # 只推**这次新增**的：库里已有的评论不再标注（不重复花模型调用，
+            # 也不把已有的标注结果、人工复核过的结果盖掉）
+            await self._submit_for_labeling(fresh)
+            if updated:
+                self.log.info(f"[标注] {updated} 条评论库里已有，不重复标注")
             self.comments.clear()
         if self.authors:
             count = len(self.authors)

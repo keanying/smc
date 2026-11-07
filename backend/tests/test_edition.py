@@ -134,7 +134,7 @@ def _comment(scenic_id, work_id, comment_id, content="排队太久了"):
                        crawl_time=datetime.now()).finalize()
 
 
-def test_master_and_box(app_client):
+def test_master_and_box(app_client, monkeypatch):
     c = app_client
     E._current = "full"
     for sid, name in (("lingshan", "灵山胜境"), ("yuantouzhu", "鼋头渚")):
@@ -168,6 +168,19 @@ def test_master_and_box(app_client):
                              json=encode({"items": [_work("lingshan", "w1"), _work("lingshan", "w2")]})))) == [2, 0]
     assert decode(_ok(c.post("/api/box/data/save_comments", headers=ha, json=encode(
         {"items": [_comment("lingshan", "w1", "c1"), _comment("lingshan", "w1", "c2")]})))) == [2, 0]
+    # 盒子把 c1 又报了一次（库里已有）：不新增、不更新、也不再推去标注
+    from app.scheduler import runner as runner_module
+    labeled = []
+
+    async def fake_submit(items):
+        labeled.extend(i.comment_id for i in items)
+        return len(items)
+
+    monkeypatch.setattr(runner_module, "submit_for_labeling", fake_submit)
+    assert decode(_ok(c.post("/api/box/data/save_comments", headers=ha, json=encode(
+        {"items": [_comment("lingshan", "w1", "c1")]})))) == [0, 1]
+    assert labeled == []
+    monkeypatch.undo()
     _ok(c.post("/api/box/data/save_works", headers=hb, json=encode({"items": [_work("yuantouzhu", "w3")]})))
     _ok(c.post("/api/box/data/save_comments", headers=hb,
                json=encode({"items": [_comment("yuantouzhu", "w3", "c3")]})))
