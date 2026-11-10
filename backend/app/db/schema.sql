@@ -211,6 +211,7 @@ CREATE TABLE IF NOT EXISTS `src_opinion_social_account` (
   `last_error`        VARCHAR(500)     NULL DEFAULT NULL,
   `enabled`           TINYINT      NOT NULL DEFAULT 1,
   `node_id`           VARCHAR(100) NOT NULL DEFAULT '' COMMENT '账号所在机器（浏览器 profile 在哪台机器上）；空=未分配',
+  `last_used_time`    DATETIME         NULL DEFAULT NULL COMMENT '最近一次被派去采集的时间；挑号时最久没用的排前面，NULL=从没用过',
   `create_time`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
