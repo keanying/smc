@@ -105,6 +105,10 @@
       <el-table-column label="最近检测" width="170">
         <template #default="{ row }">
           <div class="time-text">{{ formatTime(row.last_check_time) }}</div>
+          <!-- 挑号顺序就按它：最久没用的先上，刚用过的排到最后 -->
+          <div class="used-text" :title="'最近一次被派去采集的时间，下次挑号时最久没用的先上'">
+            {{ row.last_used_time ? `上次采集 ${formatTime(row.last_used_time).slice(5, 16)}` : '还没采过' }}
+          </div>
           <el-tooltip v-if="row.last_error" :content="row.last_error" placement="top">
             <div class="error-text">{{ row.last_error.slice(0, 20) }}…</div>
           </el-tooltip>
@@ -980,6 +984,7 @@ onMounted(() => {
   height: auto;
 }
 .th-setting:hover { color: var(--smc-primary); }
+.used-text { font-size: 12px; color: var(--smc-text-secondary); margin-top: 2px; }
 .usage-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-width: 0; }
 .usage-top { display: flex; align-items: baseline; justify-content: space-between; width: 100%; }
 .usage-num { font-variant-numeric: tabular-nums; font-weight: 500; color: var(--smc-text); }

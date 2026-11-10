@@ -288,6 +288,8 @@ export interface Account {
   enabled: number
   cookie_updated_at?: string | null
   last_check_time?: string | null
+  /** 最近一次被派去采集的时间（挑号按它：最久没用的先上） */
+  last_used_time?: string | null
   last_error?: string | null
   /** 配额冷却到期时间；null 或已过期 = 不在冷却 */
   cooldown_until?: string | null

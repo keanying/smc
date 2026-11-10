@@ -26,6 +26,13 @@ logger = get_logger(__name__)
 #: tests/test_account_quota.py 里有一条结构性测试盯着这件事。
 _NOT_COOLING = "(cooldown_until IS NULL OR cooldown_until <= NOW())"
 
+#: 挑号顺序：**最久没被派去采集的排前面**，刚用过的排到最后。
+#: MySQL 升序时 NULL 排最前——从没用过的号最先上。
+#: 时间一样（比如都没用过）再按 id，保证顺序稳定。
+#: ⚠️ 以前按 last_check_time（登录检测时间）排：采集用了这个号它也不变，
+#:    轮换锁一过期（或者没开轮换），每次都又从同一个号开始。
+_PICK_ORDER = "last_used_time ASC, id ASC"
+
 
 class AccountRepository:
     def __init__(self, db: Database, rotation: Any = None, node_id: str = ""):
@@ -72,7 +79,7 @@ class AccountRepository:
             f"SELECT id, channel, account_name, nickname, avatar, uid, login_type, "
             f"account_group, status, cooldown_until, cooldown_reason, "
             f"rotate_lock_hours, "
-            f"profile_dir, cookie_updated_at, last_check_time, last_error, enabled, node_id, "
+            f"profile_dir, cookie_updated_at, last_check_time, last_used_time, last_error, enabled, node_id, "
             f"create_time, update_time FROM `src_opinion_social_account` {where} "
             f"ORDER BY channel ASC, id DESC LIMIT %s OFFSET %s",
             [*args, int(page_size), max(0, (page - 1) * page_size)],
@@ -177,8 +184,9 @@ class AccountRepository:
     ) -> Optional[Dict]:
         """挑一个可用账号。
 
-        preferred 指定了就优先用它；否则按"最近校验过的排前面"轮换，
-        让多个账号自然分摊请求量，而不是把一个账号用到被封。
+        preferred 指定了就优先用它；否则按「最久没被派去采集的排前面」轮着用
+        （刚用过的排到最后，从没用过的最先），让多个账号自然分摊请求量，
+        而不是把一个账号用到被封。轮换锁在这个顺序上再把锁定期内的号往后挪。
         group 给了就只在该分组里挑——任务可以绑定一个账号组，
         不同业务线各用各的账号，互不挤占。
         """
@@ -206,7 +214,7 @@ class AccountRepository:
         #    回来纯属浪费。所以先只取排序要用的三列，定下人选再取整行。
         rows = await self.db.fetch_all(
             f"SELECT account_name, rotate_lock_hours FROM `src_opinion_social_account` "
-            f"WHERE {where} ORDER BY last_check_time ASC, id ASC", args)
+            f"WHERE {where} ORDER BY {_PICK_ORDER}", args)
         if not rows:
             return None
         rows = self._rotate(channel, rows)
@@ -232,7 +240,7 @@ class AccountRepository:
     async def active_names(
         self, channel: str, *, preferred: str = "", group: str = ""
     ) -> List[str]:
-        """这个平台当前能用的账号名，按"最久没校验的排前面"。
+        """这个平台当前能用的账号名，按「最久没被派去采集的排前面」。
 
         给浏览器占用排队用（见 browser/slots.py）：拿到候选名单后，
         调度层会挑其中第一个**没被占用**的开浏览器；全被占就排队等。
@@ -252,18 +260,29 @@ class AccountRepository:
             args.append(group)
         rows = await self.db.fetch_all(
             f"SELECT account_name, rotate_lock_hours FROM `src_opinion_social_account` "
-            f"WHERE {' AND '.join(clauses)} ORDER BY last_check_time ASC, id ASC",
+            f"WHERE {' AND '.join(clauses)} ORDER BY {_PICK_ORDER}",
             args,
         )
         return [row["account_name"] for row in self._rotate(channel, rows)]
 
     async def mark_rotation_used(self, channel: str, account_name: str) -> None:
-        """记一笔"这个号刚被派去采集了"，给轮换锁上锁。
+        """记一笔"这个号刚被派去采集了"：写 last_used_time（排到队尾），再给轮换锁上锁。
 
+        last_used_time 不管开没开轮换都要写——挑号顺序就靠它（见 _PICK_ORDER）。
         只查 `rotate_lock_hours` 一列：这张表的 cookies 是 LONGTEXT，
         为了拿一个小时数把整串 Cookie 拉回来不值当。
         """
-        if self.rotation is None or not account_name:
+        if not account_name:
+            return
+        try:
+            await self.db.execute(
+                "UPDATE `src_opinion_social_account` SET last_used_time = NOW() "
+                "WHERE channel = %s AND account_name = %s", [channel, account_name])
+        except Exception as exc:  # noqa: BLE001
+            # 写失败最坏的结果是"下一轮又挑到它"，不该让采集停摆。
+            logger.warning("[轮换] 记录 %s/%s 的使用时间失败，本次不影响采集：%s",
+                           channel, account_name, exc)
+        if self.rotation is None:
             return
         try:
             row = await self.db.fetch_one(

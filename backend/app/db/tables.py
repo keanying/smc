@@ -147,6 +147,11 @@ EXTRA_COLUMNS = [
     # 不需要清理），这里只存"这个号要锁多久"。0 = 跟随系统设置里的全局值。
     (ACCOUNT, "rotate_lock_hours",
      "INT NOT NULL DEFAULT 0 COMMENT '轮换锁时长（小时），0=用系统设置里的全局值'"),
+    # 挑号顺序：最久没被派去采集的排前面，刚用过的排到最后（NULL=从没用过，最先用）。
+    # 以前按 last_check_time（登录检测时间）排，采集用了它也不变——轮换锁一过期，
+    # 永远又从同一个号开始。
+    (ACCOUNT, "last_used_time",
+     "DATETIME NULL DEFAULT NULL COMMENT '最近一次被派去采集的时间；挑号时最久没用的排前面，NULL=从没用过'"),
     # 任务第一次进「等待账号恢复」队列的时间。恢复后按它先来先跑；
     # 恢复时又撞上冷却、再排一次，也保留最初的位置，不会被后来的任务插队。
     (TASK, "queued_at",

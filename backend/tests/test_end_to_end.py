@@ -433,6 +433,34 @@ def test_09f_save_comments_reports_only_truly_new(client):
     assert [i.comment_id for i in second] == ["n3"]
 
 
+def test_09g_accounts_are_picked_least_recently_used_first(client):
+    """挑号：最久没被派去采集的先上，刚用过的排到最后（没开轮换锁也一样）。
+
+    以前按 last_check_time（登录检测时间）排，采集用了也不变——每次都从同一个号开始。
+    """
+    from app.api.deps import get_state
+    from app.repositories.account_repo import AccountRepository
+
+    state = get_state()
+    repo = AccountRepository(state.db)            # 不带轮换锁：只看排序本身
+    call = client.portal.call
+    for name in ("lru_a", "lru_b", "lru_c"):
+        call(lambda n=name: repo.create({"channel": "weibo", "account_name": n}))
+    call(lambda: state.db.execute(
+        "UPDATE `src_opinion_social_account` SET status = 'active', enabled = 1, "
+        "last_check_time = NOW() WHERE channel = 'weibo' AND account_name LIKE 'lru_%%'"))
+
+    picked = []
+    for _ in range(4):
+        row = call(lambda: repo.pick_active("weibo"))
+        picked.append(row["account_name"])
+        call(lambda n=row["account_name"]: repo.mark_rotation_used("weibo", n))
+        call(lambda: state.db.execute("DO SLEEP(1.05)"))   # last_used_time 精确到秒
+    # 从没用过的按添加顺序先上；三个都用过一轮后，回到最久没用的 lru_a
+    assert picked == ["lru_a", "lru_b", "lru_c", "lru_a"]
+    assert call(lambda: repo.active_names("weibo"))[-1] == "lru_a"   # 刚用过的在队尾
+
+
 def test_10_data_center_overview(client):
     overview = _data(client.get("/api/data/overview"))
     xihu = next(row for row in overview if row["scenic_id"] == "SC001")
