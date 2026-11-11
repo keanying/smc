@@ -224,6 +224,68 @@ async def test_cooldown_ends_the_session_clock():
     assert q.session_minutes("xiaohongshu", "a") == 0
 
 
+@pytest.mark.asyncio
+async def test_idle_time_is_not_counted_as_work():
+    """上午用过、下午再派：中间闲着的几个小时不能算成「连续工作」。
+
+    实跑（2026-11-11）：任务结束时没人调 end_session，一个号下午被派出去时报
+    「已经连续工作 660 分钟」直接进冷却；任务换下一个号，下一个号也一样，一排号挨个被冷却。
+    """
+    db = FakeDB()
+    q = _quota({"enabled": True, "daily_works": 0, "session_minutes": 180}, db=db)
+    q.start_session("weibo", "a")
+    q.end_session("weibo", "a")
+    # 上午 6 点干了一会儿就收工，下午 5 点（11 小时后）再派
+    q._session_start["weibo:a"] -= 660 * 60
+    q._session_end["weibo:a"] -= 655 * 60
+    assert q.session_minutes("weibo", "a") == 0
+    assert (await q.check("weibo", "a")).ok
+    q.start_session("weibo", "a")                    # 歇够了，从现在算
+    assert q.session_minutes("weibo", "a") < 1
+
+
+@pytest.mark.asyncio
+async def test_back_to_back_tasks_keep_counting():
+    """前一个任务刚收工、下一个紧接着用它：这才是连续工作，要接着累计。"""
+    db = FakeDB()
+    q = _quota({"enabled": True, "daily_works": 0, "session_minutes": 30}, db=db)
+    q.start_session("xiaohongshu", "a")
+    q._session_start["xiaohongshu:a"] -= 25 * 60     # 干了 25 分钟
+    q.end_session("xiaohongshu", "a")
+    q._session_end["xiaohongshu:a"] -= 60             # 歇了 1 分钟（不到 10 分钟）
+    q.start_session("xiaohongshu", "a")
+    assert q.session_minutes("xiaohongshu", "a") >= 25
+    q._session_start["xiaohongshu:a"] -= 6 * 60      # 再干 6 分钟 → 31 分钟，超上限
+    verdict = await q.check("xiaohongshu", "a")
+    assert not verdict.ok and "连续" in verdict.reason
+
+
+def test_rest_gap_is_configurable():
+    q = _quota({"enabled": True, "session_rest_minutes": 30})
+    q.start_session("douyin", "a")
+    q._session_start["douyin:a"] -= 60 * 60
+    q.end_session("douyin", "a")
+    q._session_end["douyin:a"] -= 20 * 60            # 干了 40 分钟、歇了 20 分钟，不够 30
+    assert q.session_minutes("douyin", "a") >= 39
+    q._session_end["douyin:a"] -= 15 * 60            # 歇了 35 分钟，够了
+    assert q.session_minutes("douyin", "a") == 0
+
+
+def test_runner_ends_the_session_on_every_exit():
+    """runner 里 start_session 之后，正常收尾和 prepare 失败两条路都要 end_session。"""
+    import inspect
+
+    from app.scheduler import runner
+
+    text = inspect.getsource(runner.TaskRunner._run_channel)
+    assert text.count("_end_quota_session(channel, session_account)") >= 2
+    finally_part = text[text.rindex("finally:"):]
+    assert "_end_quota_session(channel, session_account)" in finally_part
+    # prepare 失败时浏览器名额也要还
+    prepare_part = text[text.index("await collector.prepare(ctx)"):text.index("buffer = _Buffer(")]
+    assert "lease.release()" in prepare_part
+
+
 # ---------------------------------------------------------------- Redis 退化
 @pytest.mark.asyncio
 async def test_counts_survive_redis_going_down():
