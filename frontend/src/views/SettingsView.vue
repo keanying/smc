@@ -581,20 +581,11 @@
                   <span class="unit">秒</span>
                 </el-form-item>
                 <el-form-item>
-                  <template #label>
-                    <span class="lbl">需登录时暂停<InfoTip>
-                      开启：遇到需要登录/验证时<b>暂停等人处理</b>，检测到账号恢复自动继续。<br>
-                      关闭：直接跳过该平台。
-                    </InfoTip></span>
-                  </template>
-                  <el-switch v-model="notify.pause_on_login_required" />
-                </el-form-item>
-                <el-form-item>
-                  <template #label>
-                    <span class="lbl">最多等待<InfoTip content="到点还没人处理就放弃这个平台" /></span>
-                  </template>
-                  <el-input-number v-model="notify.pause_timeout_minutes" :min="0" :max="720" class="num" />
-                  <span class="unit">分钟</span>
+                  <template #label><span class="lbl">需要登录时</span></template>
+                  <span class="muted">
+                    采集中账号要登录 / 要验证：自动换下一个能用的号接着采；一个都没有就发通知、任务进排队，
+                    有号恢复（重新登录、冷却结束）马上接着跑，不用手动点
+                  </span>
                 </el-form-item>
 
                 <el-form-item class="form-actions">

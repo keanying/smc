@@ -251,7 +251,8 @@ class BrowserCaptureCollector(BaseCollector):
         账号已经掉了。用户复现小红书掉登录时没收到通知，就是这个原因。
 
         抛出去之后，runner 那条现成的链路会接手：发飞书通知 →
-        暂停等人处理 → 检测到账号恢复自动继续（见 `_pause_for_human`）。
+        换下一个能用的号接着采；没号可用就通知人、任务进排队，有号恢复马上接着跑
+        （见 runner 的 `_switch_account_or_queue`）。
 
         两个判据，从便宜到贵：
           1. 当前 URL 跳到了登录页——最直接，一次 evaluate 就够

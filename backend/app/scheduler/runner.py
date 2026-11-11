@@ -417,29 +417,13 @@ class TaskRunner:
                         f"{CHANNEL_LABELS.get(channel, channel)} 的浏览器一直被占用（{exc}）",
                     ) from exc
                 except LoginRequired as exc:
-                    # ⚠️ 需要人来处理：发通知，然后**等**（而不是直接跳过）。
-                    # 用户的要求："如果是因为需要登录，验证的 采集暂停"。
-                    # 直接跳过的话通知发了也没意义——人处理完，
-                    # 这一轮早就跑完了，还得再手动跑一次。
-                    channel_log.error(f"{channel} 需要人工介入：{exc}")
-                    resumed = await self._pause_for_human(
-                        channel, exc, channel_log, cancel_event,
-                        task_id=task_id, scenic_name=scenic_name)
-                    if resumed:
-                        channel_log.info(f"{channel} 已恢复，重试这个平台")
-                        try:
-                            channel_stats = await self._run_channel(
-                                task, channel, scenic_id, scenic_name,
-                                channel_log, cancel_event,
-                            )
-                            for key in stats:
-                                stats[key] += channel_stats.get(key, 0)
-                        except TaskCancelled:
-                            raise
-                        except Exception as exc2:  # noqa: BLE001
-                            channel_log.error(f"{channel} 恢复后仍失败：{exc2}")
-                    else:
-                        channel_log.error(f"跳过 {channel}：一直没人处理")
+                    # 账号要登录 / 要验证：**马上换下一个能用的号接着跑**；
+                    # 一个能用的都没有就通知人、进排队（不再占着名额和浏览器干等 30 分钟）——
+                    # 有号恢复（重新登录了、冷却到了）调度会马上把它捞起来接着跑。
+                    channel_stats = await self._switch_account_or_queue(
+                        task, channel, scenic_id, scenic_name, channel_log, cancel_event, exc)
+                    for key in stats:
+                        stats[key] += channel_stats.get(key, 0)
                 except Exception as exc:  # noqa: BLE001
                     channel_log.error(f"{channel} 采集失败：{exc}")
                     logger.exception("平台 %s 采集异常", channel)
@@ -697,6 +681,11 @@ class TaskRunner:
                 ctx.account_name = account["account_name"]
                 log.info(f"将使用账号 [{account['account_name']}]{group_note} 的登录态（静默获取）")
 
+        # 记下这次用的是哪个号：采集途中报「要登录」时，换号要知道是哪个号坏了
+        if not hasattr(self, "_channel_accounts"):
+            self._channel_accounts = {}
+        self._channel_accounts[(task["task_id"], channel)] = ctx.account_name or ""
+
         # 配额闸门：这个账号今天还能不能接着用。
         #
         # ⚠️ 放在拿到账号**之后**、开采之前。冷却中的账号本来就被
@@ -843,85 +832,103 @@ class TaskRunner:
             return "account_invalid"
         return "login_required"
 
-    async def _channel_has_account(self, channel: str) -> bool:
-        """这个平台**有没有配过**账号（不管当前能不能用）。
+    #: 一个平台一轮里最多连着换几个号（防止号一个接一个都失效时没完没了）
+    MAX_ACCOUNT_SWITCHES = 5
+    #: 一个能用的号都没有、也不是在冷却（都要人重新登录）时，多久再看一次
+    LOGIN_WAIT_RETRY_MINUTES = 10
 
-        用来区分"账号失效了，等人重新登录"和"从来就没配过账号"。
-        查不出来时返回 True（宁可等一等，也别把真的能恢复的情况漏掉）。
-        """
+    async def _channel_has_account(self, channel: str) -> bool:
+        """这个平台**有没有配过**账号（不管现在能不能用）。查不出来时当作有（宁可排队，也别漏掉能恢复的）。"""
         accounts = getattr(self.browser_manager, "accounts", None)
         if accounts is None:
             return True
         try:
-            # 只要 total，page_size 给 1 就够——这张表里 cookies 是 LONGTEXT，
-            # 多拉一行就多拉一整串 Cookie。
+            # 只要 total，page_size 给 1：这张表里 cookies 是 LONGTEXT，多拉一行就多一整串 Cookie
             page = await accounts.list(channel=channel, page=1, page_size=1)
             if isinstance(page, dict):
                 return int(page.get("total") or 0) > 0
             return bool(page)
         except Exception:  # noqa: BLE001
-            # 查不出来时宁可返回 True 去等一等，也别把"其实能恢复"的情况
-            # 当成"没配账号"直接跳过。
             return True
 
-    async def _pause_for_human(
-        self, channel: str, exc: Exception, log: TaskLogger, cancel_event,
-        *, task_id: str = "", scenic_name: str = "",
-    ) -> bool:
-        """需要登录/验证时暂停等人处理。返回是否等到了（True = 可以重试）。
-
-        怎么判断"人处理好了"：**账号重新可用**。这是唯一可信的信号——
-        人可能在别的机器上登录、可能换了个账号，只看"有没有人点按钮"
-        会漏掉这些情况。所以这里轮询账号仓库，等到有可用账号就继续。
-
-        ⚠️ 等待期间要一直响应取消。用户点了停止不能还在这儿干等。
-        """
-        cfg = (self.config.get("notify") or {})
+    async def _retire_account(self, channel: str, account: str, exc: Exception,
+                              log: TaskLogger) -> None:
+        """这个号这会儿用不了：要验证的先冷却（可能过一阵自己就好），登录失效的标成失效（要人重新登录）。"""
+        accounts = getattr(self.browser_manager, "accounts", None)
+        if not account or accounts is None:
+            return
         kind = self._classify_login_issue(exc)
-        await self._notify(channel, kind, str(exc),
-                           task_id=task_id, scenic_name=scenic_name)
+        try:
+            quota = getattr(self, "quota", None)
+            if kind in ("captcha", "two_factor") and quota is not None:
+                await quota.cool_down(channel, account, f"需要人工验证：{str(exc)[:120]}")
+                log.warn(f"账号 [{account}] 需要人工验证，先冷却，换下一个号")
+            else:
+                row = await accounts.get(channel, account)
+                if row and row.get("status") == AccountStatus.ACTIVE.value:
+                    await accounts.mark_expired(channel, account, str(exc)[:500])
+                log.warn(f"账号 [{account}] 登录态失效，已标记失效（需要重新登录），换下一个号")
+        except Exception as exc2:  # noqa: BLE001
+            logger.warning("标记账号 %s/%s 不可用失败：%s", channel, account, exc2)
 
-        # ⚠️ **压根没配过账号 ≠ 账号需要重新登录**。
-        # 前者等多久都没用——没人会去"恢复"一个从来不存在的账号，
-        # 而任务会白白卡 30 分钟，日志上还写着"等待人工处理"，
-        # 看着像在干活。这种情况直接照旧报错跳过。
-        if not await self._channel_has_account(channel):
-            log.error(f"{channel} 一个账号都没配，等待没有意义——"
-                      f"去账号管理里添加并登录一个账号再跑")
-            return False
-
-        if not cfg.get("pause_on_login_required", True):
-            log.info(f"{channel} 需要人工介入，但配置里关掉了「暂停等待」，直接跳过")
-            return False
-
-        timeout = float(cfg.get("pause_timeout_minutes", 30)) * 60
-        if timeout <= 0:
-            return False
-        log.warn(f"⏸ {channel} 已暂停，等待人工处理（最多 {timeout / 60:.0f} 分钟）。"
-                 f"处理完不用点任何按钮——检测到账号恢复就会自动继续")
-
-        deadline = time.time() + timeout
-        poll = 15.0
-        while time.time() < deadline:
-            if cancel_event is not None and cancel_event.is_set():
-                raise TaskCancelled("等待人工处理时任务被取消")
-            await asyncio.sleep(poll)
-            # 判据是"这个平台有 ACTIVE 账号"——人可能在别的机器上登录、
-            # 也可能换了个账号，只看"有没有人点按钮"会漏掉这些情况。
+    async def _switch_account_or_queue(
+        self, task: Dict[str, Any], channel: str, scenic_id: str, scenic_name: str,
+        log: TaskLogger, cancel_event, exc: LoginRequired,
+    ) -> Dict[str, int]:
+        """采集时账号要登录 / 要验证：换号接着跑；没号可用就进排队（抛 AccountsCoolingDown）。"""
+        task_id = task["task_id"]
+        accounts = getattr(self.browser_manager, "accounts", None)
+        from ..cluster.dispatcher import needs_of
+        need = next((n for n in needs_of(task) if n.channel == channel), None)
+        pinned = need.preferred if need else ""
+        group = need.group if need else ""
+        current = exc
+        summary: Dict[str, Any] = {}
+        for _ in range(self.MAX_ACCOUNT_SWITCHES):
+            failed = getattr(self, "_channel_accounts", {}).get((task_id, channel), "")
+            log.warn(f"{channel} 账号{f' [{failed}]' if failed else ''}需要登录 / 验证：{current}")
+            await self._retire_account(channel, failed, current, log)
+            if pinned:
+                log.warn(f"任务指定了账号 [{pinned}]，不能换号，等它恢复")
+                break
             try:
-                account = await self.browser_manager.accounts.pick_active(channel)
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("等待期间查账号失败（继续等）：%s", exc)
-                account = None
-            usable = bool(account) and str(
-                (account or {}).get("status") or "") == AccountStatus.ACTIVE.value
-            if usable:
-                left = int(deadline - time.time())
-                log.info(f"检测到 {channel} 账号 [{account.get('account_name', '')}] "
-                         f"已恢复（等了 {int(timeout - left) // 60} 分钟），继续采集")
-                return True
-        log.error(f"{channel} 等了 {timeout / 60:.0f} 分钟仍没有可用账号，放弃这个平台")
-        return False
+                summary = await accounts.cooling_summary(channel, group=group) if accounts else {}
+            except Exception as exc2:  # noqa: BLE001
+                logger.warning("查询 %s 可用账号失败：%s", channel, exc2)
+                summary = {}
+            if not int(summary.get("available") or 0):
+                break
+            log.info(f"{channel} 还有 {summary['available']} 个能用的号，马上换号接着采")
+            try:
+                return await self._run_channel(task, channel, scenic_id, scenic_name, log, cancel_event)
+            except LoginRequired as again:
+                current = again
+                continue
+        # 没有能用的号了：通知人，然后排队。冷却中的号最早什么时候好，就那时候再来；
+        # 都要人重新登录的，过一会儿再看（人登录好了，调度会马上把它捞起来，不用等到点）
+        kind = self._classify_login_issue(current)
+        await self._notify(channel, kind, str(current), task_id=task_id, scenic_name=scenic_name)
+        # ⚠️ **压根没配过账号 ≠ 账号需要重新登录**：前者排多久都没用（没人会去"恢复"一个
+        #    不存在的号），任务会一直挂在排队里。这种照旧报错、跳过这个平台
+        if not await self._channel_has_account(channel):
+            log.error(f"{channel} 一个账号都没配，排队也没用——去账号管理里添加并登录一个账号再跑：{current}")
+            return {}
+        if pinned and accounts is not None:
+            try:
+                summary = await accounts.cooling_summary(channel, preferred=pinned)
+            except Exception:  # noqa: BLE001
+                summary = {}
+        resume = summary.get("resume_at")
+        later = datetime.now() + timedelta(minutes=self.LOGIN_WAIT_RETRY_MINUTES)
+        if isinstance(resume, datetime):
+            resume_at = max(resume + timedelta(seconds=5),
+                            datetime.now() + timedelta(seconds=COOLING_RETRY_SECONDS))
+            why = f"{channel} 能用的号都在冷却，最早 {resume:%m-%d %H:%M} 恢复"
+        else:
+            resume_at = later
+            why = (f"{channel} 没有能用的号了（需要重新登录 / 验证，已发通知）。"
+                   f"有号恢复就马上接着跑")
+        raise AccountsCoolingDown(resume_at, why)
 
     def _marks(self, ctx: CollectContext):
         """取采集水印工具。没有 Redis 就返回 None（不去重，但照常采）。"""
