@@ -233,13 +233,11 @@ class Cluster:
 
     async def dispatch_due(self) -> int:
         slots = await self.worker_slots()
-        candidates = await self.tasks.pending_once_tasks(limit=100)
-        candidates += await self.tasks.due_tasks(limit=100)
-        seen, todo = set(), []
-        for task in candidates:
-            if task["task_id"] not in seen:
-                seen.add(task["task_id"])
-                todo.append(task)
+        # 谁先排队谁先派：排队等账号的（有号能用了就不再干等到预定时间）、到点的、
+        # 新建的，统一按开始等的时间排（scheduler/queue.py）。派发按这个顺序占机器，
+        # 机器上抢浏览器也是先来先得（browser/slots.py）
+        from ..scheduler.queue import ready_tasks
+        todo = await ready_tasks(self.tasks, self.accounts, limit=100)
         if not todo:
             return 0
         pool = await self._pool(todo)

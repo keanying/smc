@@ -37,7 +37,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
-from typing import Optional
+from typing import List, Optional
 
 from ..core.logging import get_logger
 
@@ -61,6 +61,8 @@ DEFAULT_MIN_FREE_GB = 1.0
 
 #: 等内存的轮询间隔和上限
 _POLL_SECONDS = 5.0
+#: 排队拿名额时多久看一次（排第一的人名额一空要尽快拿到）
+_TAKE_POLL_SECONDS = 1.0
 DEFAULT_WAIT_TIMEOUT = 600.0
 
 
@@ -131,6 +133,10 @@ class BrowserCapacity:
         self._wait_timeout = DEFAULT_WAIT_TIMEOUT
         self._active = 0
         self._waiting = 0
+        #: 排队的先后（取号）。只有排在最前面的能拿刚空出来的名额——
+        #: 以前大家各自每 5 秒去抢一次，后来的赶上空档就插到了前面
+        self._tickets: List[int] = []
+        self._next_ticket = 0
         self._peak = 0
         #: 运行中把上限调小、而在用的比新上限还多时，先欠着：之后还回来的名额要扣掉这么多个才进计数器
         self._debt = 0
@@ -224,27 +230,45 @@ class BrowserCapacity:
             return self._sem
 
     # ---------------- 闸门 ----------------
-    async def acquire(self, who: str = "") -> None:
+    def _try_take(self, ticket: int) -> Optional[threading.Semaphore]:
+        """轮到我了（排在最前面）而且有空名额，就拿走。先来先得。"""
+        with self._state_lock:
+            if not self._tickets or self._tickets[0] != ticket:
+                return None
         sem = self._semaphore()
+        if not sem.acquire(blocking=False):
+            return None
+        with self._state_lock:
+            if ticket in self._tickets:
+                self._tickets.remove(ticket)
+        return sem
+
+    async def acquire(self, who: str = "") -> None:
         started = time.monotonic()
         with self._state_lock:
             self._waiting += 1
+            self._next_ticket += 1
+            ticket = self._next_ticket
+            self._tickets.append(ticket)
         try:
-            got = sem.acquire(blocking=False)
-            if not got:
-                logger.info("[浏览器闸门] %s 排队中：已开 %d/%d 个",
-                            who or "任务", self._active, self.limit)
-            while not got:
+            sem = self._try_take(ticket)
+            if sem is None:
+                logger.info("[浏览器闸门] %s 排队中：已开 %d/%d 个，前面还有 %d 个在等",
+                            who or "任务", self._active, self.limit,
+                            max(0, self._tickets.index(ticket) if ticket in self._tickets else 0))
+            while sem is None:
                 # 轮询而不是阻塞等待：阻塞会把整个事件循环卡住，
                 # 连接口和心跳一起停——那比排队本身糟糕得多。
-                await asyncio.sleep(_POLL_SECONDS)
+                # 间隔短一点：名额一空、排第一的马上就能拿到，不用干等一轮
+                await asyncio.sleep(_TAKE_POLL_SECONDS)
                 # 每次都重新取：页面上改了上限会换一个计数器（apply_settings），
                 # 一直盯着旧的那个就永远等不到
-                sem = self._semaphore()
-                got = sem.acquire(blocking=False)
+                sem = self._try_take(ticket)
         finally:
             with self._state_lock:
                 self._waiting -= 1
+                if ticket in self._tickets:          # 等到一半被取消：把号让出来，别挡住后面的人
+                    self._tickets.remove(ticket)
 
         try:
             await self._wait_for_memory(who, started)

@@ -63,6 +63,13 @@ class SlotInfo:
         return f"{self.reason}（已占用 {minutes:.1f} 分钟）"
 
 
+@dataclass(eq=False)
+class _Waiter:
+    """一个排队的人：要哪些账号（按优先级）、怎么叫醒他。按对象本身比较（eq=False）。"""
+    accounts: List[str]
+    event: asyncio.Event
+
+
 class SlotBusy(Exception):
     """想立刻拿但被占着（不排队的调用方用这个）。"""
 
@@ -98,8 +105,8 @@ class BrowserSlots:
 
     def __init__(self) -> None:
         self._held: Dict[str, SlotInfo] = {}
-        #: 每个平台上正在等待的人。释放时只叫醒同平台的，别惊动无关的等待者。
-        self._waiters: Dict[str, List[asyncio.Event]] = {}
+        #: 每个平台上正在等待的人，**按来的先后排**。释放时只叫醒同平台的，别惊动无关的等待者。
+        self._waiters: Dict[str, List["_Waiter"]] = {}
 
     # ---------------- 基础读写 ----------------
     @staticmethod
@@ -148,15 +155,35 @@ class BrowserSlots:
 
     # ---------------- 排队 ----------------
     def _wake(self, channel: str) -> None:
-        for event in self._waiters.get(channel, []):
-            event.set()
+        for waiter in self._waiters.get(channel, []):
+            waiter.event.set()
+
+    def _reserved(self, channel: str, me: Optional["_Waiter"]) -> set:
+        """排在 me 前面的人「该拿到」的账号（me=None 表示新来的，所有排队的都在前面）。
+
+        先来先得：从队头往后，每个人依次挑自己候选里第一个空着、又没被前面的人挑走的号。
+        挑剩下的才轮得到 me。前面的人用不上的号（不在他的候选里）照样能给后来的——
+        不白挡，不会因为别人在等**另一个号**就让这个空号闲着。
+        """
+        taken: set = set()
+        for waiter in self._waiters.get(channel, []):
+            if waiter is me:
+                break
+            for account in waiter.accounts:
+                if account not in taken and not self.busy(channel, account):
+                    taken.add(account)
+                    break
+        return taken
 
     def try_acquire(
-        self, channel: str, accounts: Sequence[str], *, reason: str, token: str = ""
+        self, channel: str, accounts: Sequence[str], *, reason: str, token: str = "",
+        _me: Optional["_Waiter"] = None,
     ) -> Optional[BrowserSlot]:
-        """按顺序找第一个空闲账号占上。都被占着就返回 None。"""
+        """按顺序找第一个空闲账号占上；**排在前面的人要的号让给他们**。都没有就返回 None。"""
+        reserved = self._reserved(channel, _me)
         for account in accounts:
-            if not self.busy(channel, account) or self.held_by(channel, account, token):
+            if self.held_by(channel, account, token) or (
+                    not self.busy(channel, account) and account not in reserved):
                 self.mark(channel, account, reason, token)
                 return BrowserSlot(self, channel, account)
         return None
@@ -184,7 +211,7 @@ class BrowserSlots:
             raise SlotBusy(f"平台 {channel} 没有可用账号")
 
         started = time.monotonic()
-        event: Optional[asyncio.Event] = None
+        me: Optional[_Waiter] = None
         try:
             while True:
                 # ⚠️ 先看取消再抢：反过来的话，任务被取消的同时恰好有人释放，
@@ -193,8 +220,12 @@ class BrowserSlots:
                 if should_cancel is not None and should_cancel():
                     raise asyncio.CancelledError()
 
-                slot = self.try_acquire(channel, accounts, reason=reason, token=token)
+                slot = self.try_acquire(channel, accounts, reason=reason, token=token, _me=me)
                 if slot is not None:
+                    if me is not None:
+                        self._leave(channel, me)
+                        me = None
+                        self._wake(channel)        # 我拿走了，后面的人重新算一下轮到谁
                     return slot
 
                 waited = time.monotonic() - started
@@ -204,10 +235,11 @@ class BrowserSlots:
                         f"{self._blocking_text(channel, accounts)}"
                     )
 
-                if event is None:
-                    event = asyncio.Event()
-                    self._waiters.setdefault(channel, []).append(event)
-                event.clear()
+                if me is None:
+                    # 第一次没拿到：排到队尾。之后按这个位置先来先得
+                    me = _Waiter(accounts=list(accounts), event=asyncio.Event())
+                    self._waiters.setdefault(channel, []).append(me)
+                me.event.clear()
 
                 if on_wait is not None:
                     on_wait(waited, self._blocking_text(channel, accounts))
@@ -218,16 +250,25 @@ class BrowserSlots:
                 if timeout is not None:
                     slice_seconds = min(slice_seconds, max(0.5, timeout - waited))
                 try:
-                    await asyncio.wait_for(event.wait(), timeout=slice_seconds)
+                    await asyncio.wait_for(me.event.wait(), timeout=slice_seconds)
                 except asyncio.TimeoutError:
                     pass
         finally:
-            if event is not None:
-                queue = self._waiters.get(channel)
-                if queue and event in queue:
-                    queue.remove(event)
-                if queue is not None and not queue:
-                    self._waiters.pop(channel, None)
+            if me is not None:
+                # 等到一半走了（取消 / 超时）：让出位置，叫醒后面的人
+                self._leave(channel, me)
+                self._wake(channel)
+
+    def _leave(self, channel: str, me: "_Waiter") -> None:
+        queue = self._waiters.get(channel)
+        if queue and me in queue:
+            queue.remove(me)
+        if queue is not None and not queue:
+            self._waiters.pop(channel, None)
+
+    def queue_length(self, channel: str) -> int:
+        """这个平台上还有几个在排队（测试和排障用）。"""
+        return len(self._waiters.get(channel, []))
 
     def _blocking_text(self, channel: str, accounts: Sequence[str]) -> str:
         parts = []
