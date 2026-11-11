@@ -541,6 +541,53 @@ def test_09i_run_list_actions(client):
     assert detail["task_status"] and detail["task_schedule_enabled"] is False
 
 
+def test_09j_tasks_interrupted_by_restart_run_again(client):
+    """服务重启时正在跑的任务：重新排队、马上接着跑（以前直接标失败）；
+    连着 3 次都被重启打断的就不再自动重跑，防止「一跑就带崩服务」的死循环。"""
+    from datetime import datetime, timedelta
+
+    from app.api.deps import get_state
+    from app.repositories.run_repo import RunRepository
+    from app.scheduler.queue import ready_tasks
+
+    state = get_state()
+    runs = RunRepository(state.db)
+    call = client.portal.call
+
+    def make(name):
+        task = _data(client.post("/api/tasks", json={
+            "task_name": name, "scenic_id": "SC001", "channels": ["ctrip"], "keywords": [],
+            "schedule_type": "interval", "schedule_interval_seconds": 86400}))
+        call(lambda: state.db.execute(
+            "UPDATE `src_opinion_crawl_task` SET status = 'running', start_time = %s, "
+            "next_run_time = %s WHERE task_id = %s",
+            [datetime.now() - timedelta(minutes=5), datetime.now() + timedelta(days=1), task["task_id"]]))
+        return task
+
+    normal = make("重启打断")
+    call(lambda: runs.begin(normal, trigger_type="schedule", node_id="restart-node"))
+    crashy = make("一跑就崩")
+    for _ in range(3):
+        call(lambda: runs.begin(crashy, trigger_type="schedule", node_id="restart-node"))
+        call(lambda: runs.mark_interrupted("restart-node"))
+
+    call(lambda: runs.mark_interrupted("restart-node"))
+    call(lambda: state.scheduler._requeue_interrupted(None, runs))
+
+    t1 = call(lambda: state.tasks.get(normal["task_id"]))
+    assert t1["status"] == "waiting" and "重新排队" in t1["error"]
+    # 马上就会被捞起来（不用等到明天的计划时间）
+    ready = call(lambda: ready_tasks(state.tasks, None, limit=50))
+    assert normal["task_id"] in [t["task_id"] for t in ready]
+
+    t2 = call(lambda: state.tasks.get(crashy["task_id"]))
+    assert t2["status"] == "failed" and "不再自动重跑" in t2["error"]
+    for t in (normal, crashy):
+        call(lambda t=t: state.db.execute(
+            "UPDATE `src_opinion_crawl_task` SET status = 'completed', schedule_enabled = 0 WHERE task_id = %s",
+            [t["task_id"]]))
+
+
 def test_10_data_center_overview(client):
     overview = _data(client.get("/api/data/overview"))
     xihu = next(row for row in overview if row["scenic_id"] == "SC001")

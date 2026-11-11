@@ -114,6 +114,18 @@ class RunRepository:
             f"WHERE run_no = %s AND run_status = 'waiting'", [(node_id or "")[:100], row["run_no"]])
         return str(row["run_no"])
 
+    async def interrupted_streak(self, task_id: str, limit: int = 5) -> int:
+        """这个任务最近连着几次都是「中断」（被服务重启打断）。用来防「一跑就把服务带崩 → 重启又重跑」的死循环。"""
+        rows = await self.db.fetch_all(
+            f"SELECT run_status FROM `{tables.TASK_RUN}` WHERE task_id = %s ORDER BY id DESC LIMIT %s",
+            [task_id, int(limit)])
+        streak = 0
+        for row in rows:
+            if row.get("run_status") != "interrupted":
+                break
+            streak += 1
+        return streak
+
     async def cancel_waiting(self, task_id: str, reason: str = "排队中被手动取消") -> int:
         """任务的排队被取消了：它那条「排队等账号」的记录记成「已取消」（不然一直挂着排队）。"""
         return int(await self.db.execute(

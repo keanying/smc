@@ -65,21 +65,18 @@ class TaskScheduler:
 
     @property
     def max_running(self) -> int:
-        return self.cluster.max_running if self.cluster is not None else self._fixed_max_running
+        if self.cluster is not None:
+            return self.cluster.max_running
+        # 至少能同时跑「浏览器名额」那么多个任务，不然浏览器永远用不满（同 cluster.max_running）
+        try:
+            from ..browser.capacity import BROWSER_CAPACITY
+            return max(self._fixed_max_running, int(BROWSER_CAPACITY.limit or 0))
+        except Exception:  # noqa: BLE001
+            return self._fixed_max_running
 
     # ---------------- 生命周期 ----------------
     async def start(self) -> None:
-        # 上次进程被杀时可能留下 running 状态的任务，先清理掉。
-        # 集群里只清本机的；主机再顺带清升级前没有机器归属的老记录
-        if self.cluster is not None:
-            me = self.cluster.me
-            reset = await self.tasks.reset_stuck_running(
-                [me.node_id, ""] if me.is_master_role else [me.node_id])
-        else:
-            reset = await self.tasks.reset_stuck_running()
-        if reset:
-            logger.warning("发现 %d 个上次未正常结束的任务，已标记为失败", reset)
-        # 运行记录同理：本机还挂着「运行中」的，进程已经没了，记成「中断」
+        # 运行记录：本机还挂着「运行中」的，进程已经没了，记成「中断」（先记，下面判断要不要重跑要用）
         runs = getattr(self.runner, "runs", None)
         if runs is not None:
             try:
@@ -88,6 +85,15 @@ class TaskScheduler:
                     logger.warning("%d 条运行记录停在「运行中」（上次没正常结束），已记为中断", n)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("清理运行记录失败（不影响调度）：%s", exc)
+        # 上次进程被杀时还在跑 / 已派出去的任务：重新排队、马上接着跑（以前是直接标成失败，
+        # 一次性任务就再也不跑了，定时任务也要等到下一次）。集群里只动本机的；
+        # 主机再顺带处理升级前没有机器归属的老记录
+        if self.cluster is not None:
+            me = self.cluster.me
+            nodes = [me.node_id, ""] if me.is_master_role else [me.node_id]
+        else:
+            nodes = None
+        await self._requeue_interrupted(nodes, runs)
 
         if not self.config.get("scheduler.enabled", True):
             if self.cluster is None:
@@ -182,6 +188,8 @@ class TaskScheduler:
         for task in await self.tasks.assigned_to(node_id):
             if task["task_id"] in self._running:
                 continue
+            if await self._browser_blocked(task):
+                continue        # 它要的浏览器全被占着：先不占运行名额，留着位置，浏览器空了下一轮就起
             if not await self.tasks.start_assigned(task["task_id"], node_id):
                 continue        # 刚被取消了
             # 主机派给自己的，派发时记下了触发原因（手动执行 / 定时触发 / 排队恢复 / 立即执行）
@@ -205,10 +213,16 @@ class TaskScheduler:
             accounts = getattr(getattr(self.runner, "browser_manager", None), "accounts", None)
             candidates = await ready_tasks(self.tasks, accounts, limit=max(slots, 20))
 
-            for task in candidates[:slots]:
+            started = 0
+            for task in candidates:
+                if started >= slots:
+                    break
                 if task["task_id"] in self._running:
                     continue
+                if await self._browser_blocked(task):
+                    continue    # 浏览器全被占着：名额先给后面现在就能跑的，它位置不变
                 await self._launch(task)
+                started += 1
 
     async def _watchdog(self) -> None:
         """看门狗：任务跑得太久就取消掉，别让它永远卡着。
@@ -376,6 +390,56 @@ class TaskScheduler:
             return False
         event.set()
         return True
+
+    #: 连着这么多次都被重启打断，就不再自动重跑（多半是这个任务一跑就把服务带崩）
+    MAX_RESTART_REQUEUES = 3
+
+    async def _requeue_interrupted(self, nodes, runs) -> None:
+        try:
+            stuck = await self.tasks.stuck_running(nodes)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("查询上次未结束的任务失败，按老办法标成失败：%s", exc)
+            await self.tasks.reset_stuck_running(nodes)
+            return
+        requeued = failed = 0
+        for task in stuck:
+            task_id = task["task_id"]
+            try:
+                if task.get("cancel_requested"):
+                    await self.tasks.mark_finished(task_id, TaskStatus.CANCELED.value,
+                                                   error="服务重启前已经点了取消")
+                    continue
+                streak = await runs.interrupted_streak(task_id) if runs is not None else 0
+                if streak >= self.MAX_RESTART_REQUEUES:
+                    await self.tasks.mark_finished(
+                        task_id, TaskStatus.FAILED.value,
+                        error=f"连续 {streak} 次跑到一半服务重启，不再自动重跑，请检查后手动执行")
+                    failed += 1
+                    continue
+                await self.tasks.requeue_after_restart(
+                    task_id, "服务重启时这个任务正在运行，已重新排队，马上接着跑")
+                requeued += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("重启后处理任务 %s 失败：%s", task_id, exc)
+        if requeued:
+            logger.warning("%d 个任务上次被服务重启打断，已重新排队，马上接着跑", requeued)
+        if failed:
+            logger.error("%d 个任务连续多次被重启打断，已标为失败，不再自动重跑", failed)
+
+    async def _browser_blocked(self, task: Dict[str, Any]) -> bool:
+        """这个任务现在启动只能干等浏览器（见 scheduler/queue.browser_blocked）。查不了就当不堵。"""
+        manager = getattr(getattr(self, "runner", None), "browser_manager", None)
+        if manager is None:
+            return False
+        try:
+            from ..browser.capacity import BROWSER_CAPACITY
+            from .queue import browser_blocked
+            return await browser_blocked(
+                task, config=self.config, accounts=getattr(manager, "accounts", None),
+                slots=getattr(manager, "slots", None), capacity=BROWSER_CAPACITY)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("判断任务 %s 是否在等浏览器失败（按不堵处理）：%s", task.get("task_id"), exc)
+            return False
 
     async def _cancel_waiting_run(self, task_id: str) -> None:
         """排队被取消：那条「排队等账号」的运行记录记成「已取消」。写不上不影响取消本身。"""
