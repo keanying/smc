@@ -16,6 +16,16 @@
       </h2>
       <div>
         <el-button v-if="run?.task_exists" @click="$router.push(`/tasks/${run.task_id}`)">去任务</el-button>
+        <!-- 对所属任务的操作：在跑 / 排队的给「停止」，否则给「立即开始」；周期任务还能暂停定时 -->
+        <template v-if="run?.task_exists">
+          <el-button v-if="taskIsActive(run)" type="warning" plain :loading="acting" @click="act(stopTask)">
+            {{ run.task_status === 'waiting' ? '取消排队' : '停止运行' }}
+          </el-button>
+          <el-button v-else type="primary" :loading="acting" @click="act(startTask)">立即开始</el-button>
+          <el-button v-if="isPeriodic(run)" :loading="acting" @click="act(toggleTaskSchedule)">
+            {{ run.task_schedule_enabled ? '暂停定时' : '启用定时' }}
+          </el-button>
+        </template>
         <el-button @click="$router.push(backTo)">返回运行记录</el-button>
         <el-button
           v-if="run && run.run_status !== 'running'" type="danger" plain :loading="deleting" @click="removeRun"
@@ -109,6 +119,9 @@ import { runApi, type TaskLog, type TaskRunDetail } from '../api'
 import { channelLabel, formatTime } from '../constants'
 import ChannelTag from '../components/ChannelTag.vue'
 import { toast } from '../composables/toast'
+import {
+  isPeriodic, startTask, stopTask, taskIsActive, toggleTaskSchedule,
+} from '../composables/runTaskActions'
 
 const RUN_STATUS_TYPES: Record<string, 'success' | 'warning' | 'info' | 'danger' | 'primary'> = {
   running: 'primary', completed: 'success', failed: 'danger', canceled: 'info',
@@ -162,6 +175,28 @@ async function loadLogs() {
   }
 }
 
+const acting = ref(false)
+/** 对所属任务操作完：刷新状态；开始了的话这一条会接着变成「运行中」（排队的那条直接接着用），恢复自动刷新 */
+async function act(action: (run: TaskRunDetail) => Promise<boolean>) {
+  if (!run.value) return
+  acting.value = true
+  const wasWaiting = run.value.run_status === 'waiting'
+  try {
+    if (await action(run.value)) {
+      // 跑完了的记录上点「立即开始」会另起一条新记录：带着任务筛选回到列表，能看到新的那条；
+      // 排队中的那条会被接着用，留在这儿看它变成运行中
+      if (action === startTask && !wasWaiting) {
+        router.push({ path: '/runs', query: { task_id: run.value.task_id, task_name: run.value.task_name } })
+        return
+      }
+      await refresh(true)
+      startPolling()
+    }
+  } finally {
+    acting.value = false
+  }
+}
+
 async function removeRun() {
   if (!run.value) return
   try {
@@ -193,15 +228,22 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-  // 还在跑：3 秒刷一次状态和新日志，跑完就停
+  startPolling()
+})
+
+/** 还在跑（或刚点了开始，任务正在排队 / 派发）：3 秒刷一次状态和新日志，跑完就停 */
+function startPolling() {
+  window.clearInterval(timer)
+  let idleRounds = 0
   timer = window.setInterval(async () => {
-    if (run.value?.run_status !== 'running') {
+    const busy = run.value?.run_status === 'running' || taskIsActive(run.value || {})
+    if (!busy && ++idleRounds > 3) {
       window.clearInterval(timer)
       return
     }
     await refresh(true)
   }, 3000)
-})
+}
 onBeforeUnmount(() => window.clearInterval(timer))
 </script>
 

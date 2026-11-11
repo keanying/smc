@@ -353,8 +353,14 @@ async def run_task(task_id: str, state: AppState = Depends(get_state)):
 
 @router.post("/{task_id}/cancel")
 async def cancel_task(task_id: str, state: AppState = Depends(get_state)):
+    before = await state.tasks.get(task_id)
+    queued = bool(before) and before.get("status") in ("waiting", "queued")
     cancelled = await state.scheduler.cancel(task_id)
-    return ok({"cancelled": cancelled}, "已发送取消信号" if cancelled else "任务当前不在运行")
+    if cancelled:
+        return ok({"cancelled": True, "dequeued": False}, "已发送取消信号，任务会在几秒内停下")
+    if queued:
+        return ok({"cancelled": False, "dequeued": True}, "已取消排队，这一轮不再执行")
+    return ok({"cancelled": False, "dequeued": False}, "任务当前不在运行")
 
 
 @router.put("/{task_id}/schedule-enabled")

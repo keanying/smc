@@ -33,6 +33,14 @@ async def list_runs(
         "trigger_type": trigger, "keyword": keyword.strip(),
         "start_date": start_date, "end_date": end_date,
     }, page=page, page_size=page_size)
+    # 每条记录所属任务**现在**的状态：页面上「立即开始 / 停止 / 暂停定时」按它显示
+    states = await _repo(state).task_states([r["task_id"] for r in result["items"]])
+    for item in result["items"]:
+        task = states.get(item["task_id"])
+        item["task_exists"] = task is not None
+        item["task_status"] = (task or {}).get("status") or ""
+        item["task_schedule_type"] = (task or {}).get("schedule_type") or ""
+        item["task_schedule_enabled"] = bool((task or {}).get("schedule_enabled"))
     # 筛选下拉的选项：状态 / 触发方式的取值和中文名，前端不用再抄一份
     result["status_options"] = [{"value": k, "label": v} for k, v in RUN_STATUS_LABELS.items()]
     result["trigger_options"] = [{"value": k, "label": v} for k, v in TRIGGER_LABELS.items()]
@@ -44,8 +52,12 @@ async def get_run(run_no: str, state: AppState = Depends(get_state)):
     run = await _repo(state).get(run_no)
     if run is None:
         raise not_found("运行记录不存在")
-    # 任务还在不在（删了的话详情页不给「去任务」的链接）
-    run["task_exists"] = bool(await state.tasks.get(run["task_id"]))
+    # 任务还在不在（删了的话详情页不给「去任务」的链接），以及它现在的状态（详情页的操作按钮用）
+    task = (await _repo(state).task_states([run["task_id"]])).get(run["task_id"])
+    run["task_exists"] = task is not None
+    run["task_status"] = (task or {}).get("status") or ""
+    run["task_schedule_type"] = (task or {}).get("schedule_type") or ""
+    run["task_schedule_enabled"] = bool((task or {}).get("schedule_enabled"))
     return ok(run)
 
 

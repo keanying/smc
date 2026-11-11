@@ -74,14 +74,13 @@ class RunRepository:
                     scenic_name: str = "") -> str:
         """插一条「运行中」，返回运行编号。
 
-        排队恢复（trigger_type=resume）时，如果这个任务最近一条记录还是「排队等账号」，
-        就**接着用那一条**（重试次数 +1），不再新建：以前排队期间每分钟试一次、
-        每次都新建一条，运行记录被同一个任务刷满一屏。
+        这个任务最近一条记录还是「排队等账号」时，**接着用那一条**（重试次数 +1），不再新建：
+        以前排队期间每分钟试一次、每次都新建一条，运行记录被同一个任务刷满一屏。
+        排队恢复、在运行记录 / 任务列表里点「立即开始」都一样——点的那一行直接变成运行中。
         """
-        if trigger_type == "resume":
-            reused = await self._reuse_waiting(task["task_id"], node_id)
-            if reused:
-                return reused
+        reused = await self._reuse_waiting(task["task_id"], node_id)
+        if reused:
+            return reused
         now = datetime.now()
         run_no = f"R{now:%Y%m%d%H%M%S}{uuid.uuid4().hex[:4]}"
         channels = task.get("channels") or []
@@ -114,6 +113,24 @@ class RunRepository:
             f"error_message = NULL, wait_retry_qty = wait_retry_qty + 1, node_id = %s "
             f"WHERE run_no = %s AND run_status = 'waiting'", [(node_id or "")[:100], row["run_no"]])
         return str(row["run_no"])
+
+    async def cancel_waiting(self, task_id: str, reason: str = "排队中被手动取消") -> int:
+        """任务的排队被取消了：它那条「排队等账号」的记录记成「已取消」（不然一直挂着排队）。"""
+        return int(await self.db.execute(
+            f"UPDATE `{tables.TASK_RUN}` SET run_status = 'canceled', end_time = NOW(), "
+            f"error_message = %s WHERE task_id = %s AND run_status = 'waiting'",
+            [reason[:4000], task_id]) or 0)
+
+    async def task_states(self, task_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """这些任务现在的状态（运行记录列表上的「立即开始 / 停止 / 暂停定时」要按它决定）。"""
+        ids = [t for t in dict.fromkeys(task_ids) if t]
+        if not ids:
+            return {}
+        marks = ", ".join(["%s"] * len(ids))
+        rows = await self.db.fetch_all(
+            f"SELECT task_id, status, schedule_type, schedule_enabled FROM `{tables.TASK}` "
+            f"WHERE task_id IN ({marks})", ids)
+        return {r["task_id"]: r for r in rows}
 
     async def set_scenic_name(self, run_no: str, scenic_name: str) -> None:
         await self.db.execute(

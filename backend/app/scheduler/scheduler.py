@@ -362,6 +362,7 @@ class TaskScheduler:
                 task = await self.tasks.get(task_id)
                 if task:
                     await self.tasks.reschedule(task)
+                await self._cancel_waiting_run(task_id)
                 return False
         if event is None:
             # 没在跑，但可能是排队中的周期任务，直接停用
@@ -371,9 +372,20 @@ class TaskScheduler:
                 # 取消"排队等账号"：next_run_time 还是那个恢复时刻，不改的话
                 # 到点照样会被捞起来跑。按任务自己的调度规则重新算（一次性的就停用）。
                 await self.tasks.reschedule(task)
+                await self._cancel_waiting_run(task_id)
             return False
         event.set()
         return True
+
+    async def _cancel_waiting_run(self, task_id: str) -> None:
+        """排队被取消：那条「排队等账号」的运行记录记成「已取消」。写不上不影响取消本身。"""
+        runs = getattr(getattr(self, "runner", None), "runs", None)
+        if runs is None:
+            return
+        try:
+            await runs.cancel_waiting(task_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("取消排队后更新运行记录失败（%s）：%s", task_id, exc)
 
     def running_task_ids(self) -> Set[str]:
         return set(self._running)
