@@ -509,6 +509,8 @@ export interface TaskRun {
   trigger_label: string
   /** 触发方式的一句话说明（悬停提示） */
   trigger_hint?: string
+  /** 排队等账号期间又试了几次（都记在这一条上） */
+  wait_retry_qty?: number
   /** running / completed / failed / canceled / waiting / interrupted */
   run_status: string
   run_status_label: string
