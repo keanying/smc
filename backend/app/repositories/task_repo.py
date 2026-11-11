@@ -373,6 +373,33 @@ class TaskRepository:
             args,
         )
 
+    async def stuck_running(self, node_ids: Optional[Sequence[str]] = None) -> List[Dict]:
+        """服务重启时还挂在 running / queued 的任务（进程已经没了）。node_ids 同 reset_stuck_running。"""
+        where = "status IN ('running', 'queued')"
+        args: List[Any] = []
+        if node_ids is not None:
+            if not node_ids:
+                return []
+            where += f" AND node_id IN ({', '.join(['%s'] * len(node_ids))})"
+            args.extend(node_ids)
+        rows = await self.db.fetch_all(
+            f"SELECT * FROM `src_opinion_crawl_task` WHERE {where} ORDER BY start_time ASC, id ASC", args)
+        return [_decode(r) for r in rows]
+
+    async def requeue_after_restart(self, task_id: str, reason: str) -> None:
+        """被服务重启打断的任务：重新排进队列，**马上**接着跑。
+
+        排队位置按它原来开始的时间（queued_at 取 start_time）：它比重启后才到点的任务来得早，
+        先来先跑。状态 waiting 不看 schedule_enabled，一次性任务也会被捞起来。
+        """
+        now = datetime.now()
+        await self.db.execute(
+            "UPDATE `src_opinion_crawl_task` SET status = 'waiting', end_time = %s, next_run_time = %s, "
+            "queued_at = COALESCE(queued_at, start_time, %s), error = %s, cancel_requested = 0 "
+            "WHERE task_id = %s AND status IN ('running', 'queued')",
+            [now, now, now, (reason or "")[:2000], task_id],
+        )
+
     # ---------------- 集群：派发 ----------------
     async def claim_for_node(self, task_id: str, node_id: str) -> bool:
         """把任务派给某台机器。已经在跑 / 已经派出去的不动——两台主机同时派也只有一台成功。"""

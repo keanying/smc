@@ -150,3 +150,91 @@ async def test_waiting_task_keeps_waiting_when_its_account_is_still_cooling():
     picked = await ready_tasks(_Tasks(waiting=[waiting]), accounts, limit=10)
     assert picked == []
     assert accounts.calls == [("weibo", "x", "", False)]      # 看的是所有机器上的号
+
+
+# ---------------------------------------------------------------- 使用率：等浏览器的不占运行名额
+class _Cfg:
+    def __init__(self, values=None):
+        self.values = values or {}
+
+    def get(self, key, default=None):
+        return self.values.get(key, default)
+
+
+class _Names:
+    def __init__(self, names):
+        self.names = names
+
+    async def active_names(self, channel, *, preferred="", group=""):
+        return [preferred] if preferred else list(self.names.get(channel, []))
+
+
+class _Cap:
+    def __init__(self, active, limit):
+        self.active, self.limit = active, limit
+
+    def stats(self):
+        return {"active": self.active, "limit": self.limit}
+
+
+async def test_browser_task_is_blocked_only_when_all_its_browsers_are_busy():
+    from app.scheduler.queue import browser_blocked
+
+    slots = BrowserSlots()
+    accounts = _Names({"kuaishou": ["k1", "k2"], "weibo": ["w1"]})
+    ks = {"task_id": "ks", "channels": ["kuaishou"], "params": {}}
+    kw = dict(config=_Cfg(), accounts=accounts, slots=slots, capacity=_Cap(1, 4))
+    assert not await browser_blocked(ks, **kw)
+    slots.try_acquire("kuaishou", ["k1"], reason="在跑")
+    assert not await browser_blocked(ks, **kw)                 # k2 还空着
+    slots.try_acquire("kuaishou", ["k2"], reason="在跑")
+    assert await browser_blocked(ks, **kw)                     # 两个号的浏览器都被占着
+
+    # 微博接口模式不常驻浏览器：浏览器满不满都不影响它启动
+    slots.try_acquire("weibo", ["w1"], reason="在跑")
+    wb_api = {"task_id": "wb", "channels": ["weibo"], "params": {"collect_engine": "api"}}
+    assert not await browser_blocked(wb_api, **kw)
+    wb_human = {"task_id": "wb2", "channels": ["weibo"], "params": {"collect_engine": "human"}}
+    assert await browser_blocked(wb_human, **kw)
+
+
+async def test_browser_task_is_blocked_when_global_browser_limit_is_full():
+    from app.scheduler.queue import browser_blocked
+
+    ks = {"task_id": "ks", "channels": ["kuaishou"], "params": {}}
+    assert await browser_blocked(ks, config=_Cfg(), accounts=_Names({"kuaishou": ["k1"]}),
+                                 slots=BrowserSlots(), capacity=_Cap(3, 3))
+
+
+async def test_poll_gives_the_slot_to_a_task_that_can_run_now(monkeypatch):
+    """排在前面的快手任务等浏览器：这一轮先启动后面能跑的微博任务，快手留着位置。"""
+    from app.scheduler import queue as queue_module
+    from app.scheduler.scheduler import TaskScheduler
+
+    sched = TaskScheduler.__new__(TaskScheduler)
+    sched.cluster = None
+    sched._fixed_max_running = 1
+    sched._running, sched._cancel_events, sched._started_at, sched._running_meta = {}, {}, {}, {}
+    sched._poll_lock = asyncio.Lock()
+    sched.runner = None
+    launched = []
+
+    async def fake_ready(tasks_repo, accounts, *, limit):
+        return [{"task_id": "ks"}, {"task_id": "wb"}]
+
+    async def blocked(task):
+        return task["task_id"] == "ks"
+
+    async def launch(task, claimed=False, trigger=""):
+        launched.append(task["task_id"])
+
+    async def nothing():
+        return None
+
+    monkeypatch.setattr(queue_module, "ready_tasks", fake_ready)
+    sched._browser_blocked = blocked
+    sched._launch = launch
+    sched._watchdog = nothing
+    sched.tasks = None
+    await sched._poll()
+    assert launched == ["wb"]

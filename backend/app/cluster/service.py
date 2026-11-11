@@ -77,7 +77,14 @@ class Cluster:
         if not self.me.is_worker_role:
             return 0
         own = int(self.config.get("cluster.max_running_tasks", 0) or 0)
-        return own if own > 0 else int(self.config.get("scheduler.max_running_tasks", 3) or 3)
+        configured = own if own > 0 else int(self.config.get("scheduler.max_running_tasks", 3) or 3)
+        # 至少能同时跑「浏览器名额」那么多个任务：任务上限比浏览器少的话，浏览器永远用不满
+        # （等浏览器的任务现在不占运行名额，见 scheduler._browser_blocked，所以不会白占）
+        try:
+            from ..browser.capacity import BROWSER_CAPACITY
+            return max(configured, int(BROWSER_CAPACITY.limit or 0))
+        except Exception:  # noqa: BLE001
+            return configured
 
     def auto_dispatch(self) -> bool:
         """「系统设置 → 调度」关掉时，到点的任务不自动派，只能手动点「立即执行」。"""

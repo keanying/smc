@@ -266,6 +266,11 @@ class BrowserSlots:
         if queue is not None and not queue:
             self._waiters.pop(channel, None)
 
+    def free_accounts(self, channel: str, accounts: Sequence[str]) -> List[str]:
+        """这些号里浏览器现在空着、也没被排队的人等着的。调度据此决定要不要现在启动任务。"""
+        reserved = self._reserved(channel, None)
+        return [a for a in accounts if not self.busy(channel, a) and a not in reserved]
+
     def queue_length(self, channel: str) -> int:
         """这个平台上还有几个在排队（测试和排障用）。"""
         return len(self._waiters.get(channel, []))
