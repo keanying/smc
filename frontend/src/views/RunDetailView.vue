@@ -56,7 +56,10 @@
             <el-descriptions-item label="机器">{{ run.node_id || '—' }}</el-descriptions-item>
             <el-descriptions-item label="开始">{{ formatTime(run.start_time) }}</el-descriptions-item>
             <el-descriptions-item label="结束">{{ run.end_time ? formatTime(run.end_time) : '运行中…' }}</el-descriptions-item>
-            <el-descriptions-item label="耗时" :span="2">{{ durationText(run.duration_seconds) }}</el-descriptions-item>
+            <el-descriptions-item label="耗时" :span="run.wait_retry_qty ? 1 : 2">{{ durationText(run.duration_seconds) }}</el-descriptions-item>
+            <el-descriptions-item v-if="run.wait_retry_qty" label="排队重试">
+              {{ run.wait_retry_qty }} 次<span class="muted small">（排队等账号期间又试过的次数，日志里都有）</span>
+            </el-descriptions-item>
           </el-descriptions>
         </el-card>
 

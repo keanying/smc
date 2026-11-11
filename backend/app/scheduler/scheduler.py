@@ -199,9 +199,11 @@ class TaskScheduler:
             if slots <= 0:
                 return
 
-            candidates = await self.tasks.pending_once_tasks(limit=slots)
-            if len(candidates) < slots:
-                candidates += await self.tasks.due_tasks(limit=slots - len(candidates))
+            # 谁先排队谁先跑：排队等账号的（有号能用了就不再干等到预定时间）、
+            # 到点的、新建的，统一按开始等的时间排（scheduler/queue.py）
+            from .queue import ready_tasks
+            accounts = getattr(getattr(self.runner, "browser_manager", None), "accounts", None)
+            candidates = await ready_tasks(self.tasks, accounts, limit=max(slots, 20))
 
             for task in candidates[:slots]:
                 if task["task_id"] in self._running:

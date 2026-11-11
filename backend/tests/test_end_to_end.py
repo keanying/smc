@@ -461,6 +461,40 @@ def test_09g_accounts_are_picked_least_recently_used_first(client):
     assert call(lambda: repo.active_names("weibo"))[-1] == "lru_a"   # 刚用过的在队尾
 
 
+def test_09h_queue_retries_share_one_run_record(client):
+    """排队等账号期间每次重试都记在第一条运行记录上（重试次数 +1），不再每次新建一条。"""
+    from datetime import datetime
+
+    from app.api.deps import get_state
+    from app.repositories.run_repo import RunRepository
+
+    repo = RunRepository(get_state().db)
+    call = client.portal.call
+    task = {"task_id": "T-retry", "task_name": "排队测试", "channels": ["weibo"]}
+
+    first = call(lambda: repo.begin(task, trigger_type="schedule", node_id="n1"))
+    call(lambda: repo.finish(first, "T-retry", status="waiting", started=datetime.now(),
+                             error="账号都在冷却"))
+    for _ in range(3):                                  # 排队期间又试了三次，都没跑成
+        again = call(lambda: repo.begin(task, trigger_type="resume", node_id="n1"))
+        assert again == first
+        call(lambda: repo.finish(again, "T-retry", status="waiting", started=datetime.now(),
+                                 error="还是在冷却"))
+    # 第四次终于跑成了：还是这一条，状态变成完成
+    last = call(lambda: repo.begin(task, trigger_type="resume", node_id="n1"))
+    assert last == first
+    call(lambda: repo.finish(last, "T-retry", status="completed", started=datetime.now()))
+    runs = _data(client.get("/api/runs", params={"task_id": "T-retry"}))
+    assert runs["total"] == 1
+    row = runs["items"][0]
+    assert row["run_status"] == "completed" and row["wait_retry_qty"] == 4
+    assert row["trigger_type"] == "schedule"            # 最初是怎么触发的保持不变
+
+    # 跑完之后下一次排队恢复（新的一轮）不会再接到这条完成的记录上
+    fresh = call(lambda: repo.begin(task, trigger_type="resume", node_id="n1"))
+    assert fresh != first
+
+
 def test_10_data_center_overview(client):
     overview = _data(client.get("/api/data/overview"))
     xihu = next(row for row in overview if row["scenic_id"] == "SC001")

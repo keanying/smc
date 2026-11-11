@@ -308,6 +308,7 @@ CREATE TABLE IF NOT EXISTS `src_opr_crawl_task_run_di` (
   `error_message`    TEXT              NULL DEFAULT NULL COMMENT '失败 / 取消 / 排队的原因',
   `error_log_qty`    INT           NOT NULL DEFAULT 0    COMMENT '这次运行的错误日志条数（完成了也可能有，如某个平台没账号被跳过）',
   `warn_log_qty`     INT           NOT NULL DEFAULT 0    COMMENT '这次运行的警告日志条数',
+  `wait_retry_qty`   INT           NOT NULL DEFAULT 0    COMMENT '排队重试次数：排队等账号期间又试了几次（都记在这一条上，不再每次新建一条）',
   `node_id`          VARCHAR(100)  NOT NULL DEFAULT ''   COMMENT '在哪台机器上运行（集群节点ID，单机为主机名）',
   `log_start_id`     BIGINT        NOT NULL DEFAULT 0    COMMENT '这次运行的日志从 src_opinion_crawl_task_log 的哪个 id 之后开始（不含）',
   `log_end_id`       BIGINT        NOT NULL DEFAULT 0    COMMENT '这次运行的最后一条日志 id（含），运行中为 0',

@@ -56,7 +56,7 @@ _LIST_COLUMNS = (
     "id", "run_no", "task_id", "task_name", "scenic_id", "scenic_name", "channel_code",
     "trigger_type", "run_status", "start_time", "end_time", "duration_seconds",
     "new_work_qty", "updated_work_qty", "new_comment_qty", "updated_comment_qty",
-    "error_message", "error_log_qty", "warn_log_qty", "node_id", "travel_date",
+    "error_message", "error_log_qty", "warn_log_qty", "wait_retry_qty", "node_id", "travel_date",
 )
 
 
@@ -72,7 +72,16 @@ class RunRepository:
 
     async def begin(self, task: Dict[str, Any], *, trigger_type: str, node_id: str,
                     scenic_name: str = "") -> str:
-        """插一条「运行中」，返回运行编号。"""
+        """插一条「运行中」，返回运行编号。
+
+        排队恢复（trigger_type=resume）时，如果这个任务最近一条记录还是「排队等账号」，
+        就**接着用那一条**（重试次数 +1），不再新建：以前排队期间每分钟试一次、
+        每次都新建一条，运行记录被同一个任务刷满一屏。
+        """
+        if trigger_type == "resume":
+            reused = await self._reuse_waiting(task["task_id"], node_id)
+            if reused:
+                return reused
         now = datetime.now()
         run_no = f"R{now:%Y%m%d%H%M%S}{uuid.uuid4().hex[:4]}"
         channels = task.get("channels") or []
@@ -93,6 +102,18 @@ class RunRepository:
              json.dumps(params, ensure_ascii=False, default=str) if params else None,
              f"{now:%Y%m%d}"])
         return run_no
+
+    async def _reuse_waiting(self, task_id: str, node_id: str) -> str:
+        row = await self.db.fetch_one(
+            f"SELECT run_no, run_status FROM `{tables.TASK_RUN}` WHERE task_id = %s "
+            f"ORDER BY id DESC LIMIT 1", [task_id])
+        if not row or row.get("run_status") != "waiting":
+            return ""
+        await self.db.execute(
+            f"UPDATE `{tables.TASK_RUN}` SET run_status = 'running', end_time = NULL, "
+            f"error_message = NULL, wait_retry_qty = wait_retry_qty + 1, node_id = %s "
+            f"WHERE run_no = %s AND run_status = 'waiting'", [(node_id or "")[:100], row["run_no"]])
+        return str(row["run_no"])
 
     async def set_scenic_name(self, run_no: str, scenic_name: str) -> None:
         await self.db.execute(

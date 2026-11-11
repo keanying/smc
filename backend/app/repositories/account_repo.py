@@ -295,7 +295,7 @@ class AccountRepository:
                            channel, account_name, exc)
 
     async def cooling_summary(
-        self, channel: str, *, preferred: str = "", group: str = "",
+        self, channel: str, *, preferred: str = "", group: str = "", local: bool = True,
     ) -> Dict[str, Any]:
         """这个平台（/分组/指定账号）现在有几个号能用，没得用的话最早几点能恢复。
 
@@ -305,7 +305,8 @@ class AccountRepository:
         """
         clauses = ["channel = %s", "enabled = 1", "status = %s"]
         args: List[Any] = [channel, AccountStatus.ACTIVE.value]
-        if not preferred:
+        # local=False：看所有机器上的号（集群主机判断「排队的任务现在能不能跑」用，派给哪台由派发决定）
+        if not preferred and local:
             self._local(clauses, args)
         if preferred:
             clauses.append("account_name = %s")

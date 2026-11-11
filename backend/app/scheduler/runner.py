@@ -312,6 +312,16 @@ class TaskRunner:
         return bool((self.config.crawl or {}).get("skip_works_collected_today", True))
 
     # ---------------- 账号冷却排队 ----------------
+    def _end_quota_session(self, channel: str, account: str) -> None:
+        """这个任务用完了这个号：记下收工时间（连续工作时长不再算它闲着的时间）。"""
+        quota = getattr(self, "quota", None)
+        if quota is None or not account:
+            return
+        try:
+            quota.end_session(channel, account)
+        except Exception as exc:  # noqa: BLE001 —— 记不上最多是下次多算一会儿，不能影响收尾
+            logger.warning("[配额] 记录 %s/%s 收工时间失败：%s", channel, account, exc)
+
     async def _cooling_resume_at(self, channel: str, ctx: CollectContext) -> datetime:
         """什么时候再来：还有能用的号 → 一分钟后；都在冷却 → 最早那个恢复时。"""
         soon = datetime.now() + timedelta(seconds=COOLING_RETRY_SECONDS)
@@ -706,6 +716,11 @@ class TaskRunner:
                 raise AccountsCoolingDown(
                     await self._cooling_resume_at(channel, ctx), verdict.reason)
             quota.start_session(channel, ctx.account_name)
+            # 收工时必须成对 end_session（见下面的 finally）——不然这个号闲着的时间
+            # 会被算成「连续工作」，下次一派它就说超时、进冷却
+            session_account = ctx.account_name
+        else:
+            session_account = ""
 
         # 轮换锁：这个号派上用场了，锁定期内下一轮先让别的号上。
         # 放在配额闸门**之后**——被配额拦下来的那一轮根本没采，不该上锁。
@@ -753,7 +768,15 @@ class TaskRunner:
         proxy_state = "已启用" if self.proxy_manager.enabled_for(channel) else "未启用"
         log.info(f"{channel} 开始采集（模式：{_ENGINE_LABELS.get(engine, engine)}），代理{proxy_state}")
 
-        await collector.prepare(ctx)
+        try:
+            await collector.prepare(ctx)
+        except BaseException:
+            # prepare 在下面那个 try/finally 之外：失败（比如登录失效）时浏览器名额也要还，
+            # 不然上层重试这个平台时会再占一个，旧的那个一直挂着——页面上看浏览器空着，
+            # 实际名额被占着，后面的任务排着不动。release() 可以重复调。
+            lease.release()
+            self._end_quota_session(channel, session_account)
+            raise
         buffer = _Buffer(
             self.data, log,
             refresh_existing_comments=bool(
@@ -781,6 +804,7 @@ class TaskRunner:
             # 出口只有一条：不管采集器中途开过几次浏览器，租约都在这里还回去，
             # 后面排队的任务才动得了。
             lease.release()
+            self._end_quota_session(channel, session_account)
 
         duplicated = buffer.dedup_summary()
         if duplicated:

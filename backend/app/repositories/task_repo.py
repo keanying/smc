@@ -218,6 +218,21 @@ class TaskRepository:
         )
         return [_decode(r) for r in rows]
 
+    async def waiting_not_due(self, now: Optional[datetime] = None, limit: int = 50) -> List[Dict]:
+        """排队等账号、但还没到预定恢复时间的任务（按入队先后）。
+
+        预定恢复时间是按「冷却最早什么时候结束」算的；中途有号空出来（冷却被人工解除、
+        别的号歇好了）就不该再干等到那个点——调度那边会逐个看现在有没有号能用（见 scheduler/queue.py）。
+        """
+        moment = now or datetime.now()
+        rows = await self.db.fetch_all(
+            "SELECT * FROM `src_opinion_crawl_task` WHERE status = 'waiting' "
+            "AND next_run_time IS NOT NULL AND next_run_time > %s "
+            "ORDER BY COALESCE(queued_at, next_run_time) ASC, id ASC LIMIT %s",
+            [moment, int(limit)],
+        )
+        return [_decode(r) for r in rows]
+
     async def pending_once_tasks(self, limit: int = 50) -> List[Dict]:
         """取创建后待立即执行的一次性任务。"""
         rows = await self.db.fetch_all(

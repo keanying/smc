@@ -88,6 +88,8 @@
           <el-tag :type="RUN_STATUS_TYPES[row.run_status] || 'info'" size="small" disable-transitions>
             <span v-if="row.run_status === 'running'" class="running-dot" />{{ row.run_status_label }}
           </el-tag>
+          <!-- 排队期间反复重试都记在这一条上 -->
+          <div v-if="row.wait_retry_qty" class="muted small nowrap">排队重试 {{ row.wait_retry_qty }} 次</div>
         </template>
       </el-table-column>
       <el-table-column label="耗时" width="110">

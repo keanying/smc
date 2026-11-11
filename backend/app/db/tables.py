@@ -175,6 +175,9 @@ EXTRA_COLUMNS = [
      "VARCHAR(100) NOT NULL DEFAULT '' COMMENT '谁点的（定时触发为空）'"),
     (TASK, "cancel_requested",
      "TINYINT NOT NULL DEFAULT 0 COMMENT '取消请求：任务在别的机器上跑时由那台机器读到后停止'"),
+    # 运行记录：同一次排队里反复重试，都记在第一条上（以前每试一次新建一条，列表被刷屏）
+    (TASK_RUN, "wait_retry_qty",
+     "INT NOT NULL DEFAULT 0 COMMENT '排队重试次数：排队等账号期间又试了几次（都记在这一条上，不再每次新建一条）'"),
     # 景区盒子上报的数据记下是哪个盒子来的（只用于追查，页面上不显示）。主自己采的为空
     (WORKS, "source_box",
      "VARCHAR(64) NOT NULL DEFAULT '' COMMENT '上报这条数据的景区盒子编号；主自己采的为空'"),

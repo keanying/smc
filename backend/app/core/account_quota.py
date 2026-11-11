@@ -56,6 +56,10 @@ DEFAULT_LIMITS: Dict[str, int] = {
     "cooldown_minutes": 120,    # 触发后冷却多久
 }
 
+#: 歇够这么久（分钟）就算「这一轮干完了」，下次用它连续工作时长从 0 算起。
+#: 两次任务挨得很近（中间不到这么久）才接着累计。可在 crawl.account_quota.session_rest_minutes 改。
+DEFAULT_SESSION_REST_MINUTES = 10
+
 #: 各平台的建议默认值。小红书风控最紧，所以给得最保守。
 #: 这些是**出厂值**，用户在系统设置里改的会覆盖。
 CHANNEL_DEFAULTS: Dict[str, Dict[str, int]] = {
@@ -92,6 +96,8 @@ class AccountQuota:
         #: 本次会话的开始时刻，进程内就够——连续工作时长本来就是
         #: "这一轮从什么时候开始跑"，跨进程没有意义。
         self._session_start: Dict[str, float] = {}
+        #: 上一个任务用完这个号的时刻（还在干活的号不在这里）
+        self._session_end: Dict[str, float] = {}
 
     # ---------------- 配置 ----------------
     @property
@@ -201,17 +207,56 @@ class AccountQuota:
             _shrug("记用量", channel, account, exc)
 
     # ---------------- 会话时长 ----------------
+    #
+    # ⚠️ 以前任务结束时**没人调 end_session**（只有进冷却时才清），于是「连续工作」
+    #    从这个号上一次开始干活一直算到下一次检查——中间闲着的几个小时全算成了工作。
+    #    实跑：上午 6 点用过的号，下午 5 点再派它，报「已经连续工作 660 分钟」直接进冷却；
+    #    任务一分钟后换下一个号，下一个号也一样……一排号挨个被冷却，浏览器明明空着却没人干活。
+    #
+    # 现在的规则：任务开始 start_session、结束 end_session（runner 里成对调用）。
+    #   - 歇了 session_rest_minutes（默认 10 分钟）以上 → 下次从 0 算
+    #   - 前后两个任务挨得很近 → 接着累计（这才是"连续工作"）
+    def _rest_seconds(self) -> float:
+        raw = self._raw_config().get("session_rest_minutes", DEFAULT_SESSION_REST_MINUTES)
+        return max(0.0, float(_as_int(raw, DEFAULT_SESSION_REST_MINUTES))) * 60.0
+
     def start_session(self, channel: str, account: str) -> None:
-        """账号开始干活。单次连续时长从这里算。"""
-        if account:
-            self._session_start[f"{channel}:{account}"] = time.monotonic()
+        """账号开始干活。上一轮刚结束没多久就接着算，歇够了就从现在算。"""
+        if not account:
+            return
+        key = f"{channel}:{account}"
+        now = time.monotonic()
+        ended = self._session_end.pop(key, None)
+        if key in self._session_start and (
+                ended is None or now - ended < self._rest_seconds()):
+            return                      # 还在干活 / 刚歇了一小会儿：接着累计
+        self._session_start[key] = now
 
     def end_session(self, channel: str, account: str) -> None:
-        self._session_start.pop(f"{channel}:{account}", None)
+        """这个任务用完了这个号：记下收工时刻，闲着的时间不再算进连续工作。"""
+        key = f"{channel}:{account}"
+        if account and key in self._session_start:
+            self._session_end[key] = time.monotonic()
+
+    def reset_session(self, channel: str, account: str) -> None:
+        """冷却过了（或者刚进冷却）：连续工作时长清零。"""
+        key = f"{channel}:{account}"
+        self._session_start.pop(key, None)
+        self._session_end.pop(key, None)
 
     def session_minutes(self, channel: str, account: str) -> float:
-        started = self._session_start.get(f"{channel}:{account}")
-        return 0.0 if started is None else (time.monotonic() - started) / 60.0
+        """连续工作了多久（分钟）。已经收工且歇够了的是 0；收工没多久的算到收工那一刻。"""
+        key = f"{channel}:{account}"
+        started = self._session_start.get(key)
+        if started is None:
+            return 0.0
+        now = time.monotonic()
+        ended = self._session_end.get(key)
+        if ended is not None:
+            if now - ended >= self._rest_seconds():
+                return 0.0
+            return (ended - started) / 60.0
+        return (now - started) / 60.0
 
     # ---------------- 判定 ----------------
     async def check(self, channel: str, account: str) -> QuotaVerdict:
@@ -300,7 +345,7 @@ class AccountQuota:
                     [until, reason[:200], channel, account])
             except Exception as exc:  # noqa: BLE001
                 _shrug("写冷却状态", channel, account, exc)
-        self.end_session(channel, account)
+        self.reset_session(channel, account)
         logger.warning("[配额] 账号 %s/%s 进入冷却 %d 分钟：%s",
                        channel, account, minutes, reason)
         return until
@@ -313,6 +358,7 @@ class AccountQuota:
             f"UPDATE `{tables.ACCOUNT}` SET cooldown_until = NULL, "
             f"cooldown_reason = '' WHERE channel = %s AND account_name = %s",
             [channel, account])
+        self.reset_session(channel, account)     # 放出来就是歇好了，连续工作从 0 算
         logger.info("[配额] 账号 %s/%s 的冷却已人工解除", channel, account)
 
     # ---------------- 页面展示 ----------------
