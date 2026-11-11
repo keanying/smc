@@ -527,6 +527,11 @@ export interface TaskRun {
   warn_log_qty: number
   node_id: string
   travel_date: string
+  /** 所属任务现在的状态（列表 / 详情上的「立即开始 / 停止 / 暂停定时」按它显示）；任务删了就是空 */
+  task_exists?: boolean
+  task_status?: string
+  task_schedule_type?: string
+  task_schedule_enabled?: boolean
 }
 
 export interface TaskRunDetail extends TaskRun {
@@ -571,7 +576,8 @@ export const taskApi = {
   patch: (taskId: string, payload: Record<string, unknown>) => api.patch<Task>(`/api/tasks/${taskId}`, payload),
   remove: (taskId: string) => api.del<null>(`/api/tasks/${taskId}`),
   run: (taskId: string) => api.post<{ started: boolean }>(`/api/tasks/${taskId}/run`),
-  cancel: (taskId: string) => api.post<{ cancelled: boolean }>(`/api/tasks/${taskId}/cancel`),
+  /** cancelled=在跑的发了停止信号；dequeued=排队中的取消了排队 */
+  cancel: (taskId: string) => api.post<{ cancelled: boolean; dequeued?: boolean }>(`/api/tasks/${taskId}/cancel`),
   toggleSchedule: (taskId: string, enabled: boolean) =>
     api.put<null>(`/api/tasks/${taskId}/schedule-enabled`, undefined, { enabled }),
   /** 一键开 / 关 AI 过滤（只动这一个开关） */

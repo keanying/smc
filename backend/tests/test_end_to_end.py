@@ -495,6 +495,52 @@ def test_09h_queue_retries_share_one_run_record(client):
     assert fresh != first
 
 
+def test_09i_run_list_actions(client):
+    """运行记录上的「立即开始 / 取消排队 / 暂停定时」：列表带任务现在的状态，
+    取消排队时那条「排队等账号」记成已取消，排队中点立即开始接着用那一条。"""
+    from datetime import datetime, timedelta
+
+    from app.api.deps import get_state
+    from app.repositories.run_repo import RunRepository
+
+    state = get_state()
+    repo = RunRepository(state.db)
+    call = client.portal.call
+    task = _data(client.post("/api/tasks", json={
+        "task_name": "运行记录操作", "scenic_id": "SC001", "channels": ["weibo"], "keywords": ["西湖"],
+        "schedule_type": "interval", "schedule_interval_seconds": 3600,
+    }))
+    task_id = task["task_id"]
+
+    # 排队等账号：任务 waiting + 一条 waiting 记录
+    run_no = call(lambda: repo.begin(task, trigger_type="schedule", node_id="n1"))
+    call(lambda: repo.finish(run_no, task_id, status="waiting", started=datetime.now(), error="都在冷却"))
+    call(lambda: state.tasks.update(task_id, {
+        "status": "waiting", "queued_at": datetime.now(),
+        "next_run_time": datetime.now() + timedelta(minutes=30)}))
+
+    row = _data(client.get("/api/runs", params={"task_id": task_id}))["items"][0]
+    assert row["task_exists"] and row["task_status"] == "waiting"
+    assert row["task_schedule_type"] == "interval" and row["task_schedule_enabled"] is True
+
+    # 排队中点「立即开始」：接着用排队的那一条
+    assert call(lambda: repo.begin(task, trigger_type="manual", node_id="n1")) == run_no
+    call(lambda: repo.finish(run_no, task_id, status="waiting", started=datetime.now(), error="还在冷却"))
+
+    # 取消排队：任务不再排队，那条记录记成已取消
+    body = client.post(f"/api/tasks/{task_id}/cancel").json()
+    assert body["data"]["dequeued"] is True and "取消排队" in body["message"]
+    row = _data(client.get("/api/runs", params={"task_id": task_id}))["items"][0]
+    assert row["run_status"] == "canceled" and row["task_status"] != "waiting"
+
+    # 暂停定时
+    _data(client.put(f"/api/tasks/{task_id}/schedule-enabled", params={"enabled": False}))
+    row = _data(client.get("/api/runs", params={"task_id": task_id}))["items"][0]
+    assert row["task_schedule_enabled"] is False
+    detail = _data(client.get(f"/api/runs/{run_no}"))
+    assert detail["task_status"] and detail["task_schedule_enabled"] is False
+
+
 def test_10_data_center_overview(client):
     overview = _data(client.get("/api/data/overview"))
     xihu = next(row for row in overview if row["scenic_id"] == "SC001")

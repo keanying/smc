@@ -113,10 +113,26 @@
         </template>
       </el-table-column>
       <el-table-column v-if="showNode" label="机器" width="120" prop="node_id" />
-      <el-table-column label="操作" width="96" align="center" fixed="right">
+      <el-table-column label="操作" width="160" align="center" fixed="right">
         <template #default="{ row }">
           <div class="row-actions" @click.stop>
             <IconAction icon="view" tip="运行详情" @click="openRun(row)" />
+            <!-- 对所属任务的操作：在跑 / 排队的给「停止」，否则给「立即开始」；周期任务还能暂停定时 -->
+            <template v-if="row.task_exists">
+              <IconAction
+                v-if="taskIsActive(row)" icon="revoke" :tip="stopTip(row)"
+                :loading="acting === row.run_no" @click="act(row, stopTask)"
+              />
+              <IconAction
+                v-else icon="play" tip="立即开始（执行这个任务）"
+                :loading="acting === row.run_no" @click="act(row, startTask)"
+              />
+              <IconAction
+                v-if="isPeriodic(row)" :icon="row.task_schedule_enabled ? 'pause' : 'online'"
+                :tip="row.task_schedule_enabled ? '暂停定时（不再自动执行）' : '启用定时'"
+                @click="act(row, toggleTaskSchedule)"
+              />
+            </template>
             <IconAction
               icon="delete" :tip="row.run_status === 'running' ? '还在运行，结束后才能删' : '删除'"
               :disabled="row.run_status === 'running'" @click="removeOne(row)"
@@ -148,6 +164,9 @@ import { runApi, scenicApi, type RunDeleteResult, type ScenicOption, type TaskRu
 import { CHANNEL_LABELS, formatTime } from '../constants'
 import ChannelTag from '../components/ChannelTag.vue'
 import { toast } from '../composables/toast'
+import {
+  isPeriodic, startTask, stopTask, stopTip, taskIsActive, toggleTaskSchedule,
+} from '../composables/runTaskActions'
 
 /** 运行状态 → 标签颜色 */
 const RUN_STATUS_TYPES: Record<string, 'success' | 'warning' | 'info' | 'danger' | 'primary'> = {
@@ -217,6 +236,17 @@ function openRun(row: TaskRun) {
 function onRowClick(row: TaskRun, column: { type?: string }) {
   if (column?.type === 'selection') return
   openRun(row)
+}
+
+// ------------------------------------------------------------------ 任务操作
+const acting = ref('')
+async function act(row: TaskRun, action: (run: TaskRun) => Promise<boolean>) {
+  acting.value = row.run_no
+  try {
+    if (await action(row)) await load(true)
+  } finally {
+    acting.value = ''
+  }
 }
 
 // ------------------------------------------------------------------ 删除
