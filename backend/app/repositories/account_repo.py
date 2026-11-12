@@ -43,6 +43,10 @@ class AccountRepository:
         #: 本机的集群编号。设了之后挑号只在**本机的号**（和还没分配机器的号）里挑：
         #: 号的登录态在它所在机器的硬盘上，别的机器拿来用就是没登录。
         self.node_id = node_id
+        #: 账号**变成**失效时要做的事（main.py 里挂上飞书通知）。签名：async (channel, account, reason)。
+        #: 放在这里而不是各个调用点：标记失效的地方有五六处（静默检测、定时取 Cookie、批量检测、
+        #: 采集途中……），以前只有采集任务那条路会发通知，静默检测发现失效时一声不响
+        self.on_expired: List[Any] = []
 
     def _local(self, clauses: List[str], args: List[Any]) -> None:
         if self.node_id:
@@ -172,11 +176,21 @@ class AccountRepository:
         await self.update(channel, account_name, fields)
 
     async def mark_expired(self, channel: str, account_name: str, reason: str = "") -> None:
+        before = await self.db.fetch_value(
+            "SELECT status FROM `src_opinion_social_account` WHERE channel = %s AND account_name = %s",
+            [channel, account_name])
         await self.update(channel, account_name, {
             "status": AccountStatus.EXPIRED.value,
             "last_check_time": datetime.now(),
             "last_error": (reason or "登录态已失效")[:500],
         })
+        # 只在「从能用变成失效」那一刻通知一次；本来就是失效的再标一次不重复喊
+        if before is not None and before != AccountStatus.EXPIRED.value:
+            for callback in list(self.on_expired):
+                try:
+                    await callback(channel, account_name, reason or "登录态已失效")
+                except Exception as exc:  # noqa: BLE001 —— 通知失败不能影响标记本身
+                    logger.warning("账号 %s/%s 失效通知失败：%s", channel, account_name, exc)
 
     async def pick_active(
         self, channel: str, *, preferred: str = "", group: str = "",

@@ -221,6 +221,15 @@ async def lifespan(app: FastAPI):
     _notifier = _get_notifier(config)
     if _notifier.enabled:
         logger.info("通知：飞书机器人已开启（需要人工介入或采集报错时会推送）")
+
+    # 账号**不管怎么发现失效的**（静默检测、定时取 Cookie、批量检测、采集途中、迁机器……）都发通知：
+    # 以前只有采集任务那条路会发，账号管理里静默检测把号判成「已失效」时一声不响
+    async def _notify_account_expired(channel: str, account: str, reason: str) -> None:
+        from .notify import NotifyEvent
+        await _get_notifier(config).send(NotifyEvent(
+            channel=channel, kind="account_invalid", account=account, detail=reason))
+
+    account_repo.on_expired.append(_notify_account_expired)
     if (config.get("labeling") or {}).get("enabled") and cluster.is_leader and box_sync is None:
         # 重启前队列里没标完的，现在就接着标——不等下一次采集任务来"顺便"拉起引擎。
         # 放后台跑：自检要真打一次模型，别拖慢服务启动

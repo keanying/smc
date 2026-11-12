@@ -389,8 +389,8 @@ async def move_account(
             raise bad_request("这台机器只协调不跑任务，账号不能放在上面")
     await state.accounts.set_node(channel, account_name, node_id)
     if needs_login(channel):
-        await state.accounts.update(channel, account_name, {"status": "expired",
-                                                            "last_error": "已迁到新机器，需要重新登录"})
+        # 走 mark_expired：和别处判失效一样会发通知（迁完要有人去新机器上登录）
+        await state.accounts.mark_expired(channel, account_name, "已迁到新机器，需要重新登录")
     return ok(message="已迁移。请在新机器上重新登录（扫码或导入 Cookie）")
 
 
