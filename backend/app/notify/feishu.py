@@ -61,8 +61,9 @@ class NotifyEvent:
 
     @property
     def dedup_key(self) -> str:
-        """冷却用的键：同一个平台的同一类问题算同一件事。"""
-        return f"{self.channel}:{self.kind}"
+        """冷却用的键：同一个平台的同一类问题算同一件事；**点名了账号的按账号分开**——
+        十分钟内两个号先后失效，第二个不能因为「同平台同类问题」被吞掉。"""
+        return f"{self.channel}:{self.kind}" + (f":{self.account}" if self.account else "")
 
 
 class FeishuNotifier:

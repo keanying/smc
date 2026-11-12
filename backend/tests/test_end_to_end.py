@@ -588,6 +588,28 @@ def test_09j_tasks_interrupted_by_restart_run_again(client):
             [t["task_id"]]))
 
 
+def test_09k_account_expiry_always_notifies(client):
+    """账号不管怎么被判失效（这里模拟静默检测），都要回调通知；已经失效的再判一次不重复通知。"""
+    from app.api.deps import get_state
+
+    accounts = get_state().accounts
+    call = client.portal.call
+    _data(client.post("/api/accounts", json={"channel": "kuaishou", "account_name": "notify-1"}))
+    call(lambda: accounts.update("kuaishou", "notify-1", {"status": "active"}))
+    seen = []
+
+    async def hook(channel, account, reason):
+        seen.append((channel, account, reason))
+
+    accounts.on_expired.append(hook)
+    try:
+        call(lambda: accounts.mark_expired("kuaishou", "notify-1", "静默检查时未检测到登录态"))
+        call(lambda: accounts.mark_expired("kuaishou", "notify-1", "静默检查时未检测到登录态"))
+    finally:
+        accounts.on_expired.remove(hook)
+    assert seen == [("kuaishou", "notify-1", "静默检查时未检测到登录态")]
+
+
 def test_10_data_center_overview(client):
     overview = _data(client.get("/api/data/overview"))
     xihu = next(row for row in overview if row["scenic_id"] == "SC001")

@@ -116,3 +116,13 @@ async def test_未初始化时采集侧拿到的是空壳():
 
     n = get_notifier()           # 不传 config
     assert await n.send(NotifyEvent(channel="douyin", kind="captcha")) is False
+
+
+def test_different_accounts_do_not_share_a_cooldown():
+    """十分钟内同平台两个号先后失效：两条都要发，不能因为「同平台同类问题」吞掉第二条。"""
+    from app.notify import NotifyEvent
+
+    a = NotifyEvent(channel="kuaishou", kind="account_invalid", account="号A")
+    b = NotifyEvent(channel="kuaishou", kind="account_invalid", account="号B")
+    plain = NotifyEvent(channel="kuaishou", kind="account_invalid")
+    assert len({a.dedup_key, b.dedup_key, plain.dedup_key}) == 3

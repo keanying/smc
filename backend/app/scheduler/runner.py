@@ -863,6 +863,8 @@ class TaskRunner:
             if kind in ("captcha", "two_factor") and quota is not None:
                 await quota.cool_down(channel, account, f"需要人工验证：{str(exc)[:120]}")
                 log.warn(f"账号 [{account}] 需要人工验证，先冷却，换下一个号")
+                # 冷却不走 mark_expired 的通知，这里单独喊一声（点名账号）
+                await self._notify(channel, kind, str(exc), account=account)
             else:
                 row = await accounts.get(channel, account)
                 if row and row.get("status") == AccountStatus.ACTIVE.value:
