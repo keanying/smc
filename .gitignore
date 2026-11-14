@@ -39,3 +39,5 @@ backend/libs/_bridge.cjs
 backend/vendor/*/logs/
 data_box/
 release/
+promo/video/out/
+promo/video/stills/
