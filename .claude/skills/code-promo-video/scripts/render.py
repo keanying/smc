@@ -49,6 +49,8 @@ async def open_page(p, page, scale=1.0):
 
 
 async def stills(page, out, times):
+    if out.exists():                      # 每轮清空，避免新旧静帧混在一起
+        shutil.rmtree(out)
     out.mkdir(parents=True, exist_ok=True)
     async with async_playwright() as p:
         b, pg, cfg, errors = await open_page(p, page)

@@ -51,6 +51,8 @@ description: 用代码做宣传片 / 产品介绍视频 / 功能演示短片，�
 3. 每个场景一个 `<div class="scene" id="...">`，再用 `scene(id, 开始, 结束, fn)` 注册。
    简单的入场用 data 属性（`data-in` 淡入上移、`data-dx` 横滑、`data-pop` 弹出、`data-type` 打字、
    `data-count` 数字滚动、`data-bar` 进度条），复杂的在 `fn(lt)` 里逐帧算。
+   带 `data-in` 的元素 transform 由引擎接管：要居中（`translateX(-50%)`）等基础变换，写进 `data-tf`，写在 style 里会被覆盖。
+   竖屏用 `.vcol`（文字区）和 `.vpanel`（面板）代替 `.col`，版式细节见 `references/styles.md`。
 4. 场景写法照抄 `references/scene-patterns.md`：开场揭幕、混乱→汇聚、3D 仪表盘、
    终端日志、节点拓扑、卡片流 + 扫描线、快剪、收尾。先读它再写，能省很多时间。
 
@@ -76,7 +78,7 @@ bash <skill>/scripts/build.sh work/xxx_promo.html --preview  # 半分辨率小�
 ```
 
 `build.sh` 依次：逐帧渲染 → 读 `out/video.json` 合成配乐 → 合成并把响度归一到 -14 LUFS。
-1080p 30fps 大约每秒成片需要 8–10 秒渲染（60 秒片约 10 分钟），放后台跑，期间可以做别的。
+1080p 30fps 每帧约 0.1–0.3 秒（60 秒片约 3–10 分钟，视机器和画面复杂度），放后台跑，期间可以做别的。
 渲染完抽几帧（`ffmpeg -ss T -i out.mp4 -frames:v 1 f.png`）确认，再交付。
 
 ### 6. 交付

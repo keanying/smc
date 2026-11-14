@@ -23,4 +23,4 @@ Windows：装 ffmpeg 并加入 PATH，系统自带微软雅黑。
 Playwright 版本和本机 Chromium 版本不匹配时会报 “Executable doesn't exist”，
 不要重装 Playwright，用 `CHROME=/path/to/chrome` 指向现有浏览器即可。
 
-渲染速度参考：1080p 30fps，每帧约 0.25–0.35 秒（1 秒成片 ≈ 8–10 秒）。`--preview` 半分辨率约快 3 倍。
+渲染速度参考：1080p 30fps，每帧约 0.1–0.3 秒（1 秒成片 ≈ 3–10 秒，画面越复杂越慢）。`--preview` 半分辨率约快 3 倍。

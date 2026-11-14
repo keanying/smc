@@ -33,6 +33,7 @@
   // ---------- 通用入场动画（声明式） ----------
   // data-in="秒"        淡入 + 上移 + 去模糊；data-dx="-40" 改为横向滑入；data-out="秒" 到点淡出
   // data-pop            配合 data-in，改为弹出缩放
+  // data-tf="translateX(-50%)"  基础变换：带 data-in 的元素 transform 由引擎接管，居中等变换要写在这里，写在 style 里会被覆盖
   // data-type="秒" data-text="..." data-cps="18"   打字机
   // data-count="12860" data-at="秒" data-dur="1.4" data-fmt="int|1|%"   数字滚动
   // data-bar="0.8" data-at="秒"   宽度增长到 80%
@@ -42,11 +43,11 @@
       if (el.hasAttribute('data-pop')) {
         const p = eback((lt - a) / dur);
         el.style.opacity = clamp((lt - a) / (dur * .5));
-        el.style.transform = `scale(${Math.max(0, p)})`;
+        el.style.transform = `${el.dataset.tf || ''} scale(${Math.max(0, p)})`;
       } else {
         const p = eo((lt - a) / dur), dx = +(el.dataset.dx || 0), dy = el.dataset.dy != null ? +el.dataset.dy : (dx ? 0 : 30);
         el.style.opacity = p;
-        el.style.transform = `translate(${(1 - p) * dx}px,${(1 - p) * dy}px)`;
+        el.style.transform = `${el.dataset.tf || ''} translate(${(1 - p) * dx}px,${(1 - p) * dy}px)`;
         el.style.filter = p < 1 ? `blur(${(1 - p) * 8}px)` : 'none';
       }
       if (el.dataset.out) el.style.opacity *= 1 - clamp((lt - +el.dataset.out) / .4);
@@ -120,7 +121,7 @@
       }
     },
   };
-  function glow(c, x, y, r, color) { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(0, 0, W, H) }
+  function glow(c, x, y, r, color) { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, color); g.addColorStop(1, transparentOf(color)); c.fillStyle = g; c.fillRect(0, 0, W, H) }
   function network(c, t, line, dot) {
     const ps = PTS.map(p => ({ x: ((p.x + p.vx * t) % W + W) % W, y: ((p.y + p.vy * t) % H + H) % H, r: p.r }));
     for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
@@ -129,6 +130,8 @@
     }
     c.fillStyle = dot; for (const p of ps) { c.beginPath(); c.arc(p.x, p.y, p.r, 0, 7); c.fill(); }
   }
+  // 渐变终点要用"同一颜色的透明"，用 rgba(0,0,0,0) 会在浅色主题上把光斑混成灰色
+  function transparentOf(color) { return color.startsWith('rgba') ? color.replace(/,[^,]*\)$/, ',0)') : color.startsWith('#') ? rgba(color, 0) : 'transparent' }
   const cssCache = {};
   function css(name) { return cssCache[name] || (cssCache[name] = getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#000') }
   function rgba(hex, a) { hex = hex.replace('#', ''); if (hex.length === 3) hex = [...hex].map(h => h + h).join(''); const n = parseInt(hex, 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})` }
@@ -159,7 +162,7 @@
       if (d > -.35 && d < .25) sk = (d + .35) / .6;
     }
     $('#__flash').style.opacity = f * (V.transition === 'soft' ? .25 : .45);
-    const st = $('#__streak'); st.style.opacity = sk >= 0 ? Math.sin(sk * Math.PI) * .9 : 0; st.style.left = (-40 + sk * 150) + '%';
+    const st = $('#__streak'); st.style.opacity = sk >= 0 ? Math.sin(sk * Math.PI) * (V.transition === 'soft' ? .3 : .9) : 0; st.style.left = (-40 + sk * 150) + '%';
     $('#stage').style.transform = V.transition === 'flash' && f > .3 ? `translate(${(rnd(t * 97) - .5) * 10 * f}px,${(rnd(t * 53) - .5) * 6 * f}px)` : 'none';
     document.body.style.opacity = 1 - clamp((t - (V.duration - V.endFade)) / V.endFade);
   }

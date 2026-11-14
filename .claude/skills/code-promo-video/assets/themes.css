@@ -79,6 +79,13 @@ html, body { width: var(--W); height: var(--H); overflow: hidden; background: va
 .pts li { font-size: 25px; margin: 16px 0; display: flex; align-items: center; gap: 16px }
 .pts li::before { content: ""; width: 10px; height: 10px; transform: rotate(45deg); background: var(--accent); box-shadow: 0 0 10px var(--accent); flex: none }
 .col { position: absolute; left: 110px; top: 250px; width: 520px }
+/* 竖屏 9:16 文字区：上部居中，左右各留 80px（关键信息放在 y 160–1720 之间，避开平台遮挡区） */
+.vcol { position: absolute; left: 80px; right: 80px; top: 160px; text-align: center }
+.vcol .kick { justify-content: center }
+.vcol .ttl { font-size: 92px }
+.vcol .sub { font-size: 34px }
+.vcol .pts li { justify-content: center; font-size: 30px }
+.vpanel { left: 80px; width: 920px }    /* 竖屏面板：配合 .panel，自己给 top / height */
 
 /* 容器 */
 .panel { position: absolute; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 22px; box-shadow: var(--panel-shadow); overflow: hidden }

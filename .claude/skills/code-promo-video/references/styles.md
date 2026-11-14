@@ -37,6 +37,20 @@ BPM 不是 120 时，拍长 = 60/BPM，小节 = 4 拍。先定 BPM 再定转场�
 - 底部（y 1560–1760）：要点或行动号召。y > 1780 和 y < 120 是平台 UI 遮挡区，不放关键信息。
 - 标题可到 88–96px，正文最小 22px；一屏只放一组信息，宁可多切一个场景。
 - 背景透视网格的地平线会在 0.7×高度处，竖屏时更靠下，正好托住面板。
+- 现成的类：`.vcol`（顶部居中文字区，标题 92px）、`.vpanel`（宽 920 居中，配合 `.panel` 自己给 top/height）。
+
+```html
+<div class="scene" id="v1">
+  <div class="vcol">
+    <div class="kick" data-in=".3">01 / FRESH</div>
+    <div class="ttl" data-in=".5">真果鲜切<br>一杯看得见</div>
+    <div class="sub" data-in=".9">一句副标题</div>
+  </div>
+  <div class="panel vpanel" style="top:760px;height:720px" data-in="1.0"><span class="demo-tag">示意</span>…</div>
+  <div class="abs center" style="top:1560px;font-size:30px" data-in="1.6">底部要点 / 行动号召</div>
+</div>
+```
+- 竖屏收尾的地址 / 二维码卡片放在 y 1300–1650，离底部遮挡区留足距离。
 
 **方形 1:1（1080×1080）**：上标题、下面板，面板宽 920；文字比横屏再精简一档。
 
