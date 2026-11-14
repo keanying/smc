@@ -5,7 +5,7 @@
 ```bash
 python -c "import playwright, numpy, scipy, PIL; print('python ok')"
 ffmpeg -version | head -1
-fc-list :lang=zh family | head -3          # 有 Noto Sans CJK SC / 思源黑体 等即可
+fc-list | grep -iE "CJK SC|Source Han Sans SC|PingFang|YaHei|WenQuanYi" | head -3   # 有简体中文黑体即可
 fc-list | grep -i "jetbrains" | head -1    # 等宽字体，可选（没有时回退到 DejaVu Sans Mono）
 ```
 

@@ -15,7 +15,7 @@ mood（情绪）：
   epic       史诗、低音鼓 + 大冲击、宽铺底（发布会、大事件、国潮）
   corporate  商务、克制、闷音拨弦 + 轻鼓（企业介绍、B2B、SaaS）
 
-段落自动划分：开头到第一个 big 之前是前奏（不进鼓），中段是主歌（全编制），
+段落自动划分：开头到“第一个不早于 1.5 小节的 big”之前是前奏（不进鼓；可用 VIDEO.grooveAt 指定），中段是主歌（全编制），
 最后一个转场之后是尾声（撤鼓、铺底延音、淡出）。每个 big 前放上扬、落点放冲击音；
 普通转场放镲片 + 呼啸。
 """
@@ -210,14 +210,16 @@ def pad_chord(m, t, notes, length, kind, v):
 
 
 # ---------------- 编曲 ----------------
-def compose(duration, bpm, cuts, big, mood):
+def compose(duration, bpm, cuts, big, mood, groove_at=None):
     M = MOODS[mood]
     beat = 60.0 / bpm
     bar = beat * 4
     m = Mixer(duration)
     cuts = sorted(c for c in cuts if 0 < c < duration)
     big = sorted(b for b in big if 0 < b < duration) or cuts[:1]
-    groove_on = next((b for b in big if b >= bar * 1.5), big[0] if big else bar * 2)
+    # 鼓从哪里进：VIDEO.grooveAt 指定优先；否则取第一个不早于 1.5 小节的 big
+    # （开场 2 秒的 Logo 亮相只放冲击音，鼓留到主体出现时再进，形成“蓄力 → 释放”）
+    groove_on = groove_at if groove_at is not None else next((b for b in big if b >= bar * 1.5), big[0] if big else bar * 2)
     outro_on = cuts[-1] if cuts and cuts[-1] > duration - 12 else duration - min(6, duration / 4)
 
     for c in cuts:  # 提醒：转场不在拍点上会"踩不准"
@@ -365,7 +367,7 @@ def main():
     bpm = a.bpm or cfg.get("bpm") or MOODS[mood]["bpm"]
     cuts = a.cuts if a.cuts is not None else cfg.get("cuts", [])
     big = a.big if a.big is not None else cfg.get("big", [])
-    m, beat = compose(duration, bpm, cuts, big, mood)
+    m, beat = compose(duration, bpm, cuts, big, mood, cfg.get("grooveAt"))
     st = mixdown(m, beat, duration)
     out = Path(a.out); out.parent.mkdir(parents=True, exist_ok=True)
     with wave.open(str(out), "wb") as w:

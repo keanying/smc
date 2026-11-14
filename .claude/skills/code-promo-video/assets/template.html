@@ -13,7 +13,7 @@ window.VIDEO = {
   width: 1920, height: 1080, fps: 30,
   duration: 20,            // 秒
   bpm: 120,
-  cuts: [2, 6, 14],        // 每个场景切换的时刻
+  cuts: [2, 6, 14],        // 场景边界 + 场景内关键时刻（这里 2 秒是开场标题亮相，6、14 是场景切换）
   big: [2, 14],            // 其中最重要的几个：配乐放冲击音，画面闪光更强
   mood: 'tech',            // 配乐情绪：tech | bright | warm | epic | corporate | none
   theme: 'tech',           // 画面主题：tech | fresh | business | guochao

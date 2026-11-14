@@ -47,7 +47,8 @@ description: 用代码做宣传片 / 产品介绍视频 / 功能演示短片，�
 1. 新建工作目录，把 `assets/template.html`、`assets/engine.js`、`assets/themes.css` 复制进去，
    模板改名为 `<项目名>_promo.html`（输出文件名跟它走）。
 2. 改 `window.VIDEO`：尺寸、`duration`、`bpm`、`cuts`、`big`、`mood`、`theme`。
-   这是画面和配乐唯一的配置来源，`cuts` 必须和场景边界一致。
+   这是画面和配乐唯一的配置来源。`cuts` = 所有场景边界 + 场景内的关键时刻（比如开场第 2 秒 Logo 亮相），
+   配乐在每个 cut 放音效；鼓从第一个不早于 1.5 小节的 `big` 进入，想自己定就设 `grooveAt: 秒`。
 3. 每个场景一个 `<div class="scene" id="...">`，再用 `scene(id, 开始, 结束, fn)` 注册。
    简单的入场用 data 属性（`data-in` 淡入上移、`data-dx` 横滑、`data-pop` 弹出、`data-type` 打字、
    `data-count` 数字滚动、`data-bar` 进度条），复杂的在 `fn(lt)` 里逐帧算。
@@ -66,7 +67,8 @@ description: 用代码做宣传片 / 产品介绍视频 / 功能演示短片，�
 python <skill>/scripts/render.py work/xxx_promo.html --stills 1.5 4 9 15 22 ...
 ```
 
-每个场景挑 1–2 个时间点（入场动画完成后），打开 `out/stills/contact.png` **亲眼看**：
+每个场景挑 1–2 个时间点（入场动画完成后、避开转场前 0.35 秒的光带），打开 `out/stills/contact.png` **亲眼看**。
+每次调用会清空并重建 stills 目录，复查时把所有要看的时间点一次传全。重点看：
 文字重叠、溢出面板、被裁切、对比度不够、元素还没出现、跨场景残留——这些问题在成片里只会更明显。
 修完再出一轮静帧，直到干净。这一步最能决定成品质量。
 
