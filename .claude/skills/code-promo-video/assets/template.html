@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>VIDEO_TITLE</title>
+<link rel="stylesheet" href="themes.css">
+<style>
+/* 本片专属样式写这里。只引用 themes.css 里的 token（var(--accent) 等），换主题时自动跟着变。 */
+</style>
+<script>
+// 唯一的配置来源：画面和配乐都读它。转场点 cuts 要落在节拍上（120 BPM 时 0.5 秒一拍、2 秒一小节）。
+window.VIDEO = {
+  width: 1920, height: 1080, fps: 30,
+  duration: 20,            // 秒
+  bpm: 120,
+  cuts: [2, 6, 14],        // 每个场景切换的时刻
+  big: [2, 14],            // 其中最重要的几个：配乐放冲击音，画面闪光更强
+  mood: 'tech',            // 配乐情绪：tech | bright | warm | epic | corporate | none
+  theme: 'tech',           // 画面主题：tech | fresh | business | guochao
+  transition: 'flash',     // flash | soft | none
+};
+</script>
+<script src="engine.js"></script>
+</head>
+<body>
+<div id="stage">
+
+  <!-- 场景 1：开场 0-6 -->
+  <div class="scene" id="s1">
+    <div class="abs center hero" style="top:380px" data-in="1.8">产品名</div>
+    <div class="abs center sub" style="top:560px;font-size:40px;letter-spacing:12px" data-in="2.6">一句话定位</div>
+  </div>
+
+  <!-- 场景 2：功能点（左文案 + 右示意面板） 6-14 -->
+  <div class="scene" id="s2">
+    <div class="col">
+      <div class="kick" data-in=".3" data-dx="-40">01 / FEATURE</div>
+      <div class="ttl" data-in=".5">功能标题<br>第二行</div>
+      <div class="sub" data-in=".9">一句话说明这个功能解决什么问题</div>
+      <ul class="pts">
+        <li data-in="1.4" data-dx="-30">要点一</li>
+        <li data-in="1.7" data-dx="-30">要点二</li>
+      </ul>
+    </div>
+    <div class="panel" id="p2" style="left:700px;top:170px;width:1120px;height:740px">
+      <span class="demo-tag">示意</span>
+      <div class="card stat" style="left:30px;top:60px;width:300px;height:140px;padding:22px">
+        <div class="lbl">指标</div><div class="v" data-count="12860" data-at="1.0"></div>
+      </div>
+      <div class="card" style="left:30px;top:230px;width:1060px;height:60px;padding:24px">
+        <div class="track"><div class="fill" data-bar=".78" data-at="1.4"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 场景 3：收尾 14-20 -->
+  <div class="scene" id="s3">
+    <div class="abs center hero" style="top:400px" data-in=".4">产品名</div>
+    <div class="abs center sub" style="top:580px;font-size:44px;letter-spacing:10px" data-in="1.1">Slogan</div>
+  </div>
+
+</div>
+<script>
+// 注册场景：scene(id, 开始秒, 结束秒, (lt 场景内秒, t 全局秒, el) => { 自定义逐帧动画 })
+scene('s1', 0, 6, lt => {
+  // 开场光线：用全局 fx 画布逐帧画
+  const w = eo(lt / .9) * VIDEO.width * .7;
+  fx.fillStyle = css('--accent'); fx.shadowColor = css('--accent'); fx.shadowBlur = 18;
+  fx.fillRect(VIDEO.width / 2 - w / 2, 540 - 1, w, 2); fx.shadowBlur = 0;
+});
+scene('s2', 6, 14, lt => {
+  const p = eo(lt / 1.2), el = $('#p2');
+  el.style.transform = `perspective(2000px) translateX(${(1 - p) * 240}px) rotateY(${lerp(-30, -8, p)}deg)`;
+  el.style.opacity = clamp(lt / .5);
+});
+scene('s3', 14, 20);
+boot();
+</script>
+</body>
+</html>

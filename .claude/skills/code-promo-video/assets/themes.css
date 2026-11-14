@@ -1,0 +1,112 @@
+/*
+ * code-promo-video 主题与通用组件。
+ * 尺寸按"短边 1080px"设计：16:9 用 1920×1080，9:16 用 1080×1920，1:1 用 1080×1080，字号不用改。
+ * 换主题只改 VIDEO.theme；每个主题是一组颜色 token，组件都只引用 token。
+ */
+:root {
+  --font: "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", "WenQuanYi Zen Hei", sans-serif;
+  --mono: "JetBrains Mono", "DejaVu Sans Mono", monospace;
+  --serif: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
+}
+/* 科技：深色、霓虹青紫 */
+:root[data-theme="tech"] {
+  --bg: #04060d; --ink: #e8eefc; --dim: #8b97b8; --muted: #64748b;
+  --accent: #22d3ee; --accent2: #8b5cf6; --accent3: #f472b6; --good: #34d399; --warn: #fbbf24; --bad: #f87171;
+  --glow1: rgba(109,40,217,.28); --glow2: rgba(8,145,178,.22); --glow3: rgba(236,72,153,.15);
+  --panel-bg: linear-gradient(160deg, rgba(24,30,62,.86), rgba(10,14,32,.9)); --panel-border: rgba(139,92,246,.45);
+  --panel-shadow: 0 30px 120px rgba(0,0,0,.55), 0 0 90px rgba(139,92,246,.25);
+  --card-bg: rgba(255,255,255,.035); --card-border: rgba(148,163,255,.16);
+  --title: linear-gradient(100deg, #fff 20%, #c4b5fd 60%, #67e8f9);
+  --vignette: rgba(0,0,0,.55); --flash: #fff;
+}
+/* 清新：浅色、薄荷与蜜桃 */
+:root[data-theme="fresh"] {
+  --bg: #f4fbf8; --ink: #1f2d2a; --dim: #5b706b; --muted: #8aa29c;
+  --accent: #10b981; --accent2: #fb923c; --accent3: #38bdf8; --good: #10b981; --warn: #f59e0b; --bad: #ef4444;
+  --glow1: rgba(110,231,183,.45); --glow2: rgba(253,186,116,.40); --glow3: rgba(125,211,252,.40);
+  --panel-bg: rgba(255,255,255,.82); --panel-border: rgba(16,185,129,.25);
+  --panel-shadow: 0 30px 80px rgba(16,94,74,.14);
+  --card-bg: rgba(255,255,255,.9); --card-border: rgba(16,185,129,.18);
+  --title: linear-gradient(100deg, #065f46 10%, #059669 50%, #f97316);
+  --vignette: rgba(255,255,255,0); --flash: #fff;
+}
+/* 商务：浅灰白、深海蓝 */
+:root[data-theme="business"] {
+  --bg: #f5f7fb; --ink: #0f172a; --dim: #475569; --muted: #94a3b8;
+  --accent: #2563eb; --accent2: #0ea5e9; --accent3: #f59e0b; --good: #16a34a; --warn: #d97706; --bad: #dc2626;
+  --glow1: rgba(37,99,235,.14); --glow2: rgba(14,165,233,.12); --glow3: rgba(245,158,11,.10);
+  --panel-bg: #ffffff; --panel-border: rgba(15,23,42,.08);
+  --panel-shadow: 0 24px 70px rgba(15,23,42,.12);
+  --card-bg: #f8fafc; --card-border: rgba(15,23,42,.08);
+  --title: linear-gradient(100deg, #0f172a 30%, #1d4ed8);
+  --vignette: rgba(255,255,255,0); --flash: #fff;
+}
+/* 国潮：朱红、鎏金 */
+:root[data-theme="guochao"] {
+  --bg: #2a0a0a; --ink: #fdf2e0; --dim: #e8c9a0; --muted: #b08968;
+  --accent: #f2c14e; --accent2: #e63946; --accent3: #2a9d8f; --good: #2a9d8f; --warn: #f2c14e; --bad: #e63946;
+  --glow1: rgba(230,57,70,.45); --glow2: rgba(242,193,78,.18); --glow3: rgba(42,157,143,.15);
+  --panel-bg: linear-gradient(160deg, rgba(80,16,16,.9), rgba(40,8,8,.92)); --panel-border: rgba(242,193,78,.55);
+  --panel-shadow: 0 30px 100px rgba(0,0,0,.5), 0 0 60px rgba(242,193,78,.18);
+  --card-bg: rgba(255,240,210,.05); --card-border: rgba(242,193,78,.25);
+  --title: linear-gradient(100deg, #fff4d6 10%, #f2c14e 55%, #e9a23b);
+  --vignette: rgba(0,0,0,.5); --flash: #ffe9b0;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box }
+html, body { width: var(--W); height: var(--H); overflow: hidden; background: var(--bg); color: var(--ink); font-family: var(--font); -webkit-font-smoothing: antialiased }
+#stage { position: absolute; inset: 0; overflow: hidden }
+#stage canvas { position: absolute; left: 0; top: 0 }
+#__vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 55%, var(--vignette) 100%) }
+#__flash { position: absolute; inset: 0; background: var(--flash); opacity: 0; pointer-events: none }
+#__streak { position: absolute; left: -40%; top: 0; width: 40%; height: 100%; opacity: 0; pointer-events: none; transform: skewX(-18deg);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 40%, transparent), rgba(255,255,255,.6), color-mix(in srgb, var(--accent2) 40%, transparent), transparent) }
+
+.scene { position: absolute; inset: 0; display: none }
+.abs { position: absolute }
+.center { left: 0; right: 0; text-align: center }
+.mono { font-family: var(--mono) }
+.serif { font-family: var(--serif) }
+
+/* 文字层级：kicker（小标）→ ttl（大标题）→ sub（副标题）→ pts（要点） */
+.kick { font-size: 20px; letter-spacing: 6px; color: var(--accent); margin-bottom: 22px; display: flex; align-items: center; gap: 14px; font-family: var(--mono) }
+.kick::before { content: ""; width: 42px; height: 2px; background: var(--accent); box-shadow: 0 0 12px var(--accent) }
+.center .kick, .kick.c { justify-content: center }
+.ttl { font-size: 72px; font-weight: 900; line-height: 1.15; letter-spacing: 2px; background: var(--title); -webkit-background-clip: text; background-clip: text; color: transparent }
+.hero { font-size: 128px; font-weight: 900; letter-spacing: 8px; line-height: 1.1 }
+.sub { font-size: 28px; color: var(--dim); margin-top: 22px; line-height: 1.6 }
+.pts { list-style: none; margin-top: 34px }
+.pts li { font-size: 25px; margin: 16px 0; display: flex; align-items: center; gap: 16px }
+.pts li::before { content: ""; width: 10px; height: 10px; transform: rotate(45deg); background: var(--accent); box-shadow: 0 0 10px var(--accent); flex: none }
+.col { position: absolute; left: 110px; top: 250px; width: 520px }
+
+/* 容器 */
+.panel { position: absolute; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 22px; box-shadow: var(--panel-shadow); overflow: hidden }
+.card { position: absolute; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px }
+.flow { position: static }               /* 让 .card 进入文档流 */
+.lbl { font-size: 16px; color: var(--dim) }
+.demo-tag { position: absolute; right: 18px; top: 14px; font-size: 13px; color: var(--muted); border: 1px solid var(--card-border); border-radius: 6px; padding: 2px 8px; letter-spacing: 1px }
+.stat .v { font-size: 46px; font-weight: 800; font-family: var(--mono); letter-spacing: -1px }
+.chip { display: inline-block; font-size: 16px; border-radius: 8px; padding: 3px 11px; margin: 0 8px 8px 0; border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent) }
+.chip.a2 { border-color: color-mix(in srgb, var(--accent2) 50%, transparent); color: var(--accent2); background: color-mix(in srgb, var(--accent2) 12%, transparent) }
+.chip.good { border-color: color-mix(in srgb, var(--good) 50%, transparent); color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent) }
+.chip.bad { border-color: color-mix(in srgb, var(--bad) 50%, transparent); color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent) }
+.badge { display: inline-block; margin: 0 10px; padding: 12px 24px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); font-size: 22px }
+.track { height: 12px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 8%, transparent); overflow: hidden }
+.fill { height: 100%; width: 0; border-radius: 6px; background: linear-gradient(90deg, var(--accent2), var(--accent)) }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none }
+.browser-bar { position: absolute; left: 0; right: 0; top: 0; height: 48px; display: flex; align-items: center; gap: 9px; padding: 0 20px; border-bottom: 1px solid var(--card-border) }
+.browser-bar i { width: 12px; height: 12px; border-radius: 50% }
+.shot { position: absolute; left: 0; top: 48px; right: 0; bottom: 0; overflow: hidden }
+.shot img { display: block; width: 100%; transform-origin: 0 0 }
+
+/* 图块（平台 / 模块 / 来源），配合 scene-patterns 第 3 节；中心点定位 */
+.tile { position: absolute; width: 132px; height: 150px; margin: -75px 0 0 -66px; text-align: center }
+.tile .box { width: 112px; height: 112px; margin: 0 auto; border-radius: 26px; display: flex; align-items: center; justify-content: center;
+  background: var(--card-bg); border: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); box-shadow: 0 0 30px color-mix(in srgb, var(--accent) 25%, transparent) }
+.tile .txt { width: 72px; height: 72px; border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: 900; color: #fff; background: linear-gradient(135deg, var(--accent2), var(--accent)) }
+.tile .nm { margin-top: 10px; font-size: 22px; letter-spacing: 2px }
+/* 选项卡 */
+.tabs { display: flex; gap: 12px }
+.tab { padding: 12px 26px; font-size: 21px; border-radius: 12px; border: 1px solid var(--card-border); color: var(--dim); background: var(--card-bg) }
+.tab.on { color: #fff; border-color: transparent; background: linear-gradient(100deg, var(--accent2), var(--accent)); box-shadow: 0 0 26px color-mix(in srgb, var(--accent2) 55%, transparent) }

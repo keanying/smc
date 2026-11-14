@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: cloud-search-tech-intro
+expected_outcome: |
+  读懂 cloud_search 仓库后，产出一支 1920×1080、约 60–75 秒、带配乐的 MP4 产品介绍片：
+  画面全部是代码绘制的示意界面（没有真实截图），内容对应云搜浏览器的真实卖点（对话入口、云端浏览器搜索、
+  不用搜索 API、多模型、报告交付等），转场和配乐节点对齐，并附分镜。
