@@ -95,6 +95,42 @@ as_user() {
     fi
 }
 
+# RHEL 系（Anolis / CentOS / Rocky / Alma / openEuler 等）上 Chromium 要的运行库。
+# ⚠️ `playwright install-deps` 只认 apt（Ubuntu / Debian），在这些系统上什么都装不了，只能自己用 dnf 装
+EL_CHROMIUM_PKGS="nss nspr atk at-spi2-atk at-spi2-core cups-libs libdrm libxkbcommon \
+libX11 libXext libXcomposite libXdamage libXfixes libXrandr libXcursor libXi libXtst libXScrnSaver \
+libxcb libxshmfence mesa-libgbm pango cairo alsa-lib dbus-libs expat gtk3 liberation-fonts"
+
+# 浏览器缺的 .so → 装哪个包（RHEL 系包名）。认不出的提示用 dnf provides 查
+el_pkg_of() {
+    case "$1" in
+        libnss3*|libnssutil3*|libsmime3*) echo nss ;;
+        libnspr4*|libplc4*|libplds4*) echo nspr ;;
+        libatk-1*) echo atk ;;
+        libatk-bridge*) echo at-spi2-atk ;;
+        libatspi*) echo at-spi2-core ;;
+        libcups*) echo cups-libs ;;
+        libdrm*) echo libdrm ;;
+        libxkbcommon*) echo libxkbcommon ;;
+        libXcomposite*) echo libXcomposite ;;
+        libXdamage*) echo libXdamage ;;
+        libXfixes*) echo libXfixes ;;
+        libXrandr*) echo libXrandr ;;
+        libXext*) echo libXext ;;
+        libX11*) echo libX11 ;;
+        libxcb*) echo libxcb ;;
+        libxshmfence*) echo libxshmfence ;;
+        libgbm*) echo mesa-libgbm ;;
+        libpango*) echo pango ;;
+        libcairo*) echo cairo ;;
+        libasound*) echo alsa-lib ;;
+        libdbus*) echo dbus-libs ;;
+        libexpat*) echo expat ;;
+        libgtk-3*|libgdk-3*) echo gtk3 ;;
+        *) echo "" ;;
+    esac
+}
+
 PIP_ARGS=()
 if [ "$MIRROR" -eq 1 ]; then
     PIP_ARGS=(-i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn)
@@ -272,13 +308,24 @@ if [ "$SYSTEM_DEPS" -eq 1 ]; then
     if [ "$IS_ROOT" -ne 1 ]; then
         warn "--system-deps 需要 root，跳过（sudo 再跑一次）"
     else
-        "$VPY" -m playwright install-deps chromium || warn "Chromium 运行库没装全，看上面的报错"
         if command -v apt-get >/dev/null 2>&1; then
+            "$VPY" -m playwright install-deps chromium || warn "Chromium 运行库没装全，看上面的报错"
             apt-get install -y -q fonts-noto-cjk xvfb >/dev/null || warn "中文字体 / Xvfb 没装上"
-        elif command -v dnf >/dev/null 2>&1; then
-            dnf install -y -q google-noto-sans-cjk-ttc-fonts xorg-x11-server-Xvfb >/dev/null || warn "中文字体 / Xvfb 没装上"
-        elif command -v yum >/dev/null 2>&1; then
-            yum install -y -q google-noto-sans-cjk-ttc-fonts xorg-x11-server-Xvfb >/dev/null || warn "中文字体 / Xvfb 没装上"
+        elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+            # RHEL 系：playwright install-deps 只认 apt，这里直接用 dnf 装。
+            # strict=0 / skip_missing_names：个别包名在某个发行版上没有时跳过它，不让整条装不上
+            PM="$(command -v dnf >/dev/null 2>&1 && echo dnf || echo yum)"
+            info "RHEL 系（$( . /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-$PM}" )），用 $PM 装 Chromium 运行库"
+            # shellcheck disable=SC2086
+            "$PM" install -y -q --setopt=strict=0 --setopt=skip_missing_names_on_install=True \
+                $EL_CHROMIUM_PKGS >/dev/null || warn "Chromium 运行库没装全，看上面的报错"
+            "$PM" install -y -q --setopt=strict=0 --setopt=skip_missing_names_on_install=True \
+                google-noto-sans-cjk-ttc-fonts xorg-x11-server-Xvfb >/dev/null || warn "中文字体 / Xvfb 没装上"
+            if ! fc-list :lang=zh 2>/dev/null | grep -q .; then
+                # 有的发行版仓库里没有 noto CJK：退到文泉驿（可能在 EPEL 里）
+                "$PM" install -y -q wqy-microhei-fonts >/dev/null 2>&1 \
+                    || warn "没装上中文字体：推流画面里中文会是方块。可以开 EPEL 后装 wqy-microhei-fonts"
+            fi
         else
             warn "认不出包管理器，中文字体和 Xvfb 请手动装"
         fi
@@ -302,6 +349,39 @@ else
     as_user "${PLAYWRIGHT_DOWNLOAD_HOST:+PLAYWRIGHT_DOWNLOAD_HOST='$PLAYWRIGHT_DOWNLOAD_HOST'} '$VPY' -m playwright install chromium" \
         || { error "Chromium 下载失败：国内服务器加 --mirror 再试"; exit 1; }
 fi
+# 先查一遍缺哪些系统库（ldd 看 "not found"）：直接告诉缺什么、装什么包，
+# 而不是只给一句"浏览器启动失败"——RHEL 系上 playwright install-deps 不管用，最常见就是这个
+MISSING_LIBS="$(as_user "cd '$ROOT' && '$VPY' - <<'PYEOF'
+import glob, os
+from playwright.sync_api import sync_playwright
+exe = '''$EXE_PATH''' or None
+with sync_playwright() as p:
+    paths = [exe or p.chromium.executable_path]
+root = os.environ.get('PLAYWRIGHT_BROWSERS_PATH') or os.path.expanduser('~/.cache/ms-playwright')
+# 无头模式用的是单独的 headless shell（新版叫 chrome-headless-shell，老版叫 headless_shell）
+for name in ('chrome-headless-shell', 'headless_shell'):
+    paths += glob.glob(os.path.join(root, 'chromium_headless_shell-*', '*', name))
+print('\n'.join(p for p in paths if p and os.path.isfile(p) and os.access(p, os.X_OK)))
+PYEOF" 2>/dev/null | while read -r bin; do { ldd "$bin" 2>/dev/null || true; } | awk '/not found/ {print $1}'; done | sort -u || true)"
+if [ -n "$MISSING_LIBS" ]; then
+    error "浏览器缺这些系统库：$(echo $MISSING_LIBS)"
+    PKGS=""; UNKNOWN=""
+    for lib in $MISSING_LIBS; do
+        pkg="$(el_pkg_of "$lib")"
+        if [ -n "$pkg" ]; then PKGS="$PKGS $pkg"; else UNKNOWN="$UNKNOWN $lib"; fi
+    done
+    SUGGEST_USER=""; [ -n "$RUN_USER" ] && [ "$RUN_USER" != "root" ] && SUGGEST_USER=" --user $RUN_USER"
+    PKGS="$(echo $PKGS | tr ' ' '\n' | sort -u | tr '\n' ' ')"
+    if command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+        echo "      用 root 装上再跑一次：sudo dnf install -y ${PKGS:-$EL_CHROMIUM_PKGS}"
+        [ -n "$UNKNOWN" ] && echo "      其余的查是哪个包：dnf provides '*/<库名>'（$UNKNOWN ）"
+        echo "      或者直接：sudo bash scripts/setup.sh --system-deps${SUGGEST_USER}"
+    else
+        echo "      用 root 加 --system-deps 再跑一次：sudo bash scripts/setup.sh --system-deps${SUGGEST_USER}"
+    fi
+    exit 1
+fi
+
 # 真开一次无头浏览器：装了不等于能跑（缺系统库、装到了别的用户目录下都会在这里暴露）
 if as_user "cd '$ROOT' && '$VPY' - <<'PYEOF'
 import os
