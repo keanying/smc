@@ -493,7 +493,10 @@
                     <el-option label="redis（生产）" value="redis" />
                   </el-select>
                 </el-form-item>
-                <el-form-item label="并发线程">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">并发线程<InfoTip content="同时调用模型的评论条数（多条并行，不是一条条标）。推理模型单条十几秒，4 线程每分钟只能标十几条；补标慢就调到 12–16。上限看模型账号的限流：日志里出现 429 就往回调。限流 QPS 要大于 并发线程 ÷ 单条秒数" /></span>
+                  </template>
                   <el-input-number v-model="labeling.worker_concurrency" :min="1" :max="32" class="num" />
                 </el-form-item>
                 <el-form-item>

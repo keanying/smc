@@ -33,7 +33,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..core import attribution
 from ..core.config import Config
@@ -84,11 +84,12 @@ class BackfillJob:
     #: 每条评论一轮只送一次——这一轮又失败的不会被再捞回来，模型挂着也不会死循环
     last_id: int = 0
     max_id: int = 0
-    #: 已经排干的批次累计条数，和当前这一批的 id 区间（算进度用）
+    #: 已经结算的批次累计条数（算进度用）
     processed: int = 0
-    batch_lo: int = 0
-    batch_hi: int = 0
-    batch_len: int = 0
+    #: 本轮第一批之前的 last_id：(range_lo, last_id] 就是这一轮送过的全部评论
+    range_lo: int = 0
+    #: 已入队、还没结算的批次 [(lo, hi, 条数)]，id 区间首尾相接、按入队顺序排
+    open_batches: List[Tuple[int, int, int]] = field(default_factory=list)
 
     def touch(self) -> None:
         self.updated_at = time.time()
@@ -611,9 +612,27 @@ class LabelingManager:
         logger.info("[标注] 补标任务 %s 收到取消请求", job_id)
         return True
 
-    #: 每批喂多少条。批小了 drain 的开销占比高，批大了取消不及时、
-    #: 进度条也跳得粗。200 条在 4 并发下大约一两分钟一批。
+    #: 每次从库里捞多少条。流水线补标不再"一批排干才捞下一批"，
+    #: 批大小只影响捞库频率和进度条粒度，不再影响吞吐。
     BACKFILL_BATCH = 200
+
+    #: 多久完全没有进展（回库数和队列积压都不变）就判补标卡死。
+    #: 推理模型一条十几秒、超时重试要几分钟，给紧了会误判正常任务。
+    STALL_SECONDS = 1200.0
+
+    def _low_water(self) -> int:
+        """队列（含在途）低于这个数就捞下一批：保证线程永远有活干。
+
+        ⚠️ 以前每批 200 条要等**全部**排干才捞下一批。推理模型单条十几秒，
+        截断翻倍重试、超时重试的慢条会更久——每批末尾只剩几条慢的在跑，
+        其余线程全闲着，并发调得越高空转占比越大，调到 16 也快不了多少。
+        现在留两倍并发数的余量就续上，线程不会等。
+        """
+        try:
+            conc = int(self._engine.cfg.worker.concurrency)
+        except Exception:                   # noqa: BLE001
+            conc = 4
+        return max(8, conc * 2)
 
     async def _run_backfill(self, job: BackfillJob, limit: int) -> None:
         """按 id 从小到大分批捞、分批喂，直到开跑时的未标注都送过一遍。
@@ -623,8 +642,10 @@ class LabelingManager:
         翻页保证一轮里每条只送一次；失败的留着，下次补标再试。
         上限是开跑时未标注的最大 id，之后新采的走边采边标的队列，不归这一轮。
 
-        每批之间等队列排干：一是这批标没标成要等落库才数得清（进度、失败数），
-        二是一次只压一批，取消能及时生效。
+        流水线投喂：队列（含在途）低于两倍并发数就续一批，线程始终有活干；
+        队列里最多压"一批 + 两倍并发"条，取消照样能及时生效。
+        老批次跑完就结算失败数，整轮结束再按区间精确重算一次。
+        （以前是每批排干才捞下一批，批尾几条慢的拖着，其余线程空等。）
         """
         try:
             job.total = await asyncio.to_thread(self._count_unlabeled, job)
@@ -648,47 +669,79 @@ class LabelingManager:
                 if not await self._drain(job, backlog):
                     logger.warning("[标注] 补标任务 %s：等队列排空超时，照常继续", job.job_id)
 
-            remaining_budget = int(limit) if limit and limit > 0 else 0
+            # ⚠️ 有没有上限单独记：额度刚好用完时 remaining_budget 变成 0，
+            #    要是拿 0 当"不限"，就会冲过上限一直捞下去
+            limited = bool(limit and limit > 0)
+            remaining_budget = int(limit) if limited else 0
+            job.range_lo = job.last_id
+            exhausted = False
+            stall_mark: Optional[Tuple[int, int]] = None
+            stall_since = time.time()
+            # 流水线：队列快空了就续一批，线程不等"整批排干"
             while True:
                 if job.cancel_requested:
                     job.status = "canceled"
                     break
 
-                size = self.BACKFILL_BATCH
-                if remaining_budget:
-                    size = min(size, remaining_budget)
-                    if size <= 0:
-                        break
+                backlog = await asyncio.to_thread(self._queue_backlog)
+                if not exhausted and backlog < self._low_water():
+                    size = self.BACKFILL_BATCH
+                    if limited:
+                        size = min(size, remaining_budget)
+                    rows = (await asyncio.to_thread(self._fetch_unlabeled, job, size)
+                            if size > 0 else [])
+                    if not rows:
+                        exhausted = True        # 都送过一遍了（或额度用完），等收尾
+                    else:
+                        ids = [int(r.pop("id")) for r in rows if r.get("id") is not None]
+                        lo = job.last_id
+                        if ids:
+                            job.last_id = max(ids)
+                        job.open_batches.append((lo, job.last_id, len(rows)))
+                        submitted = await asyncio.to_thread(self._engine.submit_many, rows)
+                        job.submitted += submitted
+                        job.batches += 1
+                        if limited:
+                            remaining_budget -= len(rows)
+                        job.touch()
+                        logger.info("[标注] 补标任务 %s 第 %d 批入队 %d 条（累计 %d/%d，队列 %d）",
+                                    job.job_id, job.batches, submitted,
+                                    job.submitted, job.total, backlog + submitted)
+                        continue                # 马上再看一眼水位，不够再续
 
-                rows = await asyncio.to_thread(self._fetch_unlabeled, job, size)
-                if not rows:
-                    break                       # 都送过一遍了，正常收工
+                if exhausted:
+                    break
 
-                ids = [int(r.pop("id")) for r in rows if r.get("id") is not None]
-                job.batch_lo, job.batch_len = job.last_id, len(rows)
-                if ids:
-                    job.last_id = job.batch_hi = max(ids)
-                submitted = await asyncio.to_thread(self._engine.submit_many, rows)
-                job.submitted += submitted
-                job.batches += 1
-                if remaining_budget:
-                    remaining_budget -= len(rows)
-                job.touch()
-                logger.info("[标注] 补标任务 %s 第 %d 批入队 %d 条（累计 %d/%d）",
-                            job.job_id, job.batches, submitted,
-                            job.submitted, job.total)
+                await self._settle_batches(job, backlog)
+                await self._refresh_progress(job)
 
-                # 等这批跑完再捞下一批，中途持续刷新进度给前端看
-                ok = await self._drain(job, submitted)
+                mark = (job.done, backlog)
+                if mark != stall_mark:
+                    stall_mark, stall_since = mark, time.time()
+                elif time.time() - stall_since > self.STALL_SECONDS:
+                    job.status = "failed"
+                    job.error = (f"{int(self.STALL_SECONDS // 60)} 分钟没有任何进展，队列里还压着 "
+                                 f"{backlog} 条。可能是模型接口卡住了，"
+                                 f"看一眼 data/logs/labeling.log")
+                    logger.error("[标注] 补标任务 %s %s", job.job_id, job.error)
+                    return
+                # 顺便当节拍器：有活就最多等 1 秒刷一次进度
+                await asyncio.to_thread(lambda: self._engine.wait_idle(1.0, poll=0.5))
+
+            # 收尾：最后几批等排干，再按整轮区间精确结算
+            if job.status == "running" and job.open_batches:
+                left_n = sum(n for _, _, n in job.open_batches)
+                ok = await self._drain(job, left_n)
                 await self._refresh_progress(job)
                 if not ok:
                     job.status = "failed"
-                    job.error = (f"第 {job.batches} 批等待超时，队列里还压着 "
+                    job.error = (f"最后 {left_n} 条等待超时，队列里还压着 "
                                  f"{job.queued} 条。可能是模型接口卡住了，"
                                  f"看一眼 data/logs/labeling.log")
                     logger.error("[标注] 补标任务 %s %s", job.job_id, job.error)
                     return
-                await self._close_batch(job)
+            if job.status == "running":
+                await self._close_round(job)
 
             if job.status == "running":
                 job.status = "finished"
@@ -739,33 +792,58 @@ class LabelingManager:
         return False
 
     async def _refresh_progress(self, job: BackfillJob) -> None:
-        """进度 = 已排干批次的条数 + 当前这批里**已经有标签**的条数。
+        """进度 = 已结算批次的条数 + 未结算批次里**已经有标签**的条数。
 
         提交数只能说明"喂进去了"；以回库为准才经得起用户拿 SQL 对。
-        当前这批里又失败的要等这批排干才算进「已处理」（同时记一条失败）。
+        未结算批次里又失败的要等结算才算进「已处理」（同时记一条失败）。
+        未结算的批次 id 区间首尾相接，一条 COUNT 就够。
         """
         try:
-            if job.batch_len:
-                left = await asyncio.to_thread(
-                    self._count_unlabeled, job, job.batch_lo, job.batch_hi)
-                job.done = job.processed + max(0, job.batch_len - left)
+            if job.open_batches:
+                lo, hi = job.open_batches[0][0], job.open_batches[-1][1]
+                n = sum(b[2] for b in job.open_batches)
+                left = await asyncio.to_thread(self._count_unlabeled, job, lo, hi)
+                job.done = job.processed + max(0, n - left)
             job.queued = await asyncio.to_thread(self._queue_backlog)
         except Exception as exc:            # noqa: BLE001
             logger.debug("[标注] 刷新补标进度失败（忽略）：%s", exc)
         job.touch()
 
-    async def _close_batch(self, job: BackfillJob) -> None:
-        """这批排干了：还没标签的就是这一轮标失败的，记下来，不再重试。"""
+    async def _settle_batches(self, job: BackfillJob, backlog: int) -> None:
+        """把已经跑完的老批次结算掉：还没标签的记为这一轮失败。
+
+        队列先进先出：积压条数不超过"它后面那些批次的条数"时，最老那批已经全部出队落库。
+        （个别重试排到队尾的会被先记成失败，收尾时按整轮区间重算，最终数字是准的。）
+        结算后进度查询只扫未结算的几批，不会随补标规模变慢。
+        """
+        while job.open_batches:
+            lo, hi, n = job.open_batches[0]
+            later = sum(b[2] for b in job.open_batches[1:])
+            if backlog > later:
+                return
+            try:
+                left = await asyncio.to_thread(self._count_unlabeled, job, lo, hi)
+            except Exception as exc:        # noqa: BLE001
+                logger.debug("[标注] 统计批次失败数失败（忽略）：%s", exc)
+                return
+            job.failed += min(left, n)
+            job.processed += n
+            job.open_batches.pop(0)
+            job.done = job.processed
+            job.touch()
+
+    async def _close_round(self, job: BackfillJob) -> None:
+        """整轮跑完：按这一轮送过的全部 id 区间精确重算失败数。"""
+        total = job.processed + sum(b[2] for b in job.open_batches)
         try:
             left = await asyncio.to_thread(
-                self._count_unlabeled, job, job.batch_lo, job.batch_hi)
+                self._count_unlabeled, job, job.range_lo, job.last_id)
+            job.failed = min(left, total)
         except Exception as exc:            # noqa: BLE001
-            logger.debug("[标注] 统计本批失败数失败（忽略）：%s", exc)
-            left = 0
-        job.failed += min(left, job.batch_len)
-        job.processed += job.batch_len
+            logger.debug("[标注] 统计本轮失败数失败（沿用分批统计）：%s", exc)
+        job.processed = total
+        job.open_batches.clear()
         job.done = job.processed
-        job.batch_len = 0
         job.touch()
 
     def _queue_backlog(self) -> int:

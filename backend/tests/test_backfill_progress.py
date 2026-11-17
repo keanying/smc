@@ -156,5 +156,104 @@ async def test_backfill_allowed_after_previous_finished():
 
 
 def test_batch_size_is_sane():
-    """批太小 drain 开销占比高，批太大取消不及时、进度条跳得粗。"""
+    """批太小捞库太频繁，批太大取消不及时、进度条跳得粗。"""
     assert 50 <= LabelingManager.BACKFILL_BATCH <= 500
+
+
+# ---------------------------------------------------------------- 流水线投喂
+# 线上：4 并发补 3179 条，15 分钟才处理 195 条。以前每批 200 条要全部排干才捞下一批，
+# 批尾几条慢的（推理模型单条十几秒、截断重试更久）拖着，其余线程空等。
+
+class _SimEngine:
+    """内存里的"表 + 队列 + worker"：每次 wait_idle 处理掉队首 rate 条。"""
+
+    def __init__(self, n_rows, failing=(), rate=3, concurrency=2):
+        self.unlabeled = set(range(1, n_rows + 1))
+        self.failing = set(failing)
+        self.queue = []
+        self.rate = rate
+        self.cfg = SimpleNamespace(worker=SimpleNamespace(concurrency=concurrency))
+
+    def submit_many(self, rows):
+        self.queue.extend(r["comment_id"] for r in rows)
+        return len(rows)
+
+    def wait_idle(self, timeout, poll=0.5):
+        for cid in self.queue[:self.rate]:
+            if cid not in self.failing:
+                self.unlabeled.discard(cid)
+        del self.queue[:self.rate]
+        return not self.queue
+
+
+def _sim_manager(tmp_path, engine):
+    cfg = {"labeling": {"enabled": False},
+           "labeling.runtime_config_path": str(tmp_path / "engine.runtime.yaml")}
+    mgr = LabelingManager(SimpleNamespace(get=lambda key, default=None: cfg.get(key, default),
+                                          source_path=None))
+    mgr._engine = engine
+    mgr.BACKFILL_BATCH = 10
+    fetch_backlogs = []
+
+    def _count(job, after_id=None, upto_id=None):
+        ids = [i for i in engine.unlabeled
+               if after_id is None or after_id < i <= upto_id]
+        if after_id is None:
+            job.max_id = max(engine.unlabeled, default=0)
+        return len(ids)
+
+    def _fetch(job, limit):
+        fetch_backlogs.append(len(engine.queue))
+        ids = sorted(i for i in engine.unlabeled if job.last_id < i <= job.max_id)[:limit]
+        return [{"id": i, "comment_id": i} for i in ids]
+
+    mgr._count_unlabeled = _count
+    mgr._fetch_unlabeled = _fetch
+    mgr._queue_backlog = lambda: len(engine.queue)
+    return mgr, fetch_backlogs
+
+
+def test_backfill_tops_up_queue_before_it_runs_dry(tmp_path):
+    """⚠️ 下一批要在队列排空**之前**续上，线程才不会在批尾空等。"""
+    import asyncio
+    engine = _SimEngine(60)
+    mgr, fetch_backlogs = _sim_manager(tmp_path, engine)
+    job = BackfillJob(job_id="bf", status="running")
+    asyncio.run(mgr._run_backfill(job, 0))
+
+    assert job.status == "finished"
+    assert job.total == 60 and job.done == 60 and job.failed == 0
+    refills = [b for b in fetch_backlogs[1:-1]]          # 去掉第一次和最后一次（捞空）
+    assert refills and all(b > 0 for b in refills), \
+        f"续批时队列已经排空了，线程会空等：{fetch_backlogs}"
+    assert max(fetch_backlogs) < mgr._low_water(), "队列压得太多，取消不及时"
+
+
+def test_backfill_counts_failures_exactly_at_the_end(tmp_path):
+    """标不上的记失败、不重送；整轮结束按区间精确重算，不多不少。"""
+    import asyncio
+    engine = _SimEngine(45, failing={3, 17, 44})
+    mgr, _ = _sim_manager(tmp_path, engine)
+    job = BackfillJob(job_id="bf", status="running")
+    asyncio.run(mgr._run_backfill(job, 0))
+    assert job.status == "finished"
+    assert job.done == 45 and job.failed == 3 and job.percent == 100.0
+    assert not job.open_batches
+
+
+def test_backfill_respects_limit_exactly(tmp_path):
+    """⚠️ 额度刚好用完时剩余额度是 0——不能把 0 当成"不限"继续往下捞。"""
+    import asyncio
+    engine = _SimEngine(100)
+    mgr, _ = _sim_manager(tmp_path, engine)
+    job = BackfillJob(job_id="bf", status="running")
+    asyncio.run(mgr._run_backfill(job, 25))
+    assert job.submitted == 25, f"上限 25 条，实际送了 {job.submitted} 条"
+    assert len(engine.unlabeled) == 75
+
+
+def test_low_water_scales_with_concurrency(tmp_path):
+    mgr, _ = _sim_manager(tmp_path, _SimEngine(1, concurrency=16))
+    assert mgr._low_water() == 32
+    mgr._engine = SimpleNamespace()                         # 读不到并发数：按 4 兜底
+    assert mgr._low_water() == 8
