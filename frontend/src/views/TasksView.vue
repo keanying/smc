@@ -19,14 +19,14 @@
     <div class="toolbar">
       <el-input
         v-model="query.keyword" placeholder="搜索任务名称" clearable style="width: 220px"
-        :prefix-icon="Search" @keyup.enter="load" @clear="load"
+        :prefix-icon="Search" @keyup.enter="search" @clear="search"
       />
-      <el-select v-model="query.status" placeholder="状态" clearable style="width: 130px" @change="load">
+      <el-select v-model="query.status" placeholder="状态" clearable style="width: 130px" @change="search">
         <el-option v-for="(label, value) in TASK_STATUS_LABELS" :key="value" :label="label" :value="value" />
       </el-select>
       <el-select
         v-model="query.scenic_id" placeholder="目标" clearable filterable
-        style="width: 200px" @change="load"
+        style="width: 200px" @change="search"
       >
         <el-option
           v-for="s in scenics" :key="s.scenic_id"
@@ -34,14 +34,16 @@
         />
       </el-select>
       <el-select v-if="isCluster || query.node" v-model="query.node" placeholder="全部机器" clearable
-                 style="width: 140px" @change="load">
+                 style="width: 140px" @change="search">
         <el-option v-for="n in workerNodes" :key="n.node_id" :label="n.node_name" :value="n.node_id" />
       </el-select>
-      <el-button :icon="Refresh" @click="load">刷新</el-button>
+      <el-button :icon="Refresh" @click="load()">刷新</el-button>
       <el-switch v-model="autoRefresh" active-text="自动刷新" style="margin-left: auto" />
     </div>
 
-    <el-table stripe :data="tasks" v-loading="loading" class="data-table" max-height="calc(var(--vh100) - 290px)">
+    <!-- 不分页：滚到底自动加载下一批（表格下面那一行给调度时间轴） -->
+    <el-table ref="tableRef" stripe :data="tasks" v-loading="loading" class="data-table"
+              max-height="calc(var(--vh100) - 290px)">
       <el-table-column prop="task_name" label="任务名称" min-width="180">
         <template #default="{ row }">
           <el-link type="primary" @click="$router.push(`/tasks/${row.task_id}`)">
@@ -165,6 +167,12 @@
         </template>
       </el-table-column>
       <template #empty><el-empty description="还没有任务" /></template>
+      <template #append>
+        <div v-if="tasks.length" class="load-more">
+          <template v-if="tasks.length < total">{{ loadingMore ? '加载中…' : '往下滚动加载更多' }}</template>
+          <template v-else>共 {{ total }} 个任务，已全部加载</template>
+        </div>
+      </template>
     </el-table>
 
     <TaskEditDialog
@@ -172,23 +180,15 @@
       @saved="onSaved"
     />
 
-    <!-- 表格下面一行：左边是今天 24 小时的调度时间轴（看全局，不跟上面的筛选走），右边分页 -->
-    <div class="list-footer">
-      <ScheduleTimeline ref="timelineRef" class="footer-timeline" />
-      <el-pagination
-        v-if="total > query.page_size"
-        layout="total, prev, pager, next" :total="total"
-        :page-size="query.page_size" :current-page="query.page"
-        @current-change="(p: number) => { query.page = p; load() }"
-      />
-    </div>
+    <!-- 页面最下面：今天 24 小时的调度时间轴（看全局，不跟上面的筛选走） -->
+    <ScheduleTimeline ref="timelineRef" class="footer-timeline" />
   </div>
 </template>
 
 <script setup lang="ts">
 import ChannelTag from '../components/ChannelTag.vue'
 import { isCluster, loadCluster, nodeLabel, workerNodes } from '../composables/cluster'
-import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
@@ -217,7 +217,7 @@ function engineLabel(value: unknown): string {
 // 从集群页等地方跳过来时带着筛选条件（?node=…&status=…）
 const route = useRoute()
 const query = reactive({
-  keyword: '', page: 1, page_size: 20,
+  keyword: '',
   status: String(route.query.status || ''),
   scenic_id: String(route.query.scenic_id || ''),
   node: String(route.query.node || ''),
@@ -239,15 +239,59 @@ function scenicName(scenicId?: string | null): string {
   return scenics.value.find((s) => s.scenic_id === scenicId)?.scenic_name || scenicId
 }
 
+/** 一批加载多少个；滚到底再加一批 */
+const PAGE_SIZE = 20
+/** 当前要显示多少行（= 已经加载到第几批 × PAGE_SIZE）。自动刷新按这个数重拉，滚下去的不会被收回去 */
+const rowCount = ref(PAGE_SIZE)
+const loadingMore = ref(false)
+const tableRef = ref<{ $el: HTMLElement } | null>(null)
+let scrollEl: HTMLElement | null = null
+
+function scrollWrap(): HTMLElement | null {
+  return tableRef.value?.$el?.querySelector('.el-table__body-wrapper .el-scrollbar__wrap') ?? null
+}
+
 async function load(silent = false) {
   if (!silent) loading.value = true
   try {
-    const result = await taskApi.list(query)
+    const result = await taskApi.list({ ...query, page: 1, page_size: rowCount.value })
     tasks.value = result.items
     total.value = result.total
   } finally {
     loading.value = false
   }
+  fillIfShort()
+}
+
+/** 一屏还没铺满又还有没加载的：接着加载，不然没有滚动条，永远触发不了「滚到底」 */
+async function fillIfShort() {
+  await nextTick()
+  const wrap = scrollWrap()
+  if (wrap && wrap.scrollHeight <= wrap.clientHeight + 4) loadMore()
+}
+
+/** 换了筛选条件：从第一批重新来，滚回顶上 */
+function search() {
+  rowCount.value = PAGE_SIZE
+  scrollWrap()?.scrollTo({ top: 0 })
+  load()
+}
+
+async function loadMore() {
+  if (loadingMore.value || loading.value || tasks.value.length >= total.value) return
+  loadingMore.value = true
+  try {
+    rowCount.value = tasks.value.length + PAGE_SIZE
+    await load(true)
+  } finally {
+    loadingMore.value = false
+  }
+  fillIfShort()
+}
+
+function onTableScroll() {
+  const wrap = scrollWrap()
+  if (wrap && wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 120) loadMore()
 }
 
 async function run(row: Task) {
@@ -307,7 +351,7 @@ async function toggleSchedule(row: Task) {
 async function remove(row: Task) {
   await taskApi.remove(row.task_id)
   toast.success('已删除')
-  await load()
+  await load(true)
   refreshTimeline()
 }
 
@@ -353,8 +397,13 @@ onMounted(async () => {
   scenics.value = scenicOptions
   channelOptions.value = channelList
   setupTimer()
+  scrollEl = scrollWrap()
+  scrollEl?.addEventListener('scroll', onTableScroll, { passive: true })
 })
-onUnmounted(() => window.clearTimeout(timer))
+onUnmounted(() => {
+  window.clearTimeout(timer)
+  scrollEl?.removeEventListener('scroll', onTableScroll)
+})
 </script>
 
 
@@ -377,6 +426,6 @@ onUnmounted(() => window.clearTimeout(timer))
 }
 .row-actions > span { display: inline-flex; }
 .status-tag .status-icon { margin-right: 3px; vertical-align: -2px; }
-.list-footer { display: flex; align-items: center; gap: 24px; margin-top: 12px; }
-.footer-timeline { flex: 1; min-width: 0; }
+.footer-timeline { margin-top: 12px; }
+.load-more { padding: 10px 0; text-align: center; font-size: 12px; color: var(--smc-text-secondary); }
 </style>

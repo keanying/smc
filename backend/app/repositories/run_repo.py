@@ -233,19 +233,6 @@ class RunRepository:
                 args.append(day)
         return (("WHERE " + " AND ".join(conds)) if conds else ""), args
 
-    async def starts_between(self, start: datetime, end: datetime, limit: int = 5000) -> List[Dict[str, Any]]:
-        """[start, end) 里**实际启动**过的运行（任务管理页「调度时间分布」画已经跑过的点）。
-
-        走 idx_task_run_start；只取画图要的列，不拉 error_message / params_snapshot 这两个 TEXT。
-        """
-        return await self.db.fetch_all(
-            f"SELECT run_no, task_id, task_name, scenic_id, trigger_type, run_status, "
-            f"start_time, end_time, duration_seconds, node_id "
-            f"FROM `{tables.TASK_RUN}` WHERE start_time >= %s AND start_time < %s "
-            f"ORDER BY start_time ASC, id ASC LIMIT %s",
-            [start, end, int(limit)],
-        )
-
     async def list(self, filters: Dict[str, Any], *, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
         where, args = self._where(filters)
         total = int(await self.db.fetch_value(

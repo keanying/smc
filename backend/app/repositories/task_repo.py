@@ -90,62 +90,46 @@ def validate_cron(expression: str) -> None:
         raise ValueError(f"cron 表达式非法：{expression}")
 
 
-#: 一个任务一天里最多列多少个计划点：每分钟一次正好 1440 个；
+#: 一个任务一天里最多列多少个点：每分钟一次正好 1440 个；
 #: 带秒的 cron（每 10 秒一次）会超过，超过的部分只记"还有更多"，不往页面上塞
 PLANNED_STARTS_LIMIT = 1440
 
 
 def planned_starts(
     task: Dict[str, Any], window_start: datetime, window_end: datetime,
-    *, now: Optional[datetime] = None, limit: int = PLANNED_STARTS_LIMIT,
+    *, limit: int = PLANNED_STARTS_LIMIT,
 ) -> Dict[str, Any]:
-    """按任务**现在**的调度设置，推算 [window_start, window_end) 里会在哪些时刻启动。
+    """按任务的调度**设置**，列出 [window_start, window_end) 里的启动时刻。
 
-    任务管理页「调度时间分布」用。只往后推，不往前推（已经过去的部分看运行记录）：
-    调用方把 window_start 设成 max(当天 0 点, 现在)。
+    任务管理页底部「今日调度」时间轴用：只要设置了调度就画，
+    不管定时有没有暂停、今天跑没跑过（暂停与否由调用方另外标出来）。
 
     - cron：和调度器一样用 croniter 逐个取（second_at_beginning 也一样）
     - interval：调度器是「上一轮跑完 + 间隔」排下一次，每轮耗时多少就顺延多少，
-      所以只有 next_run_time 那一个点是准的，后面的按纯间隔推算、标 approx
+      所以从下次运行时间（没有就用上次运行 / 创建时间）按纯间隔往前往后铺，标 approx
     - at：定时一次，落在窗口里就一个点
-    - 排队等账号（waiting）：next_run_time 是预计恢复时间，单独标 resume
+    - once（立即执行一次）没有调度时刻，不画
 
-    返回 {"starts": [{"time": datetime, "approx": bool, "resume": bool}], "truncated": bool}
+    返回 {"starts": [{"time": datetime, "approx": bool}], "truncated": bool}
     """
-    now = now or datetime.now()
     starts: List[Dict[str, Any]] = []
     truncated = False
 
-    def add(moment: datetime, *, approx: bool = False, resume: bool = False) -> bool:
+    def add(moment: datetime, *, approx: bool = False) -> bool:
         nonlocal truncated
         if len(starts) >= limit:
             truncated = True
             return False
-        starts.append({"time": moment, "approx": approx, "resume": resume})
+        starts.append({"time": moment, "approx": approx})
         return True
 
-    def in_window(moment: Optional[datetime]) -> bool:
-        return moment is not None and window_start <= moment < window_end
-
+    schedule_type = task.get("schedule_type")
     if window_start >= window_end:
         return {"starts": starts, "truncated": False}
 
-    schedule_type = task.get("schedule_type")
-    next_run = task.get("next_run_time")
-    status = task.get("status")
-    enabled = bool(task.get("schedule_enabled"))
-
-    # 排队等账号：到 next_run_time 自动接着跑。它之后才轮到正常的周期
-    resume_at = next_run if status == TaskStatus.WAITING.value else None
-    if in_window(resume_at):
-        add(resume_at, resume=True)
-
-    if not enabled:
-        return {"starts": starts, "truncated": truncated}
-
     if schedule_type == ScheduleType.AT.value:
         at = task.get("schedule_at")
-        if in_window(at) and at != resume_at:
+        if at is not None and window_start <= at < window_end:
             add(at)
 
     elif schedule_type == ScheduleType.CRON.value and task.get("cron_expression"):
@@ -153,11 +137,10 @@ def planned_starts(
         try:
             validate_cron(expression)
             tz = ZoneInfo(task.get("timezone") or "Asia/Shanghai")
-        except Exception:  # noqa: BLE001 —— 老数据里的坏表达式 / 坏时区：这一行不画，不影响别的任务
-            return {"starts": starts, "truncated": truncated}
-        begin = max(window_start, resume_at) if resume_at else window_start
+        except Exception:  # noqa: BLE001 —— 老数据里的坏表达式 / 坏时区：这个任务不画，不影响别的
+            return {"starts": starts, "truncated": False}
         # 往前退 1 秒：正好落在 window_start 那一刻（如 00:00:00）的也要算上
-        cursor = croniter(expression, (begin - timedelta(seconds=1)).replace(tzinfo=tz),
+        cursor = croniter(expression, (window_start - timedelta(seconds=1)).replace(tzinfo=tz),
                           second_at_beginning=True)
         while True:
             moment = cursor.get_next(datetime).replace(tzinfo=None)
@@ -166,20 +149,12 @@ def planned_starts(
 
     elif schedule_type == ScheduleType.INTERVAL.value and task.get("schedule_interval_seconds"):
         step = timedelta(seconds=max(1, int(task["schedule_interval_seconds"])))
-        if resume_at:
-            # 恢复那次跑完才排下一轮
-            first, exact = resume_at + step, False
-        elif next_run and next_run > now:
-            first, exact = next_run, True
-        else:
-            # 正在跑 / 已经到点在排队：要等这一轮跑完才排下一次，只能估
-            first, exact = now + step, False
-        if first < window_start:
-            first += step * -(-(window_start - first) // step)   # 向上取整到窗口里第一个点
-            exact = False
-        moment = first
+        anchor = (task.get("next_run_time") or task.get("last_run_time")
+                  or task.get("create_time") or window_start)
+        # 窗口里第一个点：anchor 往前或往后挪整数个间隔
+        moment = anchor + step * -((anchor - window_start) // step)
         while moment < window_end:
-            if not add(moment, approx=not (exact and moment == first)):
+            if not add(moment, approx=moment != anchor):
                 break
             moment += step
 
@@ -300,7 +275,8 @@ class TaskRepository:
         }
 
     async def list_for_timeline(self) -> List[Dict[str, Any]]:
-        """「调度时间分布」用：所有可能自己启动的任务（开着定时的 + 排队等账号的）。
+        """「今日调度」时间轴用：所有设置了调度时刻的任务（cron / 固定间隔 / 定时一次），
+        暂停了定时的也要（页面上标「已暂停」）。
 
         只取画图要的列——任务表里有几个大 TEXT 列（keywords / targets / params），
         这里用不上，全表 SELECT * 白白多拉。
@@ -308,24 +284,11 @@ class TaskRepository:
         rows = await self.db.fetch_all(
             "SELECT task_id, task_name, scenic_id, channels, status, schedule_type, schedule_enabled, "
             "schedule_at, schedule_interval_seconds, cron_expression, timezone, next_run_time, "
-            "last_run_time, node_id "
+            "last_run_time, create_time "
             "FROM `src_opinion_crawl_task` "
-            "WHERE schedule_enabled = 1 OR status = 'waiting' ORDER BY id DESC",
+            "WHERE schedule_type IN ('cron', 'interval', 'at') ORDER BY id DESC",
         )
         return [_decode(r) for r in rows]
-
-    async def brief_by_ids(self, task_ids: Sequence[str]) -> Dict[str, Dict[str, Any]]:
-        """按 task_id 取任务的基本信息（名字、调度设置），没有的就不在结果里（已删除）。"""
-        ids = [t for t in dict.fromkeys(task_ids) if t]
-        if not ids:
-            return {}
-        rows = await self.db.fetch_all(
-            "SELECT task_id, task_name, scenic_id, channels, status, schedule_type, schedule_enabled, "
-            "schedule_interval_seconds, cron_expression, node_id "
-            "FROM `src_opinion_crawl_task` WHERE task_id IN (" + ", ".join(["%s"] * len(ids)) + ")",
-            ids,
-        )
-        return {r["task_id"]: _decode(r) for r in rows}
 
     async def due_tasks(self, now: Optional[datetime] = None, limit: int = 50) -> List[Dict]:
         """取到点该跑的周期任务。"""

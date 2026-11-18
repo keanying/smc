@@ -8,33 +8,48 @@
 
 <template>
   <!--
-    调度时间分布：今天 0~24 点一条横条，有任务启动的小时高亮，
-    鼠标移上去看这个小时里哪些任务、几点启动。
-    过去的时间是运行记录里实际启动的，没到的时间按调度设置推算。时间按服务器时间。
+    今日调度：0~24 点一条横条，每小时一格。
+    只要任务设置了调度（cron / 固定间隔 / 定时一次），它启动的那个小时就高亮，格子里写目标名称；
+    暂停了定时的也画（颜色浅一点）。鼠标移到任意一格，看这个小时里谁、几点启动。
+    时间按服务器时间，和任务列表里的「下次」一致。
   -->
   <div class="sched">
     <span class="sched-label">
       今日调度
-      <InfoTip content="今天 24 小时里任务的启动时刻。有任务的小时会高亮，鼠标移上去看是哪些任务、几点启动。已过去的是实际启动，没到的是按调度设置推算。" />
+      <InfoTip content="每个任务按调度设置在今天哪些时刻启动，有调度的小时会高亮并写上目标名称，浅色表示定时已暂停。鼠标移到格子上看是哪些任务、几点启动。" />
     </span>
     <div class="sched-line">
       <div class="strip">
         <el-tooltip
-          v-for="h in hours" :key="h.hour" placement="top" :show-after="80"
-          :disabled="!h.items.length" popper-class="info-tip-popper"
+          v-for="h in hours" :key="h.hour" placement="top" :show-after="60"
+          popper-class="info-tip-popper"
         >
           <template #content>
             <div class="tip">
-              <div class="tip-title">{{ pad(h.hour) }}:00 – {{ pad(h.hour + 1) }}:00</div>
-              <div v-for="(item, i) in h.items.slice(0, MAX_LINES)" :key="i" class="tip-line">
-                {{ item.at }}　{{ item.name }}<span class="tip-kind">{{ item.kind }}</span>
+              <div class="tip-title">
+                {{ pad(h.hour) }}:00 – {{ pad(h.hour + 1) }}:00
+                <span v-if="h.items.length" class="tip-count">{{ h.items.length }} 次</span>
               </div>
-              <div v-if="h.items.length > MAX_LINES" class="tip-line">
+              <div v-if="!h.items.length" class="tip-line">这个小时没有调度</div>
+              <div v-for="(item, i) in h.items.slice(0, MAX_LINES)" :key="i" class="tip-line">
+                {{ item.approx ? '≈' : '' }}{{ item.at }}　{{ item.target }}
+                <span v-if="item.taskName !== item.target" class="tip-sub">· {{ item.taskName }}</span>
+                <span v-if="item.paused" class="tip-sub">（已暂停）</span>
+              </div>
+              <div v-if="h.items.length > MAX_LINES" class="tip-line tip-sub">
                 …还有 {{ h.items.length - MAX_LINES }} 次
               </div>
             </div>
           </template>
-          <div class="cell" :class="{ active: h.items.length, current: h.hour === nowHour }" />
+          <div
+            class="cell"
+            :class="{ active: h.items.length, paused: h.items.length && h.allPaused, current: h.hour === nowHour }"
+          >
+            <template v-if="h.targets.length">
+              <span class="cell-name">{{ h.targets[0] }}</span>
+              <span v-if="h.targets.length > 1" class="cell-more">+{{ h.targets.length - 1 }}</span>
+            </template>
+          </div>
         </el-tooltip>
       </div>
       <div class="axis">
@@ -49,28 +64,46 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import { taskApi, type ScheduleTimeline } from '../api'
 
-const MAX_LINES = 12
+const MAX_LINES = 15
 const data = ref<ScheduleTimeline | null>(null)
+
+interface HourItem {
+  at: string
+  minute: number
+  target: string
+  taskName: string
+  paused: boolean
+  approx: boolean
+}
 
 function pad(n: number): string {
   return String(n).padStart(2, '0')
 }
 
-/** 按小时分好：每个小时里谁、几点启动（按时间排） */
+/** 按小时分好：每个小时里谁、几点启动（按时间排），以及格子里要写的目标名称（去重） */
 const hours = computed(() => {
-  const buckets = Array.from({ length: 24 }, (_, hour) => ({
-    hour, items: [] as Array<{ at: string; minute: number; name: string; kind: string }>,
-  }))
+  const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, items: [] as HourItem[] }))
   for (const t of data.value?.tasks || []) {
     for (const e of t.events) {
-      const kind = e.kind === 'run' ? '已启动' : '计划'
       buckets[Math.min(23, Math.floor(e.minute / 60))].items.push({
-        at: e.at.slice(0, 5), minute: e.minute, name: t.task_name, kind,
+        at: e.at.slice(0, 5),
+        minute: e.minute,
+        target: t.scenic_name || t.task_name,
+        taskName: t.task_name,
+        paused: !t.schedule_enabled,
+        approx: e.approx,
       })
     }
   }
-  for (const b of buckets) b.items.sort((a, b2) => a.minute - b2.minute)
-  return buckets
+  return buckets.map((b) => {
+    const items = b.items.sort((x, y) => x.minute - y.minute)
+    return {
+      ...b,
+      items,
+      targets: [...new Set(items.map((i) => i.target))],
+      allPaused: items.every((i) => i.paused),
+    }
+  })
 })
 
 const nowHour = computed(() =>
@@ -80,7 +113,7 @@ async function load() {
   data.value = await taskApi.scheduleTimeline('', true)
 }
 
-// 每分钟刷一次：过了的点从「计划」变成「已启动」
+// 每分钟刷一次：「当前小时」那条线跟着走，过了 0 点换成新的一天
 let timer: number | undefined
 onMounted(() => {
   load()
@@ -88,28 +121,34 @@ onMounted(() => {
 })
 onUnmounted(() => window.clearInterval(timer))
 
-/** 任务列表里执行 / 暂停定时 / 编辑 / 删除之后，父页面调这个让横条跟着变 */
+/** 任务列表里暂停定时 / 编辑 / 删除之后，父页面调这个让横条跟着变 */
 defineExpose({ reload: load })
 </script>
 
 <style scoped>
-/* 放在任务列表分页那一行的左边：不加卡片，高度和分页差不多 */
 .sched { display: flex; align-items: flex-start; gap: 12px; }
 .sched-label {
   flex: none; display: inline-flex; align-items: center; gap: 2px;
-  font-size: 12px; color: var(--smc-text-secondary); line-height: 14px; white-space: nowrap;
+  font-size: 12px; color: var(--smc-text-secondary); line-height: 24px; white-space: nowrap;
 }
 .sched-line { flex: 1; min-width: 0; }
 
 .strip { display: flex; gap: 2px; }
 .cell {
-  height: 14px; flex: 1; border-radius: 3px;
+  height: 24px; flex: 1 1 0; min-width: 0; border-radius: 4px;
   background: var(--smc-border);
+  display: flex; align-items: center; gap: 2px; padding: 0 4px; box-sizing: border-box;
+  font-size: 11px; line-height: 1; color: #fff; cursor: default;
 }
-.cell.active { background: var(--smc-primary); cursor: pointer; }
+.cell.active { background: var(--smc-primary); }
 .cell.active:hover { background: var(--smc-primary-dark); }
-/* 当前这个小时：下面一条粉色细线 */
-.cell.current { box-shadow: inset 0 -2px 0 var(--smc-accent); }
+/* 这个小时里的任务定时全都暂停了：浅色 */
+.cell.paused { background: #d6d1f5; color: var(--smc-primary-dark); }
+.cell.paused:hover { background: #c4bdf0; }
+/* 当前这个小时：底下一条粉色细线 */
+.cell.current { box-shadow: inset 0 -3px 0 var(--smc-accent); }
+.cell-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cell-more { flex: none; opacity: 0.8; font-variant-numeric: tabular-nums; }
 
 .axis { position: relative; height: 14px; margin-top: 3px; }
 .axis span {
@@ -119,8 +158,9 @@ defineExpose({ reload: load })
 .axis span:first-child { transform: none; }
 .axis span:last-child { transform: translateX(-100%); }
 
-.tip { font-size: 12px; line-height: 1.7; max-width: 320px; }
+.tip { font-size: 12px; line-height: 1.7; max-width: 360px; }
 .tip-title { font-weight: 600; }
+.tip-count { margin-left: 6px; font-weight: 400; opacity: 0.7; }
 .tip-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tip-kind { margin-left: 6px; opacity: 0.65; }
+.tip-sub { opacity: 0.65; }
 </style>
