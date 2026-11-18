@@ -43,7 +43,7 @@
           </template>
           <div
             class="cell"
-            :class="{ active: h.items.length, paused: h.items.length && h.allPaused, current: h.hour === nowHour }"
+            :class="{ active: h.items.length, paused: h.items.length && h.allPaused }"
           >
             <template v-if="h.targets.length">
               <span class="cell-name">{{ h.targets[0] }}</span>
@@ -106,14 +106,11 @@ const hours = computed(() => {
   })
 })
 
-const nowHour = computed(() =>
-  data.value?.now_minute == null ? -1 : Math.floor(data.value.now_minute / 60))
-
 async function load() {
   data.value = await taskApi.scheduleTimeline('', true)
 }
 
-// 每分钟刷一次：「当前小时」那条线跟着走，过了 0 点换成新的一天
+// 每分钟刷一次：别处改了调度能跟上，过了 0 点换成新的一天
 let timer: number | undefined
 onMounted(() => {
   load()
@@ -145,8 +142,6 @@ defineExpose({ reload: load })
 /* 这个小时里的任务定时全都暂停了：浅色 */
 .cell.paused { background: #d6d1f5; color: var(--smc-primary-dark); }
 .cell.paused:hover { background: #c4bdf0; }
-/* 当前这个小时：底下一条粉色细线 */
-.cell.current { box-shadow: inset 0 -3px 0 var(--smc-accent); }
 .cell-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cell-more { flex: none; opacity: 0.8; font-variant-numeric: tabular-nums; }
 

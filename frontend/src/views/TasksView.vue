@@ -7,7 +7,7 @@
 -->
 
 <template>
-  <div>
+  <div class="tasks-page">
     <div class="page-header">
       <h2 class="page-title">
         任务管理
@@ -180,7 +180,7 @@
       @saved="onSaved"
     />
 
-    <!-- 页面最下面：今天 24 小时的调度时间轴（看全局，不跟上面的筛选走） -->
+    <!-- 今天 24 小时的调度时间轴（看全局，不跟上面的筛选走）：永远贴在页面最底下 -->
     <ScheduleTimeline ref="timelineRef" class="footer-timeline" />
   </div>
 </template>
@@ -426,6 +426,13 @@ onUnmounted(() => {
 }
 .row-actions > span { display: inline-flex; }
 .status-tag .status-icon { margin-right: 3px; vertical-align: -2px; }
-.footer-timeline { margin-top: 12px; }
+/* 整页至少占满内容区高度，时间轴用 margin-top: auto 顶到最底下——
+   任务少、表格短的时候也不会浮在中间；内容超出一屏时 sticky 贴住窗口底边 */
+.tasks-page { min-height: 100%; display: flex; flex-direction: column; }
+.footer-timeline {
+  margin-top: auto; padding-top: 12px;
+  position: sticky; bottom: 0; z-index: 3;
+  background: var(--smc-bg);
+}
 .load-more { padding: 10px 0; text-align: center; font-size: 12px; color: var(--smc-text-secondary); }
 </style>
