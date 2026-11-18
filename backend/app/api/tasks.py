@@ -7,7 +7,7 @@
 """任务 API：创建（含 cron）、列表、详情、立即执行、取消、日志。"""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -146,6 +146,110 @@ async def filter_options():
     return ok({
         "channels": search_filters.all_options(),
         "publish_within": search_filters.PUBLISH_WITHIN_OPTIONS,
+    })
+
+
+def _timeline_point(moment: datetime, day_start: datetime) -> dict:
+    """一个时间点：页面上显示的 HH:MM:SS + 在 24 小时轴上的位置（距 0 点的分钟数）。"""
+    return {
+        "at": moment.strftime("%H:%M:%S"),
+        "minute": round((moment - day_start).total_seconds() / 60, 3),
+    }
+
+
+@router.get("/schedule-timeline")
+async def schedule_timeline(date: str = "", state: AppState = Depends(get_state)):
+    """任务管理页底部「调度时间分布」：某一天 24 小时里，哪个任务在什么时刻启动。
+
+    - 已经过去的时间：看运行记录里**实际启动**的（含手动、排队恢复、集群派发）
+    - 还没到的时间：按每个任务**现在**的调度设置往后推算（只算开着定时的 + 排队等账号的）
+
+    所以看今天 = 前半天是实际、后半天是计划；看以前 = 全是实际；看以后 = 全是计划。
+    时间一律按服务器本地时间（和库里 next_run_time / start_time 一致），前端不再换时区。
+    """
+    from ..repositories.run_repo import RunRepository
+    from ..repositories.task_repo import planned_starts
+
+    now = datetime.now().replace(microsecond=0)
+    try:
+        day = datetime.strptime(date, "%Y-%m-%d") if date else now
+    except ValueError:
+        raise bad_request(f"日期格式应为 YYYY-MM-DD：{date}")
+    day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + timedelta(days=1)
+
+    rows: dict = {}
+
+    def row_of(task: dict, *, exists: bool = True) -> dict:
+        task_id = task["task_id"]
+        if task_id not in rows:
+            rows[task_id] = {
+                "task_id": task_id,
+                "task_name": task.get("task_name") or task_id,
+                "scenic_id": task.get("scenic_id") or "",
+                "channels": task.get("channels") or [],
+                "status": task.get("status") or "",
+                "schedule_type": task.get("schedule_type") or "",
+                "schedule_enabled": bool(task.get("schedule_enabled")),
+                "cron_expression": task.get("cron_expression") or "",
+                "schedule_interval_seconds": task.get("schedule_interval_seconds"),
+                "node_id": task.get("node_id") or "",
+                "exists": exists,
+                "truncated": False,
+                "events": [],
+            }
+        return rows[task_id]
+
+    # 1) 实际启动过的
+    runs = await RunRepository(state.db).starts_between(day_start, day_end)
+    briefs = await state.tasks.brief_by_ids([r["task_id"] for r in runs])
+    for run in runs:
+        task = briefs.get(run["task_id"])
+        row = row_of(task or run, exists=task is not None)
+        row["events"].append({
+            **_timeline_point(run["start_time"], day_start),
+            "kind": "run",
+            "run_no": run["run_no"],
+            "run_status": run["run_status"],
+            "trigger_type": run["trigger_type"],
+            "duration_seconds": int(run.get("duration_seconds") or 0),
+            "node_id": run.get("node_id") or "",
+        })
+
+    # 2) 还没到的：按调度设置推算
+    plan_from = max(day_start, now)
+    if plan_from < day_end:
+        for task in await state.tasks.list_for_timeline():
+            planned = planned_starts(task, plan_from, day_end, now=now)
+            if not planned["starts"]:
+                continue
+            row = row_of(task)
+            row["truncated"] = planned["truncated"]
+            for item in planned["starts"]:
+                row["events"].append({
+                    **_timeline_point(item["time"], day_start),
+                    "kind": "plan",
+                    "approx": item["approx"],
+                    "resume": item["resume"],
+                })
+
+    # 按当天第一次启动的先后排：从上往下看就是一天的顺序
+    tasks = sorted(
+        rows.values(),
+        key=lambda r: (min(e["minute"] for e in r["events"]), r["task_name"]),
+    )
+    hours = [{"hour": h, "runs": 0, "plans": 0} for h in range(24)]
+    for row in tasks:
+        for event in row["events"]:
+            bucket = hours[min(23, int(event["minute"] // 60))]
+            bucket["runs" if event["kind"] == "run" else "plans"] += 1
+
+    return ok({
+        "date": day_start.strftime("%Y-%m-%d"),
+        "now": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "now_minute": round((now - day_start).total_seconds() / 60, 3) if day_start <= now < day_end else None,
+        "tasks": tasks,
+        "hours": hours,
     })
 
 

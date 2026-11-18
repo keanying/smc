@@ -565,6 +565,51 @@ export interface RunDeleteResult {
   deleted_logs: number
 }
 
+/** 调度时间分布上的一个点：run = 运行记录里实际启动的；plan = 按调度设置推算的 */
+export interface TimelineEvent {
+  /** 服务器本地时间 HH:MM:SS */
+  at: string
+  /** 距当天 0 点的分钟数（0~1440），决定在 24 小时轴上的位置 */
+  minute: number
+  kind: 'run' | 'plan'
+  run_no?: string
+  run_status?: string
+  trigger_type?: string
+  duration_seconds?: number
+  node_id?: string
+  /** 间隔任务：按纯间隔推算，实际会随每轮耗时往后顺延 */
+  approx?: boolean
+  /** 排队等账号的任务预计恢复执行的时刻 */
+  resume?: boolean
+}
+
+export interface TimelineTask {
+  task_id: string
+  task_name: string
+  scenic_id: string
+  channels: string[]
+  status: string
+  schedule_type: string
+  schedule_enabled: boolean
+  cron_expression: string
+  schedule_interval_seconds?: number | null
+  node_id: string
+  /** false = 任务已删除，只剩运行记录 */
+  exists: boolean
+  /** 计划点太密（如带秒的 cron），只给了前 1440 个 */
+  truncated: boolean
+  events: TimelineEvent[]
+}
+
+export interface ScheduleTimeline {
+  date: string
+  now: string
+  /** 看的是今天时，现在在轴上的位置；别的日子为 null */
+  now_minute: number | null
+  tasks: TimelineTask[]
+  hours: Array<{ hour: number; runs: number; plans: number }>
+}
+
 export const taskApi = {
   /** sort='recent'：按最近一次运行排（定时任务跑了就排到前面）；默认按建的先后 */
   list: (params: { status?: string; scenic_id?: string; keyword?: string; node?: string; page?: number; page_size?: number; sort?: 'recent' } = {}, silent = false) =>
@@ -593,6 +638,9 @@ export const taskApi = {
   }>('/api/tasks/filter-options'),
   previewSchedule: (params: Record<string, unknown>) =>
     api.post<{ next_runs: string[] }>('/api/tasks/preview-schedule', undefined, params),
+  /** 某一天（YYYY-MM-DD，默认今天）24 小时里每个任务的启动时刻：过去的是实际、没到的是计划 */
+  scheduleTimeline: (date = '', silent = false) =>
+    api.get<ScheduleTimeline>('/api/tasks/schedule-timeline', date ? { date } : {}, silent),
 }
 
 // ===================== 采集实时画面 =====================

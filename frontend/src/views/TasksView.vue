@@ -172,13 +172,16 @@
       @saved="onSaved"
     />
 
-    <el-pagination
-      v-if="total > query.page_size"
-      style="margin-top: 16px; justify-content: flex-end"
-      layout="total, prev, pager, next" :total="total"
-      :page-size="query.page_size" :current-page="query.page"
-      @current-change="(p: number) => { query.page = p; load() }"
-    />
+    <!-- 表格下面一行：左边是今天 24 小时的调度时间轴（看全局，不跟上面的筛选走），右边分页 -->
+    <div class="list-footer">
+      <ScheduleTimeline ref="timelineRef" class="footer-timeline" />
+      <el-pagination
+        v-if="total > query.page_size"
+        layout="total, prev, pager, next" :total="total"
+        :page-size="query.page_size" :current-page="query.page"
+        @current-change="(p: number) => { query.page = p; load() }"
+      />
+    </div>
   </div>
 </template>
 
@@ -194,6 +197,7 @@ import { COLLECT_ENGINES, POI_CHANNELS, normalizeEngine } from '../constants'
 import aiIcon from '../assets/icons/ai.png'
 import aiIconDark from '../assets/icons/ai-dark.png'
 import TaskEditDialog from '../components/TaskEditDialog.vue'
+import ScheduleTimeline from '../components/ScheduleTimeline.vue'
 import {
   SCHEDULE_LABELS, TASK_STATUS_LABELS, TASK_STATUS_TYPES,
   channelLabel, formatTime,
@@ -221,6 +225,12 @@ const query = reactive({
 const channelOptions = ref<ChannelOption[]>([])
 const editVisible = ref(false)
 const editing = ref<Task | null>(null)
+const timelineRef = ref<InstanceType<typeof ScheduleTimeline> | null>(null)
+
+/** 执行 / 暂停定时 / 改调度 / 删除之后，底部的调度时间分布跟着刷新 */
+function refreshTimeline() {
+  timelineRef.value?.reload()
+}
 
 let timer: number | undefined
 
@@ -244,12 +254,14 @@ async function run(row: Task) {
   await taskApi.run(row.task_id)
   toast.success('已开始执行')
   await load(true)
+  refreshTimeline()
 }
 
 async function cancel(row: Task) {
   await taskApi.cancel(row.task_id)
   toast.success('已发送取消信号')
   await load(true)
+  refreshTimeline()
 }
 
 function edit(row: Task) {
@@ -264,6 +276,7 @@ async function onSaved(updated: Task) {
       : '已保存',
   )
   await load(true)
+  refreshTimeline()
 }
 
 const aiToggling = ref('')
@@ -288,12 +301,14 @@ async function toggleAi(row: Task) {
 async function toggleSchedule(row: Task) {
   await taskApi.toggleSchedule(row.task_id, !row.schedule_enabled)
   await load(true)
+  refreshTimeline()
 }
 
 async function remove(row: Task) {
   await taskApi.remove(row.task_id)
   toast.success('已删除')
   await load()
+  refreshTimeline()
 }
 
 /**
@@ -362,4 +377,6 @@ onUnmounted(() => window.clearTimeout(timer))
 }
 .row-actions > span { display: inline-flex; }
 .status-tag .status-icon { margin-right: 3px; vertical-align: -2px; }
+.list-footer { display: flex; align-items: center; gap: 24px; margin-top: 12px; }
+.footer-timeline { flex: 1; min-width: 0; }
 </style>
