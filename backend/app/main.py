@@ -230,6 +230,21 @@ async def lifespan(app: FastAPI):
             channel=channel, kind="account_invalid", account=account, detail=reason))
 
     account_repo.on_expired.append(_notify_account_expired)
+
+    # 旧的编译文件（.so）挡住了新代码：更新了源码、重启了，跑的却还是老逻辑。启动时就说出来
+    from .core.stale_build import describe as _describe_stale, find_shadowed as _find_shadowed
+    try:
+        _shadowed = _find_shadowed()
+    except Exception as exc:  # noqa: BLE001 —— 扫描失败不影响启动
+        logger.debug("扫描旧编译文件失败（忽略）：%s", exc)
+        _shadowed = []
+    if _shadowed:
+        _stale_text = _describe_stale(_shadowed)
+        logger.error("代码版本：%s", _stale_text)
+        from .notify import NotifyEvent
+        asyncio.create_task(_get_notifier(config).send(NotifyEvent(
+            channel="", kind="config", detail=_stale_text,
+            action="删掉旧的编译文件后重启服务"), force=True))
     if (config.get("labeling") or {}).get("enabled") and cluster.is_leader and box_sync is None:
         # 重启前队列里没标完的，现在就接着标——不等下一次采集任务来"顺便"拉起引擎。
         # 放后台跑：自检要真打一次模型，别拖慢服务启动

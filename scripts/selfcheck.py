@@ -201,6 +201,17 @@ async def check_sites(config) -> None:
             record(name, False, str(exc)[:150])
 
 
+def check_stale_build() -> None:
+    """旧的编译文件（.so）和新源码并存：Python 先加载 .so，跑的是旧代码。"""
+    try:
+        from app.core.stale_build import describe, find_shadowed
+        found = find_shadowed()
+    except Exception as exc:  # noqa: BLE001
+        record("代码版本", True, f"跳过（{str(exc)[:80]}）")
+        return
+    record("代码版本", not found, describe(found) if found else "没有旧编译文件挡住源码")
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--quick", action="store_true", help="只查 MySQL / Redis")
@@ -216,6 +227,10 @@ async def main() -> int:
 
     print(f"\n配置文件：{config.source_path or '（未找到，使用内置默认值）'}\n")
 
+    if not args.sites:
+        print("代码：")
+        check_stale_build()
+        print()
     if args.sites:
         print("目标站点连通性：")
         await check_sites(config)

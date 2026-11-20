@@ -71,6 +71,15 @@ def main() -> int:
     port = args.port or int(config.get("server.port", 8000))
     log_level = args.log_level or str(config.get("server.log_level", "info")).lower()
 
+    # 旧的编译文件（.so）挡住了新代码：源码更新了、服务重启了，跑的却还是老逻辑
+    try:
+        from app.core.stale_build import describe, find_shadowed
+        shadowed = find_shadowed()
+    except Exception:  # noqa: BLE001 —— 扫描失败不拦启动
+        shadowed = []
+    if shadowed:
+        print("[严重] 代码版本不对：" + describe(shadowed))
+
     import uvicorn
 
     options = dict(host=host, port=port, log_level=log_level)

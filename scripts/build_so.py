@@ -30,8 +30,11 @@
 产出：
     <输出目录>/backend/   —— app、vendor 里全是 .so，入口文件保持 .py
 部署（客户那边）：
-    把 release/backend 覆盖到他们的 backend；照常 pip install -r requirements.txt；
-    照常 python run.py 启动。运行方式、配置（config.yaml / 环境变量）都不变。
+    ⚠️ **先删掉旧的 backend/app、backend/vendor，再放 release/backend**，不要直接覆盖。
+       同一个目录里 .so 和同名 .py 并存时 Python 先加载 .so：以后换回源码更新（git pull）
+       而旧 .so 没删，跑的就一直是旧代码（启动自检和服务启动时会报「代码版本」）。
+       data/、config/ 不在这两个目录里，删了不影响数据和配置。
+    照常 pip install -r requirements.txt；照常 python run.py 启动。运行方式、配置都不变。
 """
 from __future__ import annotations
 
