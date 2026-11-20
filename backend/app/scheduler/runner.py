@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..collectors.base import (
     BaseCollector,
@@ -603,9 +603,8 @@ class TaskRunner:
         )
         # 账号分组：平台级 account_group > 任务级 account_group。
         # 同组账号轮换采集，分摊单账号的请求量与风控压力。
-        ctx.params["account_group"] = (
-            channel_params.get("account_group") or params.get("account_group") or ""
-        )
+        ctx.params["account_group"] = await self._effective_group(
+            task, channel, log if collector.needs_login else None)
         log.info(_limits_line(channel, limits))
         if channel not in CHANNELS_POI_BASED:
             log.info(f"搜索条件：{ctx.filters.describe()}")
@@ -836,6 +835,8 @@ class TaskRunner:
     MAX_ACCOUNT_SWITCHES = 5
     #: 一个能用的号都没有、也不是在冷却（都要人重新登录）时，多久再看一次
     LOGIN_WAIT_RETRY_MINUTES = 10
+    #: 号在别的机器上时，悄悄回队列重新派几次；还派不对（有号的那台多半离线了）再告警
+    ELSEWHERE_QUIET_RETRIES = 3
 
     async def _channel_has_account(self, channel: str) -> bool:
         """这个平台**有没有配过**账号（不管现在能不能用）。查不出来时当作有（宁可排队，也别漏掉能恢复的）。"""
@@ -850,6 +851,40 @@ class TaskRunner:
             return bool(page)
         except Exception:  # noqa: BLE001
             return True
+
+    async def _effective_group(self, task: Dict[str, Any], channel: str,
+                               log: Optional[TaskLogger] = None) -> str:
+        """这个平台实际按哪个账号分组挑号：平台级分组 > 任务级分组。
+
+        ⚠️ 任务级分组是给**所有平台**的。账号按平台建分组（「快手」「小红书」）时，
+        一个多平台任务的任务级分组只可能对得上其中一个平台，其余平台一个号都挑不到，
+        每次一到点就齐刷刷报「没有可用账号」。所以：任务级分组里**一个这个平台的号都没有**，
+        就忽略分组、用这个平台的全部号；平台级分组是专门给这个平台设的，照旧严格执行。
+        """
+        params = task.get("params") or {}
+        own = collect_params.channel_overrides(params, channel)
+        if own.get("account_group"):
+            return str(own["account_group"])
+        group = str(params.get("account_group") or "")
+        accounts = getattr(self.browser_manager, "accounts", None)
+        if group and accounts is not None and hasattr(accounts, "has_group"):
+            if not await accounts.has_group(channel, group):
+                if log is not None:
+                    log.warn(f"任务的账号分组「{group}」里没有{CHANNEL_LABELS.get(channel, channel)}账号，"
+                             f"这个平台不按分组、用全部可用账号")
+                return ""
+        return group
+
+    async def _explain_unavailable(self, channel: str, preferred: str, group: str) -> Tuple[str, str]:
+        """挑不到号的真实原因（见 AccountRepository.explain_unavailable）。查不了返回 ("unknown", "")。"""
+        accounts = getattr(self.browser_manager, "accounts", None)
+        if accounts is None or not hasattr(accounts, "explain_unavailable"):
+            return "unknown", ""
+        try:
+            return await accounts.explain_unavailable(channel, preferred=preferred, group=group)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("查询 %s 挑不到号的原因失败：%s", channel, exc)
+            return "unknown", ""
 
     async def _retire_account(self, channel: str, account: str, exc: Exception,
                               log: TaskLogger) -> str:
@@ -905,7 +940,7 @@ class TaskRunner:
         from ..cluster.dispatcher import needs_of
         need = next((n for n in needs_of(task) if n.channel == channel), None)
         pinned = need.preferred if need else ""
-        group = need.group if need else ""
+        group = await self._effective_group(task, channel)
         current = exc
         summary: Dict[str, Any] = {}
         alerted = False
@@ -948,15 +983,31 @@ class TaskRunner:
             except Exception:  # noqa: BLE001
                 summary = {}
         resume = summary.get("resume_at")
+        # 挑不到号的**真实原因**：「没有可用账号，请先添加」在账号明明好好的时候最误导人
+        code, why_text = await self._explain_unavailable(channel, pinned, group)
+        if why_text:
+            log.warn(f"{channel} 挑不到账号：{why_text}")
+        streaks = self.__dict__.setdefault("_elsewhere_streak", {})
+        key = (task_id, channel)
+        streaks[key] = streaks.get(key, 0) + 1 if code == "elsewhere" else 0
+        if code == "ok" or (code == "elsewhere" and streaks[key] < self.ELSEWHERE_QUIET_RETRIES):
+            # 号在别的机器上（派错了机器）/ 其实有号（刚恢复）：不打扰人，马上回队列重新派。
+            # 连着几次都派不到有号的机器（那台多半离线了）才往下走、叫人
+            raise AccountsCoolingDown(
+                datetime.now() + timedelta(seconds=COOLING_RETRY_SECONDS),
+                why_text or f"{channel} 账号刚恢复，马上重试")
         # ⚠️ **压根没配过账号 ≠ 账号需要重新登录**：前者排多久都没用（没人会去"恢复"一个
         #    不存在的号），任务会一直挂在排队里。这种照旧报错、跳过这个平台
-        has_account = await self._channel_has_account(channel)
+        has_account = code != "none" and await self._channel_has_account(channel)
         # 只有"等不来"的才叫人；本轮已经点名告警过出事的号，就不再补一条汇总
-        if not alerted and not isinstance(resume, datetime):
+        if not alerted and not isinstance(resume, datetime) and code != "cooling":
+            config_issue = code in ("preferred_missing", "preferred_disabled", "group_empty",
+                                    "disabled", "elsewhere")
             await self._notify(
-                channel, self._classify_login_issue(current), str(current),
-                task_id=task_id, scenic_name=scenic_name,
+                channel, "config" if config_issue else self._classify_login_issue(current),
+                why_text or str(current), task_id=task_id, scenic_name=scenic_name,
                 action=("这个平台一个账号都没配，请到账号管理添加并登录" if not has_account else
+                        "账号配置不对，任务已排队：改好后自动接着采" if config_issue else
                         "没有能用的账号了（都需要重新登录 / 验证），任务已排队：有号恢复后自动接着采"))
         if not has_account:
             log.error(f"{channel} 一个账号都没配，排队也没用——去账号管理里添加并登录一个账号再跑：{current}")

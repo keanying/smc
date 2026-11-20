@@ -41,6 +41,7 @@ EVENT_LABELS = {
     "account_invalid": "账号失效",
     "two_factor": "二次验证",
     "error": "采集错误",
+    "config": "账号配置",
 }
 
 

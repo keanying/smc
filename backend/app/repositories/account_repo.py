@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from ..core.constants import AccountStatus
+from ..core.constants import CHANNEL_LABELS, AccountStatus
 from ..core.db import Database
 from ..core.logging import get_logger
 
@@ -339,6 +339,94 @@ class AccountRepository:
         ) or {}
         return {"available": int(row.get("available") or 0),
                 "resume_at": row.get("resume_at")}
+
+    async def has_group(self, channel: str, group: str) -> bool:
+        """这个平台在该分组里有没有账号（不管状态、在哪台机器）。查不了按"有"算，保持原行为。"""
+        try:
+            value = await self.db.fetch_value(
+                "SELECT COUNT(*) FROM `src_opinion_social_account` "
+                "WHERE channel = %s AND account_group = %s", [channel, group])
+            return int(value or 0) > 0
+        except Exception:  # noqa: BLE001
+            return True
+
+    async def explain_unavailable(
+        self, channel: str, *, preferred: str = "", group: str = "",
+    ) -> Tuple[str, str]:
+        """挑不到号的**真实原因**：(原因代码, 给人看的一句话)。
+
+        「平台 xxx 没有可用账号，请先添加」这句话在账号明明好好的时候最误导人——
+        实际原因可能是任务点名的号被删了 / 改名了、任务的分组里没这个平台的号、
+        号在别的机器上、都在冷却……告警和日志要把真实原因说出来。
+
+        原因代码：none 一个号都没配 / preferred_missing 点名的号不存在 /
+        preferred_disabled 点名的号停用了 / group_empty 分组里没这个平台的号 /
+        disabled 都停用了 / expired 都要重新登录 / elsewhere 号在别的机器上 /
+        cooling 都在冷却·轮换 / ok 其实有号（刚恢复）
+        """
+        rows = await self.db.fetch_all(
+            "SELECT account_name, node_id, account_group, status, enabled, "
+            f"CASE WHEN {_NOT_COOLING} THEN 0 ELSE 1 END AS cooling "
+            "FROM `src_opinion_social_account` WHERE channel = %s", [channel])
+        label = CHANNEL_LABELS.get(channel, channel)
+        here = self.node_id
+        active = AccountStatus.ACTIVE.value
+
+        def local(row: Dict[str, Any]) -> bool:
+            return not here or str(row.get("node_id") or "") in (here, "")
+
+        if not rows:
+            return "none", f"{label}一个账号都没配，请到账号管理添加并登录"
+        if preferred:
+            row = next((r for r in rows if r["account_name"] == preferred), None)
+            if row is None:
+                return ("preferred_missing",
+                        f"任务指定的{label}账号 [{preferred}] 在账号管理里不存在（可能被删除或改了名），"
+                        f"请编辑任务重新选择账号，或改成不指定账号")
+            if not int(row.get("enabled") or 0):
+                return "preferred_disabled", f"任务指定的{label}账号 [{preferred}] 已停用，请启用或编辑任务换个账号"
+            if row.get("status") != active:
+                return "expired", f"任务指定的{label}账号 [{preferred}] 登录态已失效，需要重新登录"
+            if not local(row):
+                return ("elsewhere",
+                        f"任务指定的{label}账号 [{preferred}] 在机器 {row.get('node_id')} 上，不在本机 {here}")
+            if int(row.get("cooling") or 0):
+                return "cooling", f"任务指定的{label}账号 [{preferred}] 在冷却中"
+            return "ok", ""
+        pool = rows
+        if group:
+            pool = [r for r in rows if str(r.get("account_group") or "") == group]
+            if not pool:
+                groups = "、".join(sorted({str(r.get("account_group") or "default") for r in rows}))
+                return ("group_empty",
+                        f"任务指定了账号分组「{group}」，但这个分组里没有{label}账号"
+                        f"（{label}的账号在分组：{groups}），请编辑任务改分组或不指定分组")
+        usable = [r for r in pool if int(r.get("enabled") or 0) and r.get("status") == active]
+        if not usable:
+            if not any(int(r.get("enabled") or 0) for r in pool):
+                return "disabled", f"{label}的账号都停用了，请到账号管理启用"
+            return "expired", f"{label}的账号登录态都失效了，需要重新登录"
+        mine = [r for r in usable if local(r)]
+        if not mine:
+            nodes = "、".join(sorted({str(r.get("node_id") or "") for r in usable}))
+            return ("elsewhere",
+                    f"{label}的账号都在机器 {nodes} 上，本机 {here} 没有，任务会改派到有号的机器")
+        if all(int(r.get("cooling") or 0) for r in mine):
+            return "cooling", f"{label}的账号都在冷却 / 轮换中"
+        return "ok", ""
+
+    async def owned_by_node(self) -> List[Dict[str, Any]]:
+        """每台机器、每个平台、每个分组**登录着的**号有几个（含冷却中的）。
+
+        派任务时，所有机器都暂时没号能用（都在冷却 / 轮换）的话，要派给**有这些号**的机器：
+        任务在那台排队，号一恢复就跑。派给一个号都没有的机器，那边只会报「没有可用账号」。
+        """
+        return await self.db.fetch_all(
+            "SELECT node_id, channel, account_group, COUNT(*) AS c "
+            "FROM `src_opinion_social_account` WHERE enabled = 1 AND status = %s "
+            "GROUP BY node_id, channel, account_group",
+            [AccountStatus.ACTIVE.value],
+        )
 
     async def list_active(self, channel: str) -> List[Dict]:
         clauses = ["channel = %s", "enabled = 1", "status = %s", _NOT_COOLING]

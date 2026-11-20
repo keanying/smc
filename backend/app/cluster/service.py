@@ -236,7 +236,13 @@ class Cluster:
                 key = (need.channel, need.preferred)
                 if need.preferred and key not in owners:
                     owners[key] = await self.accounts.node_of(*key)
-        return AccountPool(await self.accounts.usable_by_node(), owners)
+        owned = None
+        if hasattr(self.accounts, "owned_by_node"):
+            try:
+                owned = await self.accounts.owned_by_node()
+            except Exception as exc:  # noqa: BLE001 —— 查不到就按老口径（只看能用的号）派
+                logger.warning("集群：查询各机器登录着的账号失败，按能用的号派发：%s", exc)
+        return AccountPool(await self.accounts.usable_by_node(), owners, owned)
 
     async def dispatch_due(self) -> int:
         slots = await self.worker_slots()

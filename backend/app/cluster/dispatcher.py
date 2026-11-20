@@ -49,6 +49,9 @@ class Need:
     channel: str
     preferred: str = ""     # 点名的账号
     group: str = ""         # 账号分组
+    #: 分组来自任务级设置（不是这个平台单独设的）。任务级分组里一个这个平台的号都没有时，
+    #: 采集侧会忽略分组用全平台的号（见 runner._effective_group），派发也按同一口径算
+    group_from_task: bool = False
 
 
 def needs_of(task: Dict[str, Any]) -> List[Need]:
@@ -62,6 +65,7 @@ def needs_of(task: Dict[str, Any]) -> List[Need]:
             channel=channel,
             preferred=str(own.get("account_name") or params.get("account_name") or ""),
             group=str(own.get("account_group") or params.get("account_group") or ""),
+            group_from_task=not own.get("account_group") and bool(params.get("account_group")),
         ))
     return out
 
@@ -70,24 +74,49 @@ class AccountPool:
     """每台机器上能用的号（node_id='' 的号还没分配机器，哪台都算）。"""
 
     def __init__(self, usable_rows: Iterable[Dict[str, Any]],
-                 owners: Optional[Dict[Tuple[str, str], Optional[str]]] = None):
-        self._count: Dict[Tuple[str, str, str], int] = {}
-        for row in usable_rows:
-            key = (str(row.get("node_id") or ""), str(row["channel"]),
-                   str(row.get("account_group") or "default"))
-            self._count[key] = self._count.get(key, 0) + int(row.get("c") or 0)
+                 owners: Optional[Dict[Tuple[str, str], Optional[str]]] = None,
+                 owned_rows: Optional[Iterable[Dict[str, Any]]] = None):
+        self._count = self._tally(usable_rows)
+        #: 登录着的号（含冷却中的）。没给就当和能用的一样（老调用方）
+        self._owned = self._tally(owned_rows) if owned_rows is not None else self._count
         #: (channel, account_name) -> 账号所在机器；None = 账号不存在
         self.owners = owners or {}
 
-    def usable(self, node_id: str, need: Need) -> int:
+    @staticmethod
+    def _tally(rows: Iterable[Dict[str, Any]]) -> Dict[Tuple[str, str, str], int]:
+        out: Dict[Tuple[str, str, str], int] = {}
+        for row in rows:
+            key = (str(row.get("node_id") or ""), str(row["channel"]),
+                   str(row.get("account_group") or "default"))
+            out[key] = out.get(key, 0) + int(row.get("c") or 0)
+        return out
+
+    def _group_applies(self, need: Need) -> bool:
+        """任务级分组里一个这个平台的号都没有：跟采集侧一样忽略分组。"""
+        if not need.group:
+            return False
+        if not need.group_from_task:
+            return True
+        return any(ch == need.channel and g == need.group for (_, ch, g) in self._owned)
+
+    def _sum(self, table: Dict[Tuple[str, str, str], int], node_id: str, need: Need) -> int:
+        use_group = self._group_applies(need)
         total = 0
-        for (node, channel, group), count in self._count.items():
+        for (node, channel, group), count in table.items():
             if channel != need.channel or node not in (node_id, ""):
                 continue
-            if need.group and group != need.group:
+            if use_group and group != need.group:
                 continue
             total += count
         return total
+
+    def usable(self, node_id: str, need: Need) -> int:
+        """这台机器上现在就能用的号（不在冷却）。"""
+        return self._sum(self._count, node_id, need)
+
+    def owned(self, node_id: str, need: Need) -> int:
+        """这台机器上登录着的号（含冷却 / 轮换中的）。"""
+        return self._sum(self._owned, node_id, need)
 
     def owner_ok(self, node_id: str, need: Need) -> bool:
         owner = self.owners.get((need.channel, need.preferred))
@@ -121,8 +150,12 @@ def plan(task: Dict[str, Any], nodes: List[NodeSlot],
 
     open_needs = [n for n in needs if not n.preferred]
 
-    def coverage(node: NodeSlot) -> int:
-        return sum(1 for need in open_needs if pool.usable(node.node_id, need) > 0)
+    def coverage(node: NodeSlot) -> Tuple[int, int]:
+        # 先看现在就能用的号；都一样（比如所有机器的号都在冷却 / 轮换）再看谁**有**这些号——
+        # 派给有号的机器，任务在那边排队，号一恢复就跑；
+        # 以前这时按负载挑，可能派到一个号都没有的机器，那边各平台齐刷刷报「没有可用账号」
+        return (sum(1 for need in open_needs if pool.usable(node.node_id, need) > 0),
+                sum(1 for need in open_needs if pool.owned(node.node_id, need) > 0))
 
     best = max(coverage(n) for n in candidates)
     fitting = [n for n in candidates if coverage(n) == best]
