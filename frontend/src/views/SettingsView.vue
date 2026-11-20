@@ -565,13 +565,27 @@
                 </el-form-item>
                 <el-form-item>
                   <template #label>
-                    <span class="lbl">远程账号<InfoTip content="向日葵账号，会写进通知正文" /></span>
+                    <span class="lbl">远程账号<InfoTip content="向日葵账号，在通知文案里用 {远程账号} 引用" /></span>
                   </template>
                   <el-input v-model="notify.remote_account" placeholder="向日葵账号" />
                 </el-form-item>
-                <el-form-item label="远程密码">
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">远程密码<InfoTip content="在通知文案里用 {远程密码} 引用" /></span>
+                  </template>
                   <el-input v-model="notify.remote_password" type="password" show-password
                             placeholder="留空 = 不修改" />
+                </el-form-item>
+                <el-form-item>
+                  <template #label>
+                    <span class="lbl">通知文案<InfoTip content="系统内容（平台 / 验证项 / 账号 / 系统处理结果）固定在前，这段文案原样追加在后。可用占位符：{平台} {验证项} {账号} {景区} {时间} {远程账号} {远程密码}。清空 = 只发系统内容" /></span>
+                  </template>
+                  <el-input v-model="notify.message_text" type="textarea" :rows="5" resize="vertical"
+                            placeholder="例：请值班同学用向日葵远程处理，远程账号：{远程账号}" />
+                  <div class="placeholder-chips">
+                    <el-tag v-for="p in NOTIFY_PLACEHOLDERS" :key="p" size="small" effect="plain"
+                            class="ph-chip" @click="insertPlaceholder(p)">{{ '{' + p + '}' }}</el-tag>
+                  </div>
                 </el-form-item>
 
                 <div class="section-title form-section">节流与暂停</div>
@@ -586,8 +600,9 @@
                 <el-form-item>
                   <template #label><span class="lbl">需要登录时</span></template>
                   <span class="muted">
-                    采集中账号要登录 / 要验证：自动换下一个能用的号接着采；一个都没有就发通知、任务进排队，
-                    有号恢复（重新登录、冷却结束）马上接着跑，不用手动点
+                    正在用的号跳到登录页 / 失效 / 要验证：发告警（点名账号）并自动换下一个能用的号接着采。
+                    其余号只是在冷却 / 轮换期内暂时没号可用：不告警，任务排队到点自动接着跑；
+                    一个都等不来（都要人重新登录）才告警
                   </span>
                 </el-form-item>
 
@@ -606,7 +621,7 @@
                         show-icon :title="notifyResult.error" style="margin-bottom: 12px" />
               <el-alert v-else-if="notifyResult" type="success" :closable="false" show-icon
                         title="已发出，去飞书群里看看" style="margin-bottom: 12px" />
-              <pre class="notify-preview">{{ notifyResult?.preview || previewPlaceholder }}</pre>
+              <pre class="notify-preview">{{ notifyResult?.preview || livePreview }}</pre>
             </el-card>
           </div>
         </div>
@@ -662,7 +677,7 @@ import { authEnabled, isAdmin } from '../composables/auth'
 import UserManagement from '../components/UserManagement.vue'
 import ArchiveView from './ArchiveView.vue'
 import BoxesView from './BoxesView.vue'
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 import { Refresh } from '@element-plus/icons-vue'
 import { labelingApi, settingsApi } from '../api'
@@ -721,12 +736,25 @@ const testingNotify = ref(false)
 const labelCheck = ref<{ passed: boolean; summary: string; items: any[] } | null>(null)
 const notifyResult = ref<{ sent: boolean; preview: string; error: string } | null>(null)
 
-const previewPlaceholder = `舆情采集需人工验证：
-平台：抖音
-验证项：验证码
-请使用向日葵远程登录操作：
-远程账号：（保存后点「发送测试」看实际内容）
-远程密码：……`
+const NOTIFY_PLACEHOLDERS = ['平台', '验证项', '账号', '景区', '时间', '远程账号', '远程密码']
+/** 编辑文案时的即时预览（示例值）。真实内容以「发送测试」为准 */
+const livePreview = computed(() => {
+  const sample: Record<string, string> = {
+    平台: '抖音', 验证项: '需要登录（页面跳到了登录页）', 账号: '号A', 景区: '西湖',
+    时间: new Date().toLocaleString('zh-CN', { hour12: false }).slice(0, 16),
+    远程账号: notify.remote_account || '（未配置）', 远程密码: '******',
+  }
+  let custom = String(notify.message_text ?? '')
+  for (const key of NOTIFY_PLACEHOLDERS) custom = custom.split(`{${key}}`).join(sample[key])
+  return ['舆情采集需人工验证：', '平台：抖音', '验证项：需要登录（页面跳到了登录页）',
+          '账号：号A　景区：西湖', '处理：已自动切换到下一个可用账号继续采集（还有 2 个可用）',
+          custom.trim()].filter(Boolean).join('\n')
+})
+// 改了文案就回到即时预览，别一直显示上次「发送测试」的旧内容
+watch(() => [notify.message_text, notify.remote_account], () => { notifyResult.value = null })
+function insertPlaceholder(key: string) {
+  notify.message_text = `${notify.message_text ?? ''}{${key}}`
+}
 const scheduler = reactive<Record<string, any>>({})
 const metrics = reactive<{ enabled: boolean }>({ enabled: false })
 const router = useRouter()
@@ -1023,6 +1051,8 @@ onMounted(() => {
 }
 .check-detail.is-fail { color: var(--el-color-danger); }
 
+.placeholder-chips { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px }
+.ph-chip { cursor: pointer }
 .notify-preview {
   background: var(--el-fill-color-light);
   border: 1px solid var(--smc-border);

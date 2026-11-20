@@ -804,14 +804,14 @@ class TaskRunner:
     # ------------------------------------------------------------------ 通知
     async def _notify(self, channel: str, kind: str, detail: str = "", *,
                       account: str = "", task_id: str = "",
-                      scenic_name: str = "") -> bool:
+                      scenic_name: str = "", action: str = "") -> bool:
         """发一条飞书通知。**任何失败都吞掉**——通知挂了不能带崩采集。"""
         try:
             from ..notify import NotifyEvent, get_notifier
 
             return await get_notifier().send(NotifyEvent(
                 channel=channel, kind=kind, detail=detail, account=account,
-                task_id=task_id, scenic_name=scenic_name))
+                task_id=task_id, scenic_name=scenic_name, action=action))
         except Exception as exc:  # noqa: BLE001
             logger.debug("发通知失败（忽略）：%s", exc)
             return False
@@ -852,32 +852,54 @@ class TaskRunner:
             return True
 
     async def _retire_account(self, channel: str, account: str, exc: Exception,
-                              log: TaskLogger) -> None:
-        """这个号这会儿用不了：要验证的先冷却（可能过一阵自己就好），登录失效的标成失效（要人重新登录）。"""
+                              log: TaskLogger) -> str:
+        """这个号这会儿用不了：要验证的先冷却（可能过一阵自己就好），登录失效的标成失效（要人重新登录）。
+
+        返回这次把它下线的问题类型（要告警），没动它就返回空串——本来就是失效的号，
+        当初变失效时已经喊过人了，不重复喊。
+        ⚠️ 这里**不发通知**：要等换号结果出来，把「已自动切换 / 任务已排队」一起写进告警。
+        """
         accounts = getattr(self.browser_manager, "accounts", None)
         if not account or accounts is None:
-            return
+            return ""
         kind = self._classify_login_issue(exc)
         try:
             quota = getattr(self, "quota", None)
             if kind in ("captcha", "two_factor") and quota is not None:
                 await quota.cool_down(channel, account, f"需要人工验证：{str(exc)[:120]}")
                 log.warn(f"账号 [{account}] 需要人工验证，先冷却，换下一个号")
-                # 冷却不走 mark_expired 的通知，这里单独喊一声（点名账号）
-                await self._notify(channel, kind, str(exc), account=account)
-            else:
-                row = await accounts.get(channel, account)
-                if row and row.get("status") == AccountStatus.ACTIVE.value:
-                    await accounts.mark_expired(channel, account, str(exc)[:500])
+                return kind
+            row = await accounts.get(channel, account)
+            if row and row.get("status") == AccountStatus.ACTIVE.value:
+                await accounts.mark_expired(channel, account, str(exc)[:500], notify=False)
                 log.warn(f"账号 [{account}] 登录态失效，已标记失效（需要重新登录），换下一个号")
+                return kind
         except Exception as exc2:  # noqa: BLE001
             logger.warning("标记账号 %s/%s 不可用失败：%s", channel, account, exc2)
+        return ""
+
+    @staticmethod
+    def _switch_action(available: int, resume: Any) -> str:
+        """告警里「处理」那一行：出事的号下线之后，系统接下来怎么办。"""
+        if available:
+            return f"已自动切换到下一个可用账号继续采集（还有 {available} 个可用）"
+        if isinstance(resume, datetime):
+            return (f"其余账号在冷却 / 轮换中，最早 {resume:%m-%d %H:%M} 恢复，"
+                    f"任务已排队到时自动接着采；这个账号需要人工处理")
+        return "没有其他可用账号了，任务已排队：重新登录 / 验证后自动接着采"
 
     async def _switch_account_or_queue(
         self, task: Dict[str, Any], channel: str, scenic_id: str, scenic_name: str,
         log: TaskLogger, cancel_event, exc: LoginRequired,
     ) -> Dict[str, int]:
-        """采集时账号要登录 / 要验证：换号接着跑；没号可用就进排队（抛 AccountsCoolingDown）。"""
+        """采集时账号要登录 / 要验证：告警 + 换号接着跑；没号可用就进排队（抛 AccountsCoolingDown）。
+
+        告警规则（客户要求）：
+          · 正在用的号跳到登录页 / 失效 / 要验证 → **点名告警**，并写明系统已经怎么处理
+            （已自动切换到下一个号 / 任务已排队等到几点）
+          · 只是其余号都在冷却 / 轮换期内、暂时没号可用 → **不告警**，任务排队到点自己接着跑
+          · 一个都等不来（都要人重新登录、或者压根没配号）→ 才发一条汇总告警
+        """
         task_id = task["task_id"]
         accounts = getattr(self.browser_manager, "accounts", None)
         from ..cluster.dispatcher import needs_of
@@ -886,11 +908,17 @@ class TaskRunner:
         group = need.group if need else ""
         current = exc
         summary: Dict[str, Any] = {}
+        alerted = False
         for _ in range(self.MAX_ACCOUNT_SWITCHES):
             failed = getattr(self, "_channel_accounts", {}).get((task_id, channel), "")
             log.warn(f"{channel} 账号{f' [{failed}]' if failed else ''}需要登录 / 验证：{current}")
-            await self._retire_account(channel, failed, current, log)
+            retired = await self._retire_account(channel, failed, current, log)
             if pinned:
+                if retired:
+                    alerted = await self._notify(
+                        channel, retired, str(current), account=failed, task_id=task_id,
+                        scenic_name=scenic_name,
+                        action="任务指定了这个账号，不能换号：它恢复后（重新登录 / 冷却结束）自动接着采") or alerted
                 log.warn(f"任务指定了账号 [{pinned}]，不能换号，等它恢复")
                 break
             try:
@@ -898,29 +926,41 @@ class TaskRunner:
             except Exception as exc2:  # noqa: BLE001
                 logger.warning("查询 %s 可用账号失败：%s", channel, exc2)
                 summary = {}
-            if not int(summary.get("available") or 0):
+            available = int(summary.get("available") or 0)
+            if retired:
+                alerted = await self._notify(
+                    channel, retired, str(current), account=failed, task_id=task_id,
+                    scenic_name=scenic_name,
+                    action=self._switch_action(available, summary.get("resume_at"))) or alerted
+            if not available:
                 break
-            log.info(f"{channel} 还有 {summary['available']} 个能用的号，马上换号接着采")
+            log.info(f"{channel} 还有 {available} 个能用的号，马上换号接着采")
             try:
                 return await self._run_channel(task, channel, scenic_id, scenic_name, log, cancel_event)
             except LoginRequired as again:
                 current = again
                 continue
-        # 没有能用的号了：通知人，然后排队。冷却中的号最早什么时候好，就那时候再来；
+        # 没有能用的号了：排队。冷却中的号最早什么时候好，就那时候再来；
         # 都要人重新登录的，过一会儿再看（人登录好了，调度会马上把它捞起来，不用等到点）
-        kind = self._classify_login_issue(current)
-        await self._notify(channel, kind, str(current), task_id=task_id, scenic_name=scenic_name)
-        # ⚠️ **压根没配过账号 ≠ 账号需要重新登录**：前者排多久都没用（没人会去"恢复"一个
-        #    不存在的号），任务会一直挂在排队里。这种照旧报错、跳过这个平台
-        if not await self._channel_has_account(channel):
-            log.error(f"{channel} 一个账号都没配，排队也没用——去账号管理里添加并登录一个账号再跑：{current}")
-            return {}
         if pinned and accounts is not None:
             try:
                 summary = await accounts.cooling_summary(channel, preferred=pinned)
             except Exception:  # noqa: BLE001
                 summary = {}
         resume = summary.get("resume_at")
+        # ⚠️ **压根没配过账号 ≠ 账号需要重新登录**：前者排多久都没用（没人会去"恢复"一个
+        #    不存在的号），任务会一直挂在排队里。这种照旧报错、跳过这个平台
+        has_account = await self._channel_has_account(channel)
+        # 只有"等不来"的才叫人；本轮已经点名告警过出事的号，就不再补一条汇总
+        if not alerted and not isinstance(resume, datetime):
+            await self._notify(
+                channel, self._classify_login_issue(current), str(current),
+                task_id=task_id, scenic_name=scenic_name,
+                action=("这个平台一个账号都没配，请到账号管理添加并登录" if not has_account else
+                        "没有能用的账号了（都需要重新登录 / 验证），任务已排队：有号恢复后自动接着采"))
+        if not has_account:
+            log.error(f"{channel} 一个账号都没配，排队也没用——去账号管理里添加并登录一个账号再跑：{current}")
+            return {}
         later = datetime.now() + timedelta(minutes=self.LOGIN_WAIT_RETRY_MINUTES)
         if isinstance(resume, datetime):
             resume_at = max(resume + timedelta(seconds=5),

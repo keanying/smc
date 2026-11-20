@@ -17,6 +17,9 @@
 ⚠️ 同一个问题不要反复轰炸。一个平台在冷却期内只发一次
    （默认 10 分钟），否则一轮采集能刷出上百条一模一样的消息，
    真出事的时候反而被淹掉。
+
+正文 = 系统内容（平台 / 验证项 / 账号 / 系统做了什么）+ 用户在设置页编辑的文案。
+文案原样追加在后面，里面可以写占位符（见 PLACEHOLDERS）。
 """
 from __future__ import annotations
 
@@ -41,6 +44,13 @@ EVENT_LABELS = {
 }
 
 
+#: 用户文案的默认值：就是最早客户给定格式里的向日葵那几行
+DEFAULT_MESSAGE_TEXT = "请使用向日葵远程登录操作：\n远程账号：{远程账号}\n远程密码：{远程密码}"
+
+#: 用户文案里能用的占位符（只认这几个，其余花括号原样保留，不会因为写了个 {} 就报错）
+PLACEHOLDERS = ("平台", "验证项", "账号", "景区", "时间", "远程账号", "远程密码")
+
+
 @dataclass
 class NotifyEvent:
     """一次要通知的事件。"""
@@ -50,6 +60,8 @@ class NotifyEvent:
     account: str = ""               # 出问题的账号
     task_id: str = ""
     scenic_name: str = ""
+    #: 系统已经做了什么 / 接下来会怎样（如「已自动切换到下一个可用账号」），有就单独一行
+    action: str = ""
 
     @property
     def item(self) -> str:
@@ -92,16 +104,20 @@ class FeishuNotifier:
 
     # ------------------------------------------------------------------ 正文
     def render(self, event: NotifyEvent) -> str:
-        """按用户给定的格式拼消息。**格式是用户定的，别自己加戏。**
+        """系统内容在前，用户编辑的文案追加在后。
 
             舆情采集需人工验证：
             平台：抖音
-            验证项：验证码或登录/采集错误（错误信息）
-            请使用向日葵远程登录操作：
+            验证项：需要登录（……）
+            账号：号A　景区：西湖
+            处理：已自动切换到下一个可用账号继续采集（还有 2 个可用）
+            请使用向日葵远程登录操作：          ← 从这行起是用户编辑的文案
             远程账号：11111
             远程密码：1111
+
+        文案没改过时用 DEFAULT_MESSAGE_TEXT，和最早客户给定的格式逐字一致。
+        用户把文案清空 = 只发系统内容。
         """
-        cfg = self._cfg
         channel = CHANNEL_LABELS.get(event.channel, event.channel)
         lines = [
             "舆情采集需人工验证：",
@@ -116,10 +132,31 @@ class FeishuNotifier:
             extra.append(f"景区：{event.scenic_name}")
         if extra:
             lines.append("　".join(extra))
-        lines.append("请使用向日葵远程登录操作：")
-        lines.append(f"远程账号：{cfg.get('remote_account') or '（未配置）'}")
-        lines.append(f"远程密码：{cfg.get('remote_password') or '（未配置）'}")
+        if event.action:
+            lines.append(f"处理：{event.action}")
+        custom = self.custom_text(event)
+        if custom:
+            lines.append(custom)
         return "\n".join(lines)
+
+    def custom_text(self, event: NotifyEvent) -> str:
+        """用户文案，占位符替换成这次的值。"""
+        cfg = self._cfg
+        text = cfg.get("message_text")
+        if text is None:                       # 从没设置过 → 默认文案；设成空串 = 不要
+            text = DEFAULT_MESSAGE_TEXT
+        values = {
+            "平台": CHANNEL_LABELS.get(event.channel, event.channel),
+            "验证项": event.item,
+            "账号": event.account or "",
+            "景区": event.scenic_name or "",
+            "时间": time.strftime("%Y-%m-%d %H:%M"),
+            "远程账号": str(cfg.get("remote_account") or "（未配置）"),
+            "远程密码": str(cfg.get("remote_password") or "（未配置）"),
+        }
+        for key in PLACEHOLDERS:
+            text = text.replace("{" + key + "}", values[key])
+        return str(text).strip()
 
     # ------------------------------------------------------------------ 发送
     def _cooling(self, key: str) -> bool:
@@ -165,8 +202,9 @@ class FeishuNotifier:
     async def test(self) -> Dict[str, Any]:
         """设置页面上的「发送测试」。绕过冷却，并把渲染结果一起返回，
         让用户在页面上就能看到消息长什么样。"""
-        event = NotifyEvent(channel="douyin", kind="captcha",
-                            detail="这是一条测试通知", account="测试账号")
+        event = NotifyEvent(channel="douyin", kind="login_required",
+                            detail="这是一条测试通知", account="测试账号",
+                            action="已自动切换到下一个可用账号继续采集（还有 2 个可用）")
         if not self.webhook:
             return {"sent": False, "preview": self.render(event),
                     "error": "没配飞书机器人地址"}

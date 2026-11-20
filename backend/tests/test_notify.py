@@ -126,3 +126,30 @@ def test_different_accounts_do_not_share_a_cooldown():
     b = NotifyEvent(channel="kuaishou", kind="account_invalid", account="号B")
     plain = NotifyEvent(channel="kuaishou", kind="account_invalid")
     assert len({a.dedup_key, b.dedup_key, plain.dedup_key}) == 3
+
+
+
+# ---------------------------------------------------------------- 文案由客户自己编辑
+def test_custom_text_is_appended_after_system_content():
+    """系统内容在前，客户编辑的文案原样追加在后，占位符替换成这次的值。"""
+    n = FeishuNotifier(_Cfg(remote_account="888",
+                            message_text="请值班同学处理 {平台} 的 {账号}\n远程：{远程账号}"))
+    text = n.render(NotifyEvent(channel="douyin", kind="login_required", account="号A",
+                                action="已自动切换到下一个可用账号继续采集（还有 2 个可用）"))
+    lines = text.splitlines()
+    assert lines[0] == "舆情采集需人工验证："
+    assert "处理：已自动切换到下一个可用账号继续采集（还有 2 个可用）" in lines
+    assert lines[-2:] == ["请值班同学处理 抖音 的 号A", "远程：888"]
+    assert lines.index("处理：已自动切换到下一个可用账号继续采集（还有 2 个可用）") < len(lines) - 2
+
+
+def test_cleared_text_sends_system_content_only():
+    n = FeishuNotifier(_Cfg(message_text=""))
+    text = n.render(NotifyEvent(channel="douyin", kind="captcha"))
+    assert "向日葵" not in text and text.splitlines()[-1].startswith("验证项：")
+
+
+def test_unknown_braces_in_text_are_left_alone():
+    """客户文案里写了别的花括号（比如 JSON、表情），原样保留，不能报错。"""
+    n = FeishuNotifier(_Cfg(message_text="格式 {\"a\": 1} {不认识}"))
+    assert n.render(NotifyEvent(channel="douyin", kind="captcha")).endswith('格式 {"a": 1} {不认识}')

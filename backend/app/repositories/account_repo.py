@@ -175,7 +175,10 @@ class AccountRepository:
             fields["uid"] = uid
         await self.update(channel, account_name, fields)
 
-    async def mark_expired(self, channel: str, account_name: str, reason: str = "") -> None:
+    async def mark_expired(self, channel: str, account_name: str, reason: str = "", *,
+                           notify: bool = True) -> None:
+        """标成失效。notify=False：调用方自己发一条更完整的告警（采集途中换号时，
+        要把「已自动切换到哪 / 任务已排队」一起告诉人），这里就不再单独喊一声。"""
         before = await self.db.fetch_value(
             "SELECT status FROM `src_opinion_social_account` WHERE channel = %s AND account_name = %s",
             [channel, account_name])
@@ -185,7 +188,7 @@ class AccountRepository:
             "last_error": (reason or "登录态已失效")[:500],
         })
         # 只在「从能用变成失效」那一刻通知一次；本来就是失效的再标一次不重复喊
-        if before is not None and before != AccountStatus.EXPIRED.value:
+        if notify and before is not None and before != AccountStatus.EXPIRED.value:
             for callback in list(self.on_expired):
                 try:
                     await callback(channel, account_name, reason or "登录态已失效")
