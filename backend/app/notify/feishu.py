@@ -49,7 +49,7 @@ EVENT_LABELS = {
 DEFAULT_MESSAGE_TEXT = "请使用向日葵远程登录操作：\n远程账号：{远程账号}\n远程密码：{远程密码}"
 
 #: 用户文案里能用的占位符（只认这几个，其余花括号原样保留，不会因为写了个 {} 就报错）
-PLACEHOLDERS = ("平台", "验证项", "账号", "景区", "时间", "远程账号", "远程密码")
+PLACEHOLDERS = ("平台", "验证项", "账号", "景区", "时间", "机器", "远程账号", "远程密码")
 
 
 @dataclass
@@ -100,6 +100,18 @@ class FeishuNotifier:
         return str(self._cfg.get("feishu_webhook") or "").strip()
 
     @property
+    def machine(self) -> str:
+        """本机显示名：和集群页一致（cluster.node_name > cluster.node_id > 主机名）。"""
+        try:
+            name = (self.config.get("cluster.node_name") or self.config.get("cluster.node_id") or "")
+        except Exception:  # noqa: BLE001
+            name = ""
+        if not name:
+            import socket
+            name = socket.gethostname()
+        return str(name or "").strip()
+
+    @property
     def cooldown_seconds(self) -> float:
         return float(self._cfg.get("cooldown_seconds", 600))
 
@@ -132,6 +144,10 @@ class FeishuNotifier:
             extra.append(f"景区：{event.scenic_name}")
         if extra:
             lines.append("　".join(extra))
+        # 哪台机器发的：多个环境（正式服务器、自己电脑上的测试服务）配了同一个机器人地址时，
+        # 不写这一行根本分不清是谁发的——线上就被别处的测试服务发的告警绕过一回
+        if self.machine:
+            lines.append(f"机器：{self.machine}")
         if event.action:
             lines.append(f"处理：{event.action}")
         custom = self.custom_text(event)
@@ -151,6 +167,7 @@ class FeishuNotifier:
             "账号": event.account or "",
             "景区": event.scenic_name or "",
             "时间": time.strftime("%Y-%m-%d %H:%M"),
+            "机器": self.machine,
             "远程账号": str(cfg.get("remote_account") or "（未配置）"),
             "远程密码": str(cfg.get("remote_password") or "（未配置）"),
         }

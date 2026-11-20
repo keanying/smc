@@ -578,7 +578,7 @@
                 </el-form-item>
                 <el-form-item>
                   <template #label>
-                    <span class="lbl">通知文案<InfoTip content="系统内容（平台 / 验证项 / 账号 / 系统处理结果）固定在前，这段文案原样追加在后。可用占位符：{平台} {验证项} {账号} {景区} {时间} {远程账号} {远程密码}。清空 = 只发系统内容" /></span>
+                    <span class="lbl">通知文案<InfoTip content="系统内容（平台 / 验证项 / 账号 / 系统处理结果）固定在前，这段文案原样追加在后。可用占位符：{平台} {验证项} {账号} {景区} {时间} {机器} {远程账号} {远程密码}。清空 = 只发系统内容" /></span>
                   </template>
                   <el-input v-model="notify.message_text" type="textarea" :rows="5" resize="vertical"
                             placeholder="例：请值班同学用向日葵远程处理，远程账号：{远程账号}" />
@@ -736,18 +736,18 @@ const testingNotify = ref(false)
 const labelCheck = ref<{ passed: boolean; summary: string; items: any[] } | null>(null)
 const notifyResult = ref<{ sent: boolean; preview: string; error: string } | null>(null)
 
-const NOTIFY_PLACEHOLDERS = ['平台', '验证项', '账号', '景区', '时间', '远程账号', '远程密码']
+const NOTIFY_PLACEHOLDERS = ['平台', '验证项', '账号', '景区', '时间', '机器', '远程账号', '远程密码']
 /** 编辑文案时的即时预览（示例值）。真实内容以「发送测试」为准 */
 const livePreview = computed(() => {
   const sample: Record<string, string> = {
     平台: '抖音', 验证项: '需要登录（页面跳到了登录页）', 账号: '号A', 景区: '西湖',
     时间: new Date().toLocaleString('zh-CN', { hour12: false }).slice(0, 16),
-    远程账号: notify.remote_account || '（未配置）', 远程密码: '******',
+    机器: '本机', 远程账号: notify.remote_account || '（未配置）', 远程密码: '******',
   }
   let custom = String(notify.message_text ?? '')
   for (const key of NOTIFY_PLACEHOLDERS) custom = custom.split(`{${key}}`).join(sample[key])
   return ['舆情采集需人工验证：', '平台：抖音', '验证项：需要登录（页面跳到了登录页）',
-          '账号：号A　景区：西湖', '处理：已自动切换到下一个可用账号继续采集（还有 2 个可用）',
+          '账号：号A　景区：西湖', '机器：本机', '处理：已自动切换到下一个可用账号继续采集（还有 2 个可用）',
           custom.trim()].filter(Boolean).join('\n')
 })
 // 改了文案就回到即时预览，别一直显示上次「发送测试」的旧内容

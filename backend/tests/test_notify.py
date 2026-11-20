@@ -146,10 +146,20 @@ def test_custom_text_is_appended_after_system_content():
 def test_cleared_text_sends_system_content_only():
     n = FeishuNotifier(_Cfg(message_text=""))
     text = n.render(NotifyEvent(channel="douyin", kind="captcha"))
-    assert "向日葵" not in text and text.splitlines()[-1].startswith("验证项：")
+    assert "向日葵" not in text and text.splitlines()[-1].startswith(("验证项：", "机器："))
 
 
 def test_unknown_braces_in_text_are_left_alone():
     """客户文案里写了别的花括号（比如 JSON、表情），原样保留，不能报错。"""
     n = FeishuNotifier(_Cfg(message_text="格式 {\"a\": 1} {不认识}"))
     assert n.render(NotifyEvent(channel="douyin", kind="captcha")).endswith('格式 {"a": 1} {不认识}')
+
+
+
+def test_alert_names_the_machine_that_sent_it():
+    """多个环境配了同一个机器人：不写机器名就分不清是正式服务器还是谁电脑上的测试服务发的。"""
+    cfg = _Cfg()
+    base_get = cfg.get
+    cfg.get = lambda path, default=None: "opinion" if path == "cluster.node_name" else base_get(path, default)
+    text = FeishuNotifier(cfg).render(NotifyEvent(channel="douyin", kind="captcha"))
+    assert "机器：opinion" in text.splitlines()
