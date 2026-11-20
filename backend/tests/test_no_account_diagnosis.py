@@ -182,3 +182,36 @@ async def test_task_level_group_without_this_platform_falls_back_to_all_accounts
     assert await r._effective_group(task, "weibo", log) == ""
     assert any("不按分组" in line for line in log.lines)
     assert await r._effective_group(task, "kuaishou", log) == "快手"
+
+
+# ---------------------------------------------------------------- 新旧两个服务同时在跑
+async def test_detects_a_second_live_process_on_the_same_node_id(monkeypatch):
+    """同一台服务器上老进程没停：编号一样，节点表只有一行，页面看不出来。心跳要能发现。"""
+    from app.cluster.service import Cluster
+    from app.notify import feishu
+
+    sent = []
+
+    class _N:
+        async def send(self, event, *, force=False):
+            sent.append(event)
+            return True
+    monkeypatch.setattr(feishu, "_notifier", _N())
+
+    c = Cluster.__new__(Cluster)
+    c.me = SimpleNamespace(node_id="opinion", host="srv", pid=100)
+    c.started_at = datetime.now()
+    row = {"pid": 100, "host": "srv", "version": "15.0", "started_at": None}
+
+    async def _get(node_id):
+        return dict(row)
+    c.nodes = SimpleNamespace(get=_get)
+
+    await c._check_twin()                       # 第一次心跳前不判断（可能是刚死掉的老进程留下的行）
+    await c._check_twin()                       # 行还是自己的：没事
+    assert sent == []
+    row.update(pid=42)                          # 期间被另一个进程写了
+    await c._check_twin()
+    await c._check_twin()                       # 一小时内只通知一次
+    assert len(sent) == 1 and "42" in sent[0].detail and "100" in sent[0].detail
+    assert "平台：" not in feishu.FeishuNotifier(SimpleNamespace(get=lambda *a, **k: {})).render(sent[0])

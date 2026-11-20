@@ -120,11 +120,10 @@ class FeishuNotifier:
         用户把文案清空 = 只发系统内容。
         """
         channel = CHANNEL_LABELS.get(event.channel, event.channel)
-        lines = [
-            "舆情采集需人工验证：",
-            f"平台：{channel}",
-            f"验证项：{event.item}",
-        ]
+        lines = ["舆情采集需人工验证："]
+        if channel:                            # 系统级问题（如重复实例）不针对某个平台
+            lines.append(f"平台：{channel}")
+        lines.append(f"验证项：{event.item}")
         # 账号/景区/任务是附加信息，有就带上——出事时能少问一轮
         extra = []
         if event.account:

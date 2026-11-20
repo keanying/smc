@@ -149,9 +149,13 @@ class Cluster:
     def running_task_ids(self) -> List[str]:
         return sorted(self.scheduler.running_task_ids()) if self.scheduler else []
 
+    #: 同一编号上发现另一个活着的进程：多久提醒一次（日志每次都打，通知别刷屏）
+    TWIN_ALERT_SECONDS = 3600
+
     async def heartbeat(self) -> None:
         from ..browser.capacity import BROWSER_CAPACITY
 
+        await self._check_twin()
         running = self.running_task_ids()
         try:
             browser = BROWSER_CAPACITY.stats()
@@ -163,6 +167,44 @@ class Cluster:
             stats={"running_tasks": running, "browser": browser, "leader": self.is_leader},
             started_at=self.started_at,
         )
+
+    async def _check_twin(self) -> None:
+        """同一个机器编号上还有**另一个活着的进程**：新旧两个服务同时在跑。
+
+        机器编号默认是主机名，同一台服务器上起两份服务（升级后老进程 / 老容器没停掉）
+        编号一样，节点表里只有一行，页面上完全看不出来——两边都按点跑任务、各发各的通知，
+        老进程还在发老格式的告警，看起来就像"新代码没生效"。
+        判断方法：上次心跳写进去的是本进程；这次再看，进程号 / 主机变了，说明期间有别人写过。
+        已经死掉的老进程写不了心跳，所以重启后不会误报（第一次心跳之前不判断）。
+        """
+        if not getattr(self, "_beaten", False):
+            self._beaten = True
+            return
+        try:
+            row = await self.nodes.get(self.me.node_id)
+        except Exception:  # noqa: BLE001
+            return
+        if not row:
+            return
+        if int(row.get("pid") or 0) == self.me.pid and str(row.get("host") or "") == self.me.host:
+            return
+        message = (f"机器编号 {self.me.node_id} 上有两个服务同时在跑：本进程 {self.me.host}/{self.me.pid}"
+                   f"（版本 {__version__}，{self.started_at:%m-%d %H:%M} 启动），另一个 "
+                   f"{row.get('host')}/{row.get('pid')}（版本 {row.get('version') or '?'}，"
+                   f"{row.get('started_at') or '?'} 启动）。两边会重复跑任务、各发各的通知，"
+                   f"请停掉不用的那个（老进程 / 老容器），或给其中一台设不同的 cluster.node_id")
+        logger.error("集群：%s", message)
+        last = getattr(self, "_twin_alerted_at", 0.0)
+        if time.time() - last < self.TWIN_ALERT_SECONDS:
+            return
+        self._twin_alerted_at = time.time()
+        try:
+            from ..notify import NotifyEvent, get_notifier
+            await get_notifier().send(NotifyEvent(
+                channel="", kind="config", detail=message,
+                action="停掉多余的那个服务后自动恢复正常"), force=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("重复实例通知失败（忽略）：%s", exc)
 
     async def _warn_duplicate(self) -> None:
         """两台机器配了同一个编号：心跳互相覆盖、任务派得一团乱。只能提醒，没法替用户改。"""
